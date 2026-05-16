@@ -1,6 +1,9 @@
+from datetime import timedelta
+
 from django.contrib.auth.models import User
 from django.core import mail
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.condominios.models import Condominio
@@ -59,6 +62,26 @@ class EleitorFlowTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["message"], "Convite enviado")
-        self.assertEqual(response.data["url"], f"https://app.example.com/cadastro/{self.eleitor.convite_token}")
+        self.assertNotIn("token", response.data)
+        self.assertNotIn("url", response.data)
+        self.eleitor.refresh_from_db()
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn(response.data["url"], mail.outbox[0].body)
+        self.assertIn(
+            f"https://app.example.com/cadastro/{self.eleitor.convite_token}",
+            mail.outbox[0].body,
+        )
+
+    def test_validar_convite_expirado_retorna_410(self):
+        self.eleitor.convite_expira_em = timezone.now() - timedelta(days=1)
+        self.eleitor.save(update_fields=["convite_expira_em"])
+        response = self.client.get(f"/api/eleitores/convite/{self.eleitor.convite_token}/")
+        self.assertEqual(response.status_code, 410)
+
+    def test_enviar_convite_renova_expiracao(self):
+        self.client.force_authenticate(self.admin)
+        antes = timezone.now()
+        response = self.client.post(f"/api/eleitores/{self.eleitor.id}/enviar-convite/")
+        self.assertEqual(response.status_code, 200)
+        self.eleitor.refresh_from_db()
+        self.assertIsNotNone(self.eleitor.convite_expira_em)
+        self.assertGreater(self.eleitor.convite_expira_em, antes + timedelta(days=6))

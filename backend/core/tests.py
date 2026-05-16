@@ -34,8 +34,10 @@ class AuthAndBiometriaTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("access", response.data)
-        self.assertIn("refresh", response.data)
+        self.assertIn("access_token", response.cookies)
+        self.assertIn("refresh_token", response.cookies)
+        self.assertTrue(response.cookies["access_token"]["httponly"])
+        self.assertEqual(response.data["username"], "admin")
 
     def test_facial_auth_rejects_invalid_signature(self):
         response = self.client.post(
@@ -65,3 +67,40 @@ class AuthAndBiometriaTests(APITestCase):
         self.assertTrue(response.data["authenticated"])
         self.assertEqual(response.data["method"], "facial")
         self.assertIn("token", response.data)
+
+    def test_healthz_endpoint_ok(self):
+        response = self.client.get("/api/healthz/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+
+    def test_login_logout_via_cookie(self):
+        login = self.client.post(
+            "/api/auth/login/",
+            {"username": "admin", "password": "admin12345"},
+            format="json",
+        )
+        self.assertEqual(login.status_code, 200)
+        self.assertIn("access_token", login.cookies)
+
+        # me/ deve funcionar com o cookie
+        me = self.client.get("/api/auth/me/")
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.data["username"], "admin")
+
+        logout = self.client.post("/api/auth/logout/")
+        self.assertEqual(logout.status_code, 200)
+
+    def test_refresh_via_cookie(self):
+        login = self.client.post(
+            "/api/auth/login/",
+            {"username": "admin", "password": "admin12345"},
+            format="json",
+        )
+        self.assertEqual(login.status_code, 200)
+        refresh = self.client.post("/api/auth/refresh/")
+        self.assertEqual(refresh.status_code, 200)
+        self.assertIn("access_token", refresh.cookies)
+
+    def test_refresh_sem_cookie_retorna_401(self):
+        response = self.client.post("/api/auth/refresh/")
+        self.assertEqual(response.status_code, 401)

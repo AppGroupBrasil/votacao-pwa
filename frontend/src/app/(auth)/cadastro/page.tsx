@@ -41,10 +41,7 @@ export default function CadastroPage() {
     setLoading(true);
     try {
       await api.register(form);
-      // Auto-login
-      const data = await api.login(form.username, form.password);
-      localStorage.setItem("access_token", data.access);
-      localStorage.setItem("refresh_token", data.refresh);
+      await api.login(form.username, form.password);
       router.push("/admin/assembleias");
     } catch (err: any) {
       const data = err?.response?.data;

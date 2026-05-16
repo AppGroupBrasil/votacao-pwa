@@ -19,6 +19,13 @@ const withPWA = require("next-pwa")({
 const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
+  poweredByHeader: false,
+  compiler: {
+    removeConsole:
+      process.env.NODE_ENV === "production"
+        ? { exclude: ["error", "warn"] }
+        : false,
+  },
 };
 
 module.exports = withPWA(nextConfig);

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Votação Online</string>
+    <string name="title_activity_main">Votação Online</string>
+    <string name="package_name">com.appvotacao.app</string>
+    <string name="custom_url_scheme">com.appvotacao.app</string>
+</resources>

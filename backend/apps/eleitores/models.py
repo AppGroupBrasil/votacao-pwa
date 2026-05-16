@@ -24,6 +24,7 @@ class Eleitor(models.Model):
     webauthn_credential = models.JSONField(blank=True, null=True)
     cadastro_completo = models.BooleanField(default=False)
     convite_token = models.CharField(max_length=64, unique=True, blank=True, null=True)
+    convite_expira_em = models.DateTimeField(blank=True, null=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 

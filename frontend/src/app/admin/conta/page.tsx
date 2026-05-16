@@ -72,8 +72,7 @@ export default function ContaPage() {
     setDeleting(true);
     try {
       await api.deleteMe();
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
+      try { await api.logout(); } catch {}
       router.push("/login");
     } catch (err: any) {
       const msg = err?.response?.data?.error || "Erro ao excluir conta.";

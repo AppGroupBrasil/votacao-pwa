@@ -42,6 +42,10 @@ class Voto(models.Model):
                 name="unique_voto_por_questao",
             )
         ]
+        indexes = [
+            models.Index(fields=["assembleia", "questao"], name="voto_assemb_quest_idx"),
+            models.Index(fields=["assembleia", "-timestamp"], name="voto_assemb_ts_idx"),
+        ]
 
     def save(self, *args, **kwargs):
         if not self.hash_voto:

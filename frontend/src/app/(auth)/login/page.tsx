@@ -20,9 +20,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const data = await api.login(username, password);
-      localStorage.setItem("access_token", data.access);
-      localStorage.setItem("refresh_token", data.refresh);
+      await api.login(username, password);
       router.push("/admin/assembleias");
     } catch {
       setError("Usuário ou senha incorretos.");

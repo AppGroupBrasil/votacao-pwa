@@ -1,8 +1,10 @@
 import secrets
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.mail import send_mail
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
@@ -29,14 +31,17 @@ class EleitorViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         token = secrets.token_urlsafe(48)
-        serializer.save(convite_token=token)
+        serializer.save(
+            convite_token=token,
+            convite_expira_em=timezone.now() + timedelta(days=7),
+        )
 
     @action(detail=True, methods=["post"], url_path="enviar-convite")
     def enviar_convite(self, request, pk=None):
         eleitor = self.get_object()
-        if not eleitor.convite_token:
-            eleitor.convite_token = secrets.token_urlsafe(48)
-            eleitor.save(update_fields=["convite_token"])
+        eleitor.convite_token = secrets.token_urlsafe(48)
+        eleitor.convite_expira_em = timezone.now() + timedelta(days=7)
+        eleitor.save(update_fields=["convite_token", "convite_expira_em"])
 
         frontend_base_url = getattr(settings, "FRONTEND_APP_URL", "http://localhost:3000").rstrip("/")
         convite_url = f"{frontend_base_url}/cadastro/{eleitor.convite_token}"
@@ -54,11 +59,7 @@ class EleitorViewSet(viewsets.ModelViewSet):
         )
 
         return Response(
-            {
-                "message": "Convite enviado",
-                "token": eleitor.convite_token,
-                "url": convite_url,
-            },
+            {"message": "Convite enviado"},
             status=status.HTTP_200_OK,
         )
 
@@ -70,6 +71,11 @@ class EleitorViewSet(viewsets.ModelViewSet):
     )
     def validar_convite(self, request, token=None):
         eleitor = get_object_or_404(Eleitor, convite_token=token)
+        if eleitor.convite_expira_em and timezone.now() > eleitor.convite_expira_em:
+            return Response(
+                {"error": "Convite expirado. Solicite um novo."},
+                status=status.HTTP_410_GONE,
+            )
         return Response(
             {
                 "id": str(eleitor.id),
@@ -87,17 +93,24 @@ class EleitorViewSet(viewsets.ModelViewSet):
     )
     def onboarding(self, request, token=None):
         eleitor = get_object_or_404(Eleitor, convite_token=token)
+        if eleitor.convite_expira_em and timezone.now() > eleitor.convite_expira_em:
+            return Response(
+                {"error": "Convite expirado. Solicite um novo."},
+                status=status.HTTP_410_GONE,
+            )
         serializer = EleitorOnboardingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         eleitor.biometria_hash = serializer.validated_data["biometria_hash"]
         eleitor.cadastro_completo = True
-        eleitor.convite_token = None  # Invalidate token after use
+        eleitor.convite_token = None
+        eleitor.convite_expira_em = None
         eleitor.save(
             update_fields=[
                 "biometria_hash",
                 "cadastro_completo",
                 "convite_token",
+                "convite_expira_em",
             ]
         )
 

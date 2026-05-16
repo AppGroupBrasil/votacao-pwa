@@ -51,17 +51,11 @@ export default function AdminLayout({
           : "";
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (!token) {
-      router.push("/login");
-      return;
-    }
     api.me().then(setUser).catch(() => router.push("/login"));
   }, [router]);
 
-  function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
+  async function handleLogout() {
+    try { await api.logout(); } catch {}
     router.push("/login");
   }
 

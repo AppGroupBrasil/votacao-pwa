@@ -1,16 +1,30 @@
+import logging
+
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
+from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
+from django.core.validators import validate_email
 from django.conf import settings
+from django_ratelimit.decorators import ratelimit
 from rest_framework import generics, permissions, serializers, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from rest_framework.views import APIView
 
 from apps.condominios.models import Condominio
+from core.authentication import (
+    ACCESS_COOKIE,
+    REFRESH_COOKIE,
+    clear_auth_cookies,
+    set_auth_cookies,
+)
 from core.models import PerfilAdmin
+
+audit = logging.getLogger("audit")
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -65,6 +79,8 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]
 
 
+@ratelimit(key="ip", rate="10/m", block=True)
+@ratelimit(key="post:username", rate="5/m", block=True)
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 def login_view(request):
@@ -77,20 +93,54 @@ def login_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip()
     user = authenticate(username=username, password=password)
     if user is None:
+        audit.warning("login_failed username=%s ip=%s", username, ip)
         return Response(
             {"detail": "Usuário e/ou senha incorreto(s)"},
             status=status.HTTP_401_UNAUTHORIZED,
         )
 
+    audit.info("login_ok user_id=%s username=%s ip=%s", user.id, user.username, ip)
     refresh = RefreshToken.for_user(user)
-    return Response(
-        {
-            "refresh": str(refresh),
-            "access": str(refresh.access_token),
-        }
-    )
+    response = Response(UserSerializer(user).data)
+    set_auth_cookies(response, str(refresh.access_token), str(refresh))
+    return response
+
+
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def refresh_view(request):
+    from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+    refresh_token = request.COOKIES.get(REFRESH_COOKIE) or request.data.get("refresh")
+    if not refresh_token:
+        return Response({"detail": "Refresh token ausente."}, status=status.HTTP_401_UNAUTHORIZED)
+    serializer = TokenRefreshSerializer(data={"refresh": refresh_token})
+    try:
+        serializer.is_valid(raise_exception=True)
+    except Exception:
+        response = Response({"detail": "Refresh inválido."}, status=status.HTTP_401_UNAUTHORIZED)
+        clear_auth_cookies(response)
+        return response
+    data = serializer.validated_data
+    response = Response({"refreshed": True})
+    set_auth_cookies(response, data["access"], data.get("refresh"))
+    return response
+
+
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def logout_view(request):
+    refresh_token = request.COOKIES.get(REFRESH_COOKIE)
+    if refresh_token:
+        try:
+            RefreshToken(refresh_token).blacklist()
+        except (TokenError, AttributeError):
+            pass
+    response = Response({"logged_out": True})
+    clear_auth_cookies(response)
+    return response
 
 
 class MeView(APIView):
@@ -102,17 +152,34 @@ class MeView(APIView):
 
     def patch(self, request):
         user = request.user
-        allowed = ["first_name", "last_name", "email"]
-        for field in allowed:
-            if field in request.data:
-                setattr(user, field, request.data[field])
 
-        # Password change (optional)
+        if "email" in request.data:
+            email = str(request.data["email"]).strip().lower()
+            try:
+                validate_email(email)
+            except ValidationError:
+                return Response(
+                    {"error": "E-mail inválido."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if User.objects.filter(email__iexact=email).exclude(pk=user.pk).exists():
+                return Response(
+                    {"error": "Este e-mail já está em uso."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user.email = email
+
+        for field in ("first_name", "last_name"):
+            if field in request.data:
+                setattr(user, field, str(request.data[field])[:150])
+
         new_password = request.data.get("new_password")
         if new_password:
-            if len(new_password) < 8:
+            try:
+                validate_password(new_password, user=user)
+            except ValidationError as exc:
                 return Response(
-                    {"error": "A senha deve ter no mínimo 8 caracteres."},
+                    {"error": " ".join(exc.messages)},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             user.set_password(new_password)
@@ -132,11 +199,17 @@ class MeView(APIView):
 
 
 # ── Password reset (request) ────────────────────────────────────
+@ratelimit(key="ip", rate="5/h", block=True)
+@ratelimit(key="post:email", rate="3/h", block=True)
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 def password_reset_request(request):
     """Send password-reset email. Always returns 200 to prevent enumeration."""
-    email = request.data.get("email", "").strip().lower()
+    email = str(request.data.get("email", "")).strip().lower()
+    try:
+        validate_email(email)
+    except ValidationError:
+        return Response({"sent": True})
     try:
         user = User.objects.get(email__iexact=email)
         token = default_token_generator.make_token(user)

@@ -20,9 +20,30 @@ def env_list(name: str, default: str) -> list[str]:
 
 ENVIRONMENT = os.getenv("DJANGO_ENV", "development").lower()
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "change-me-in-production")
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "" if ENVIRONMENT == "production" else "dev-only-insecure-key")
+if ENVIRONMENT == "production" and not SECRET_KEY:
+    raise RuntimeError("DJANGO_SECRET_KEY é obrigatório quando DJANGO_ENV=production")
 
 DEBUG = env_bool("DJANGO_DEBUG", ENVIRONMENT != "production")
+if ENVIRONMENT == "production" and DEBUG:
+    raise RuntimeError("DJANGO_DEBUG não pode ser True em produção")
+
+# Sentry (opcional via SENTRY_DSN)
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.django import DjangoIntegration
+
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            integrations=[DjangoIntegration()],
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            send_default_pii=False,
+            environment=ENVIRONMENT,
+        )
+    except ImportError:
+        pass
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list(
@@ -42,6 +63,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "corsheaders",
     "django_filters",
+    "drf_spectacular",
     # Project apps
     "core",
     "apps.condominios",
@@ -126,7 +148,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # REST Framework
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "core.authentication.CookieJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
@@ -138,6 +160,14 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Votação Online API",
+    "DESCRIPTION": "API REST para assembleias de condomínio com voto autenticado.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 SIMPLE_JWT = {
@@ -193,6 +223,51 @@ else:
 
 # OTP
 OTP_VALIDITY_SECONDS = 600  # 10 minutes
+
+# Rate limiting
+RATELIMIT_VIEW = "config.urls.ratelimited"
+RATELIMIT_USE_CACHE = "default"
+
+# Logging — audit logger captura eventos de segurança/voto
+_AUDIT_LOG_DIR = os.getenv("AUDIT_LOG_DIR", str(BASE_DIR / "logs"))
+os.makedirs(_AUDIT_LOG_DIR, exist_ok=True)
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "[{asctime}] {levelname} {name}: {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+        "audit_file": {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": os.path.join(_AUDIT_LOG_DIR, "audit.log"),
+            "when": "midnight",
+            "backupCount": 90,
+            "encoding": "utf-8",
+            "formatter": "verbose",
+        },
+    },
+    "loggers": {
+        "audit": {
+            "handlers": ["console", "audit_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.security": {
+            "handlers": ["console", "audit_file"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+}
 
 # Reverse proxy / production security
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

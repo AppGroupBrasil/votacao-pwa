@@ -10,12 +10,15 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from django_ratelimit.decorators import ratelimit
 
 from apps.eleitores.models import Eleitor
 from apps.assembleias.models import Presenca
 from core.otp import gerar_otp, validar_otp
 
 
+@ratelimit(key="ip", rate="5/m", block=True)
+@ratelimit(key="post:eleitor_id", rate="3/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def otp_send(request):
@@ -58,6 +61,8 @@ def otp_send(request):
     })
 
 
+@ratelimit(key="ip", rate="10/m", block=True)
+@ratelimit(key="post:eleitor_id", rate="5/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def otp_verify(request):

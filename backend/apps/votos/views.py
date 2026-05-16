@@ -1,4 +1,12 @@
+import logging
+
+from django.db import transaction
+from django_ratelimit.decorators import ratelimit
+
+audit = logging.getLogger("audit")
+from django.db.models import Count, Q
 from django.http import Http404
+from django.utils import timezone
 from django.core import signing
 from django.core.signing import BadSignature, SignatureExpired
 from django.shortcuts import get_object_or_404
@@ -104,72 +112,92 @@ def resolve_vote_auth_token(auth_token, assembleia_id):
     }
 
 
+@ratelimit(key="ip", rate="30/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def registrar_voto(request, assembleia_id):
-    assembleia = get_object_or_404(Assembleia, id=assembleia_id)
-
-    if assembleia.status != Assembleia.Status.ABERTA:
-        return Response(
-            {"error": "Esta assembleia não está aberta para votação"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
     serializer = VotoCreateSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
-    try:
-        auth_context = resolve_vote_auth_token(
-            serializer.validated_data["auth_token"],
-            assembleia.id,
-        )
-    except ValueError as exc:
-        return Response(
-            {"error": str(exc)},
-            status=status.HTTP_403_FORBIDDEN,
+    with transaction.atomic():
+        assembleia = get_object_or_404(
+            Assembleia.objects.select_for_update(), id=assembleia_id
         )
 
-    eleitor_id = auth_context["eleitor_id"]
-    request_eleitor_id = serializer.validated_data.get("eleitor_id")
-    if request_eleitor_id and str(request_eleitor_id) != eleitor_id:
-        return Response(
-            {"error": "Token de autenticação não corresponde ao eleitor informado"},
-            status=status.HTTP_403_FORBIDDEN,
+        if assembleia.status != Assembleia.Status.ABERTA:
+            return Response(
+                {"error": "Esta assembleia não está aberta para votação"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        agora = timezone.now()
+        if assembleia.data_inicio and agora < assembleia.data_inicio:
+            return Response(
+                {"error": "A votação ainda não começou"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if assembleia.data_fim and agora > assembleia.data_fim:
+            return Response(
+                {"error": "O período de votação já encerrou"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            auth_context = resolve_vote_auth_token(
+                serializer.validated_data["auth_token"],
+                assembleia.id,
+            )
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        eleitor_id = auth_context["eleitor_id"]
+        request_eleitor_id = serializer.validated_data.get("eleitor_id")
+        if request_eleitor_id and str(request_eleitor_id) != eleitor_id:
+            return Response(
+                {"error": "Token de autenticação não corresponde ao eleitor informado"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        eleitor = get_object_or_404(Eleitor, id=eleitor_id)
+
+        if not assembleia.votantes.filter(id=eleitor.id).exists():
+            return Response(
+                {"error": "Eleitor não está na lista de votantes desta assembleia"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        questao = get_object_or_404(
+            Questao, id=serializer.validated_data["questao_id"], assembleia=assembleia
+        )
+        opcao = get_object_or_404(
+            OpcaoVoto, id=serializer.validated_data["opcao_id"], questao=questao
         )
 
-    eleitor = get_object_or_404(Eleitor, id=eleitor_id)
+        if Voto.objects.select_for_update().filter(eleitor=eleitor, questao=questao).exists():
+            return Response(
+                {"error": "Você já votou nesta questão"},
+                status=status.HTTP_409_CONFLICT,
+            )
 
-    if not assembleia.votantes.filter(id=eleitor.id).exists():
-        return Response(
-            {"error": "Eleitor não está na lista de votantes desta assembleia"},
-            status=status.HTTP_403_FORBIDDEN,
+        voto = Voto(
+            assembleia=assembleia,
+            eleitor=eleitor,
+            questao=questao,
+            opcao_escolhida=opcao,
+            metodo_auth=auth_context["metodo_auth"],
+            ip_address=get_client_ip(request),
+            user_agent=get_client_user_agent(request),
+            device_info=infer_device_info(get_client_user_agent(request)),
         )
+        voto.save()
 
-    questao = get_object_or_404(
-        Questao, id=serializer.validated_data["questao_id"], assembleia=assembleia
+    audit.info(
+        "voto_registrado assembleia=%s questao=%s eleitor=%s metodo=%s hash=%s",
+        assembleia.id, questao.id, eleitor.id, voto.metodo_auth, voto.hash_voto,
     )
-    opcao = get_object_or_404(
-        OpcaoVoto, id=serializer.validated_data["opcao_id"], questao=questao
-    )
-
-    if Voto.objects.filter(eleitor=eleitor, questao=questao).exists():
-        return Response(
-            {"error": "Você já votou nesta questão"},
-            status=status.HTTP_409_CONFLICT,
-        )
-
-    voto = Voto(
-        assembleia=assembleia,
-        eleitor=eleitor,
-        questao=questao,
-        opcao_escolhida=opcao,
-        metodo_auth=auth_context["metodo_auth"],
-        ip_address=get_client_ip(request),
-        user_agent=get_client_user_agent(request),
-        device_info=infer_device_info(get_client_user_agent(request)),
-    )
-    voto.save()
-
     return Response(
         {
             "message": "Voto registrado com sucesso",
@@ -184,7 +212,9 @@ def registrar_voto(request, assembleia_id):
 @permission_classes([IsAdminWithRole])
 def resultados(request, assembleia_id):
     assembleia = get_accessible_assembleia(request, assembleia_id)
-    questoes = assembleia.questoes.prefetch_related("opcoes").all()
+    questoes = assembleia.questoes.prefetch_related(
+        "opcoes__votos"
+    ).all()
 
     data = []
     total_votantes = assembleia.votantes.count()
@@ -193,8 +223,10 @@ def resultados(request, assembleia_id):
         opcoes_resultado = []
         total_votos_questao = 0
 
-        for opcao in questao.opcoes.all():
-            count = Voto.objects.filter(questao=questao, opcao_escolhida=opcao).count()
+        for opcao in questao.opcoes.annotate(
+            votos_count=Count("votos", filter=Q(votos__questao=questao))
+        ):
+            count = opcao.votos_count
             total_votos_questao += count
             opcoes_resultado.append(
                 {
@@ -242,6 +274,7 @@ def relatorio_detalhado(request, assembleia_id):
     )
 
 
+@ratelimit(key="ip", rate="30/m", block=True)
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def verificar_voto(request):
@@ -252,18 +285,10 @@ def verificar_voto(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    voto = Voto.objects.filter(hash_voto=hash_voto).first()
-    if not voto:
+    existe = Voto.objects.filter(hash_voto=hash_voto).exists()
+    if not existe:
         return Response(
-            {"encontrado": False, "message": "Voto não encontrado"},
+            {"encontrado": False},
             status=status.HTTP_404_NOT_FOUND,
         )
-
-    return Response(
-        {
-            "encontrado": True,
-            "timestamp": voto.timestamp,
-            "assembleia": voto.assembleia.titulo,
-            "questao": voto.questao.titulo,
-        }
-    )
+    return Response({"encontrado": True})

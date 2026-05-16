@@ -3,7 +3,6 @@ import type {
   AssembleiaListItem,
   Condominio,
   Eleitor,
-  LoginResponse,
   MasterDashboard,
   MasterUser,
   PaginatedResponse,
@@ -21,37 +20,27 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token =
-    typeof window !== "undefined"
-      ? localStorage.getItem("access_token")
-      : null;
-
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   };
 
-  // Don't set Content-Type for FormData — browser sets it with boundary
   if (!(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+  const doFetch = () =>
+    fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+      credentials: "include",
+    });
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  let res = await doFetch();
 
-  if (res.status === 401 && token) {
-    // Try to refresh
+  if (res.status === 401) {
     const refreshed = await tryRefresh();
     if (refreshed) {
-      headers["Authorization"] = `Bearer ${localStorage.getItem("access_token")}`;
-      const retry = await fetch(`${API_URL}${path}`, { ...options, headers });
-      if (!retry.ok) throw new Error(`HTTP ${retry.status}`);
-      return retry.json();
+      res = await doFetch();
     }
   }
 
@@ -67,28 +56,12 @@ async function request<T>(
 }
 
 async function tryRefresh(): Promise<boolean> {
-  const refresh = localStorage.getItem("refresh_token");
-  if (!refresh) return false;
-
   try {
     const res = await fetch(`${API_URL}/auth/refresh/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh }),
+      credentials: "include",
     });
-
-    if (!res.ok) {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      return false;
-    }
-
-    const data = await res.json();
-    localStorage.setItem("access_token", data.access);
-    if (data.refresh) {
-      localStorage.setItem("refresh_token", data.refresh);
-    }
-    return true;
+    return res.ok;
   } catch {
     return false;
   }
@@ -97,10 +70,13 @@ async function tryRefresh(): Promise<boolean> {
 export const api = {
   // Auth
   login: (username: string, password: string) =>
-    request<LoginResponse>("/auth/login/", {
+    request<User>("/auth/login/", {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
+
+  logout: () =>
+    request<{ logged_out: boolean }>("/auth/logout/", { method: "POST" }),
 
   me: () => request<User>("/auth/me/"),
 

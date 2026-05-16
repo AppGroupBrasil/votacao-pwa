@@ -153,7 +153,59 @@ class VotoReportTests(APITestCase):
         self.assertEqual(registro["perfil"], self.eleitor.perfil)
         self.assertTrue(registro["por_procuracao"])
         self.assertEqual(registro["tipo_autenticacao"], "otp")
-        self.assertEqual(registro["ip_address"], "198.51.100.15")
-        self.assertEqual(registro["device_info"], "Android / Chrome")
+        self.assertNotIn("ip_address", registro)
+        self.assertNotIn("device_info", registro)
+        self.assertNotIn("user_agent", registro)
         self.assertEqual(registro["questao_titulo"], self.questao.titulo)
         self.assertEqual(registro["opcao_texto"], self.opcao.texto)
+
+    def test_voto_rejeita_dupla_votacao_na_mesma_questao(self):
+        Voto.objects.create(
+            assembleia=self.assembleia,
+            eleitor=self.eleitor,
+            questao=self.questao,
+            opcao_escolhida=self.opcao,
+            metodo_auth=Voto.MetodoAuth.OTP,
+            ip_address="0.0.0.0",
+        )
+        response = self.client.post(
+            f"/api/votos/{self.assembleia.id}/votar/",
+            {
+                "eleitor_id": str(self.eleitor.id),
+                "questao_id": str(self.questao.id),
+                "opcao_id": str(self.opcao.id),
+                "auth_token": self.build_auth_token(),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409)
+
+    def test_voto_rejeita_assembleia_fora_do_periodo(self):
+        self.assembleia.data_inicio = timezone.now() + timedelta(hours=2)
+        self.assembleia.data_fim = timezone.now() + timedelta(hours=4)
+        self.assembleia.save(update_fields=["data_inicio", "data_fim"])
+        response = self.client.post(
+            f"/api/votos/{self.assembleia.id}/votar/",
+            {
+                "eleitor_id": str(self.eleitor.id),
+                "questao_id": str(self.questao.id),
+                "opcao_id": str(self.opcao.id),
+                "auth_token": self.build_auth_token(),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("ainda não começou", response.data["error"])
+
+    def test_verificar_voto_nao_expoe_dados(self):
+        voto = Voto.objects.create(
+            assembleia=self.assembleia,
+            eleitor=self.eleitor,
+            questao=self.questao,
+            opcao_escolhida=self.opcao,
+            metodo_auth=Voto.MetodoAuth.OTP,
+            ip_address="0.0.0.0",
+        )
+        response = self.client.get(f"/api/votos/verificar/?hash={voto.hash_voto}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {"encontrado": True})

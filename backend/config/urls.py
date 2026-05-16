@@ -3,6 +3,17 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+
+
+def ratelimited(_request, _exception=None):
+    return JsonResponse(
+        {"error": "Muitas requisições. Aguarde alguns instantes e tente novamente."},
+        status=429,
+    )
+
+
+handler429 = "config.urls.ratelimited"
 
 
 def api_root(_request):
@@ -20,9 +31,21 @@ def api_root(_request):
         }
     )
 
+def healthz(_request):
+    from django.db import connection
+    try:
+        connection.ensure_connection()
+        return JsonResponse({"status": "ok"})
+    except Exception:
+        return JsonResponse({"status": "error"}, status=503)
+
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", api_root),
+    path("api/healthz/", healthz),
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     path("api/auth/", include("core.urls_auth")),
     path("api/webauthn/", include("core.urls_webauthn")),
     path("api/biometria/", include("core.urls_biometria")),

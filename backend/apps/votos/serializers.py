@@ -62,9 +62,6 @@ class RelatorioVotoSerializer(serializers.ModelSerializer):
             "questao_titulo",
             "opcao_texto",
             "tipo_autenticacao",
-            "ip_address",
-            "device_info",
-            "user_agent",
             "timestamp",
             "hash_voto",
         ]

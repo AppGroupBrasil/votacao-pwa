@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import CookieBanner from "@/components/CookieBanner";
 
 export const metadata: Metadata = {
   title: "Votação Online — Assembleia Digital",
@@ -22,7 +23,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR">
-      <body className="min-h-screen">{children}</body>
+      <body className="min-h-screen">
+        {children}
+        <CookieBanner />
+      </body>
     </html>
   );
 }
