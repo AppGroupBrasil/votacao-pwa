@@ -32,7 +32,7 @@ jobs:
         run: |
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
-            "cd ${{ env.APP_PATH }} && docker compose up -d --build --remove-orphans"
+            "cd ${{ env.APP_PATH }} && docker compose -f docker-compose.coolify.yml up -d --build --remove-orphans"
 
       - name: Health check
         run: |
