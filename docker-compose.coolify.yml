@@ -94,13 +94,16 @@ services:
       - |
         echo "Backup service ativo (diário às 03:00 UTC)"
         while true; do
-          NOW_TS=$$(date -u +%s)
-          NEXT_TS=$$(date -u -d "tomorrow 03:00" +%s 2>/dev/null || date -u -d "$$(date -u +%Y-%m-%d) 03:00 + 1 day" +%s)
-          SLEEP=$$((NEXT_TS - NOW_TS))
-          if [ "$$SLEEP" -gt 0 ] && [ "$$SLEEP" -lt 86400 ]; then
-            echo "[backup] aguardando $${SLEEP}s ate proximo 03:00 UTC"
-            sleep $$SLEEP
+          H=$$(date -u +%H); M=$$(date -u +%M); S=$$(date -u +%S)
+          SEC_TODAY=$$((10#$$H*3600 + 10#$$M*60 + 10#$$S))
+          TARGET=10800
+          if [ $$SEC_TODAY -lt $$TARGET ]; then
+            SLEEP=$$((TARGET - SEC_TODAY))
+          else
+            SLEEP=$$((86400 - SEC_TODAY + TARGET))
           fi
+          echo "[backup] aguardando $${SLEEP}s ate proximo 03:00 UTC"
+          sleep $$SLEEP
           STAMP=$$(date -u +%Y%m%d_%H%M%S)
           FILE="/backups/votacao_$${STAMP}.sql.gz"
           echo "[backup] iniciando $${FILE}"
