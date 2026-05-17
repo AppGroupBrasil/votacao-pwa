@@ -47,6 +47,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - /mnt/docker-data/logs/votacao:/app/logs
     networks:
       - internal
       - coolify
@@ -57,11 +59,11 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: https://appvotacao.com.br/api
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-https://appvotacao.com.br/api}
     container_name: votacao-frontend
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: https://appvotacao.com.br/api
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-https://appvotacao.com.br/api}
     depends_on:
       - backend
     networks:
