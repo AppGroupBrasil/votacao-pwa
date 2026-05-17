@@ -70,6 +70,54 @@ services:
     labels:
       - "traefik.enable=false"
 
+  db_backup:
+    image: postgres:16-alpine
+    container_name: votacao-db-backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: votacao-db
+      PGUSER: ${POSTGRES_USER:-votacao}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-votacao_db}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - /mnt/docker-data/backups/votacao:/backups
+    networks:
+      - internal
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Backup service ativo (diário às 03:00 UTC)"
+        while true; do
+          NOW_TS=$$(date -u +%s)
+          NEXT_TS=$$(date -u -d "tomorrow 03:00" +%s 2>/dev/null || date -u -d "$$(date -u +%Y-%m-%d) 03:00 + 1 day" +%s)
+          SLEEP=$$((NEXT_TS - NOW_TS))
+          if [ "$$SLEEP" -gt 0 ] && [ "$$SLEEP" -lt 86400 ]; then
+            echo "[backup] aguardando $${SLEEP}s ate proximo 03:00 UTC"
+            sleep $$SLEEP
+          fi
+          STAMP=$$(date -u +%Y%m%d_%H%M%S)
+          FILE="/backups/votacao_$${STAMP}.sql.gz"
+          echo "[backup] iniciando $${FILE}"
+          if pg_dump --format=plain --no-owner --no-privileges | gzip > "$${FILE}"; then
+            if gunzip -t "$${FILE}" 2>/dev/null && [ "$$(gunzip -c "$${FILE}" | head -c 100 | wc -c)" -gt 50 ]; then
+              SIZE=$$(stat -c%s "$${FILE}" 2>/dev/null || echo "?")
+              echo "[backup] OK $${FILE} ($${SIZE} bytes)"
+            else
+              echo "[backup] FALHOU validacao $${FILE}"
+              rm -f "$${FILE}"
+            fi
+          else
+            echo "[backup] FALHOU pg_dump"
+            rm -f "$${FILE}"
+          fi
+          find /backups -name "votacao_*.sql.gz" -mtime +$${BACKUP_RETENTION_DAYS} -delete
+          sleep 60
+        done
+
 volumes:
   votacao_postgres:
 

@@ -1,4 +1,5 @@
 import logging
+import os
 
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
@@ -76,7 +77,11 @@ class UserSerializer(serializers.ModelSerializer):
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
-    permission_classes = [permissions.AllowAny]
+
+    def get_permissions(self):
+        if os.getenv("DJANGO_ENV", "development").lower() == "production":
+            return [IsMasterUser()]
+        return [permissions.AllowAny()]
 
 
 @ratelimit(key="ip", rate="10/m", block=True)

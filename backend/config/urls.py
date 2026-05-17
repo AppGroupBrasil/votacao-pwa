@@ -40,8 +40,12 @@ def healthz(_request):
         return JsonResponse({"status": "error"}, status=503)
 
 
+import os
+
+ADMIN_URL_PATH = os.getenv("DJANGO_ADMIN_PATH", "admin/").strip("/") + "/"
+
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    path(ADMIN_URL_PATH, admin.site.urls),
     path("api/", api_root),
     path("api/healthz/", healthz),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
