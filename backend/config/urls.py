@@ -58,6 +58,7 @@ urlpatterns = [
     path("api/eleitores/", include("apps.eleitores.urls")),
     path("api/assembleias/", include("apps.assembleias.urls")),
     path("api/votos/", include("apps.votos.urls")),
+    path("api/provisioning/", include("core.urls_provisioning")),
 ]
 
 if settings.DEBUG:
