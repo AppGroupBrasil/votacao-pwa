@@ -24,7 +24,7 @@ export default function ExcluirContaPage() {
         <a href="mailto:contato@appvotacao.com.br?subject=Exclus%C3%A3o%20de%20conta%20-%20Vota%C3%A7%C3%A3o%20Online">
           contato@appvotacao.com.br
         </a>{" "}
-        com o assunto <em>"Exclusão de conta - Votação Online"</em> e informe:
+        com o assunto <em>&quot;Exclusão de conta - Votação Online&quot;</em> e informe:
       </p>
       <ul>
         <li>Nome completo</li>
