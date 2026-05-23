@@ -26,6 +26,7 @@ export default function RootLayout({
       <body className="min-h-screen">
         {children}
         <CookieBanner />
+        <script src="https://appgroupbrasil.com.br/embed/app-group-banner.js" data-color="#10b981" data-routes="/" defer></script>
       </body>
     </html>
   );
