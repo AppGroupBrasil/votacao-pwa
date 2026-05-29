@@ -123,6 +123,9 @@ export default function FaceCapture({ eleitorId, onCapture }: FaceCaptureProps) 
     }
   }
 
+  const handleCaptureRef = useRef(handleCapture);
+  handleCaptureRef.current = handleCapture;
+
   // Auto-detect: tenta detectar rosto automaticamente a cada 800ms
   useEffect(() => {
     if (status !== "ready") {
@@ -148,7 +151,7 @@ export default function FaceCapture({ eleitorId, onCapture }: FaceCaptureProps) 
         setTimeout(() => setCountdown(1), 2000);
         setTimeout(() => {
           setCountdown(null);
-          handleCapture();
+          handleCaptureRef.current();
         }, 3000);
       } catch {
         // Silenciar erros de detecção no loop

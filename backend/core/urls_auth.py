@@ -6,6 +6,7 @@ from .views_auth import (
     login_view,
     logout_view,
     password_reset_request,
+    password_reset_confirm,
     refresh_view,
     master_dashboard,
     master_users_list,
@@ -21,6 +22,7 @@ urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
     path("me/", MeView.as_view(), name="me"),
     path("password-reset/", password_reset_request, name="password-reset"),
+    path("password-reset/confirm/", password_reset_confirm, name="password-reset-confirm"),
     # Master endpoints
     path("master/dashboard/", master_dashboard, name="master-dashboard"),
     path("master/users/", master_users_list, name="master-users-list"),

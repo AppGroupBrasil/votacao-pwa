@@ -24,7 +24,8 @@ def _cookie_attrs():
     }
 
 
-def set_auth_cookies(response, access: str, refresh: str | None = None):
+def set_auth_cookies(response, access: str, refresh: str | None = None,
+                     refresh_max_age: int | None = None):
     attrs = _cookie_attrs()
     access_lifetime = settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"]
     response.set_cookie(
@@ -33,10 +34,11 @@ def set_auth_cookies(response, access: str, refresh: str | None = None):
         **attrs,
     )
     if refresh:
-        refresh_lifetime = settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"]
+        if refresh_max_age is None:
+            refresh_max_age = int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds())
         response.set_cookie(
             REFRESH_COOKIE, refresh,
-            max_age=int(refresh_lifetime.total_seconds()),
+            max_age=refresh_max_age,
             **attrs,
         )
     return response

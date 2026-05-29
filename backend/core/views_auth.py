@@ -9,6 +9,8 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.conf import settings
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django_ratelimit.decorators import ratelimit
 from rest_framework import generics, permissions, serializers, status
 from rest_framework.decorators import api_view, permission_classes
@@ -91,6 +93,7 @@ class RegisterView(generics.CreateAPIView):
 def login_view(request):
     username = str(request.data.get("username", "")).strip()
     password = str(request.data.get("password", ""))
+    remember = bool(request.data.get("remember", False))
 
     if not username or not password:
         return Response(
@@ -107,10 +110,16 @@ def login_view(request):
             status=status.HTTP_401_UNAUTHORIZED,
         )
 
-    audit.info("login_ok user_id=%s username=%s ip=%s", user.id, user.username, ip)
+    audit.info("login_ok user_id=%s username=%s ip=%s remember=%s", user.id, user.username, ip, remember)
     refresh = RefreshToken.for_user(user)
+    refresh_max_age = None
+    if remember:
+        from datetime import timedelta
+        extended = timedelta(days=30)
+        refresh.set_exp(lifetime=extended)
+        refresh_max_age = int(extended.total_seconds())
     response = Response(UserSerializer(user).data)
-    set_auth_cookies(response, str(refresh.access_token), str(refresh))
+    set_auth_cookies(response, str(refresh.access_token), str(refresh), refresh_max_age=refresh_max_age)
     return response
 
 
@@ -218,10 +227,17 @@ def password_reset_request(request):
     try:
         user = User.objects.get(email__iexact=email)
         token = default_token_generator.make_token(user)
-        # In production, send real link; in dev, print to console
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        frontend_base_url = getattr(settings, "FRONTEND_APP_URL", "http://localhost:3000").rstrip("/")
+        reset_url = f"{frontend_base_url}/redefinir-senha/{uid}/{token}"
         send_mail(
             subject="Redefinir senha — Votação Online",
-            message=f"Use este token para redefinir sua senha: {token}\n\nUsuário: {user.username}",
+            message=(
+                f"Olá, {user.first_name or user.username}.\n\n"
+                f"Você solicitou a redefinição da sua senha. Clique no link abaixo para criar uma nova senha:\n\n"
+                f"{reset_url}\n\n"
+                f"Se você não solicitou isso, ignore este e-mail. O link é válido por tempo limitado."
+            ),
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user.email],
             fail_silently=True,
@@ -229,6 +245,50 @@ def password_reset_request(request):
     except User.DoesNotExist:
         pass
     return Response({"sent": True})
+
+
+@ratelimit(key="ip", rate="10/h", block=True)
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def password_reset_confirm(request):
+    """Validate uid+token and set a new password."""
+    uid = str(request.data.get("uid", "")).strip()
+    token = str(request.data.get("token", "")).strip()
+    new_password = str(request.data.get("new_password", ""))
+
+    if not uid or not token or not new_password:
+        return Response(
+            {"error": "Dados incompletos."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        user_pk = force_str(urlsafe_base64_decode(uid))
+        user = User.objects.get(pk=user_pk)
+    except (ValueError, TypeError, OverflowError, User.DoesNotExist):
+        return Response(
+            {"error": "Link inválido ou expirado."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not default_token_generator.check_token(user, token):
+        return Response(
+            {"error": "Link inválido ou expirado."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        validate_password(new_password, user=user)
+    except ValidationError as exc:
+        return Response(
+            {"error": " ".join(exc.messages)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user.set_password(new_password)
+    user.save()
+    audit.info("password_reset_ok user_id=%s username=%s", user.id, user.username)
+    return Response({"reset": True})
 
 
 # ── Master-only views ────────────────────────────────────────────

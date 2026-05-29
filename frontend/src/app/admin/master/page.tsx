@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Shield,
@@ -29,11 +29,7 @@ export default function MasterPage() {
   const [editRole, setEditRole] = useState<"administradora" | "sindico">("sindico");
   const [editCondominios, setEditCondominios] = useState<string[]>([]);
 
-  useEffect(() => {
-    loadAll();
-  }, []);
-
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     try {
       const [d, u, c] = await Promise.all([
         api.masterDashboard(),
@@ -52,7 +48,11 @@ export default function MasterPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [router]);
+
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
 
   async function toggleAdimplente(cond: Condominio) {
     try {

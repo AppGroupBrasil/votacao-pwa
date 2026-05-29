@@ -69,10 +69,10 @@ async function tryRefresh(): Promise<boolean> {
 
 export const api = {
   // Auth
-  login: (username: string, password: string) =>
+  login: (username: string, password: string, remember = false) =>
     request<User>("/auth/login/", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, remember }),
     }),
 
   logout: () =>
@@ -305,6 +305,12 @@ export const api = {
     request<{ sent: boolean }>("/auth/password-reset/", {
       method: "POST",
       body: JSON.stringify({ email }),
+    }),
+
+  confirmPasswordReset: (uid: string, token: string, new_password: string) =>
+    request<{ reset: boolean }>("/auth/password-reset/confirm/", {
+      method: "POST",
+      body: JSON.stringify({ uid, token, new_password }),
     }),
 
   // Master

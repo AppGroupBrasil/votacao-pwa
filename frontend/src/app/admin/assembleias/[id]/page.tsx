@@ -16,7 +16,7 @@ import {
   Pencil,
   X,
   Save,
-  Image,
+  Image as ImageIcon,
   FileDown,
   ExternalLink,
   ClipboardList,
@@ -735,7 +735,7 @@ export default function AssembleiaDetailPage() {
                     <div className="ml-7 grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <div>
                         <label className="flex items-center gap-1 text-xs text-gray-500 mb-1">
-                          <Image className="w-3 h-3" /> Foto
+                          <ImageIcon className="w-3 h-3" /> Foto
                         </label>
                         <input
                           type="file"
@@ -883,7 +883,7 @@ export default function AssembleiaDetailPage() {
                             <div className="ml-7 grid grid-cols-1 sm:grid-cols-3 gap-2">
                               <div>
                                 <label className="flex items-center gap-1 text-xs text-gray-500 mb-1">
-                                  <Image className="w-3 h-3" /> Foto
+                                  <ImageIcon className="w-3 h-3" /> Foto
                                   {q.opcoes[i]?.imagem_url && <span className="text-green-600 ml-1">(atual)</span>}
                                 </label>
                                 <input
@@ -971,7 +971,7 @@ export default function AssembleiaDetailPage() {
                             </span>
                             {o.imagem_url && (
                               <a href={o.imagem_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                                <Image className="w-3 h-3" /> Foto
+                                <ImageIcon className="w-3 h-3" /> Foto
                               </a>
                             )}
                             {o.arquivo_url && (
