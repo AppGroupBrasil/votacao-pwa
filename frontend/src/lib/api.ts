@@ -37,7 +37,12 @@ async function request<T>(
 
   let res = await doFetch();
 
-  if (res.status === 401) {
+  const skipRefresh =
+    path.startsWith("/auth/login") ||
+    path.startsWith("/auth/register") ||
+    path.startsWith("/auth/refresh");
+
+  if (res.status === 401 && !skipRefresh) {
     const refreshed = await tryRefresh();
     if (refreshed) {
       res = await doFetch();
