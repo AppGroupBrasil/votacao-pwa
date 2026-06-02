@@ -1,0 +1,62 @@
+# Config dinâmica do Traefik (coolify-proxy) para o Votação Online.
+# FONTE DE VERDADE deste arquivo: copie para o servidor em
+#   /data/coolify/proxy/dynamic/votacao.yaml
+# O Traefik (file provider) recarrega sozinho ao salvar.
+#
+# IMPORTANTE: o painel admin do Next.js usa /admin/* — por isso o backend
+# (Django) recebe APENAS o path ofuscado do admin (DJANGO_ADMIN_PATH), e NÃO
+# o prefixo /admin genérico (que roubaria /admin/* do frontend e dava 404).
+http:
+  routers:
+    votacao-api-http:
+      entryPoints:
+        - http
+      rule: "Host(`appvotacao.com.br`) && (PathPrefix(`/api`) || PathPrefix(`/admin-s6zw5hbdiouddy4s4ykq`) || PathPrefix(`/static`) || PathPrefix(`/media`))"
+      middlewares:
+        - votacao-redirect-https
+      service: votacao-backend-svc
+      priority: 100
+
+    votacao-api-https:
+      entryPoints:
+        - https
+      rule: "Host(`appvotacao.com.br`) && (PathPrefix(`/api`) || PathPrefix(`/admin-s6zw5hbdiouddy4s4ykq`) || PathPrefix(`/static`) || PathPrefix(`/media`))"
+      service: votacao-backend-svc
+      tls:
+        certResolver: letsencrypt
+      priority: 100
+
+    votacao-web-http:
+      entryPoints:
+        - http
+      rule: "Host(`appvotacao.com.br`)"
+      middlewares:
+        - votacao-redirect-https
+      service: votacao-frontend-svc
+      priority: 50
+
+    votacao-web-https:
+      entryPoints:
+        - https
+      rule: "Host(`appvotacao.com.br`)"
+      service: votacao-frontend-svc
+      tls:
+        certResolver: letsencrypt
+      priority: 50
+
+  middlewares:
+    votacao-redirect-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    votacao-backend-svc:
+      loadBalancer:
+        servers:
+          - url: "http://votacao-backend:8000"
+
+    votacao-frontend-svc:
+      loadBalancer:
+        servers:
+          - url: "http://votacao-frontend:3000"
