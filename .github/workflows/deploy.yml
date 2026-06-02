@@ -34,9 +34,15 @@ jobs:
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
             "cd ${{ env.APP_PATH }} && docker compose -f docker-compose.coolify.yml up -d --build --remove-orphans"
 
+      - name: Run migrations
+        run: |
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            "cd ${{ env.APP_PATH }} && docker compose -f docker-compose.coolify.yml exec -T backend python manage.py migrate --noinput"
+
       - name: Health check
         run: |
           sleep 15
           ssh -o ServerAliveInterval=30 \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
-            "docker ps --filter name=votacao --format '{{.Names}}: {{.Status}}'"
+            "cd ${{ env.APP_PATH }} && docker compose -f docker-compose.coolify.yml ps"
