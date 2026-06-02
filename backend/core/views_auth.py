@@ -1,9 +1,9 @@
 import logging
 import os
+import re
 
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
@@ -29,9 +29,20 @@ from core.models import PerfilAdmin
 
 audit = logging.getLogger("audit")
 
+PIN_PATTERN = re.compile(r"^\d{6}$")
+
+
+def validate_pin(value):
+    if not PIN_PATTERN.match(value or ""):
+        raise ValidationError("A senha deve conter exatamente 6 dígitos numéricos.")
+
 
 class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=8)
+    password = serializers.RegexField(
+        r"^\d{6}$",
+        write_only=True,
+        error_messages={"invalid": "A senha deve conter exatamente 6 dígitos numéricos."},
+    )
 
     class Meta:
         model = User
@@ -81,8 +92,6 @@ class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
 
     def get_permissions(self):
-        if os.getenv("DJANGO_ENV", "development").lower() == "production":
-            return [IsMasterUser()]
         return [permissions.AllowAny()]
 
 
@@ -190,7 +199,7 @@ class MeView(APIView):
         new_password = request.data.get("new_password")
         if new_password:
             try:
-                validate_password(new_password, user=user)
+                validate_pin(new_password)
             except ValidationError as exc:
                 return Response(
                     {"error": " ".join(exc.messages)},
@@ -278,7 +287,7 @@ def password_reset_confirm(request):
         )
 
     try:
-        validate_password(new_password, user=user)
+        validate_pin(new_password)
     except ValidationError as exc:
         return Response(
             {"error": " ".join(exc.messages)},

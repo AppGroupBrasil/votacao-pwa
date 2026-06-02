@@ -9,7 +9,7 @@ from rest_framework import exceptions
 ACCESS_COOKIE = "access_token"
 REFRESH_COOKIE = "refresh_token"
 
-APP_SLUG = "votacao-online"
+APP_SLUGS = {"votacao-online", "app-votacao"}
 STATUS_VALIDOS_LICENCA = {"ativa", "trial"}
 CENTRAL_JWT_SECRET = os.getenv("JWT_SECRET", "")
 
@@ -66,7 +66,7 @@ def _try_central_token(raw_token):
     apps = payload.get("apps")
     if not isinstance(apps, list):
         return None
-    licenca = next((a for a in apps if a.get("slug") == APP_SLUG), None)
+    licenca = next((a for a in apps if a.get("slug") in APP_SLUGS), None)
     if not licenca or licenca.get("status") not in STATUS_VALIDOS_LICENCA:
         raise exceptions.PermissionDenied("Sem licença ativa para Votação Online.")
     expira = licenca.get("expira_em")

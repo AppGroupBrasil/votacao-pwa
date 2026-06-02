@@ -22,8 +22,8 @@ export default function RedefinirSenhaPage() {
     e.preventDefault();
     setError("");
 
-    if (password.length < 8) {
-      setError("A senha deve ter no mínimo 8 caracteres.");
+    if (!/^\d{6}$/.test(password)) {
+      setError("A senha deve conter exatamente 6 dígitos numéricos.");
       return;
     }
     if (password !== confirm) {
@@ -93,7 +93,10 @@ export default function RedefinirSenhaPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="input-field pr-10"
                 required
-                minLength={8}
+                inputMode="numeric"
+                pattern="\d{6}"
+                maxLength={6}
+                placeholder="6 dígitos"
                 autoComplete="new-password"
               />
               <button
@@ -120,7 +123,10 @@ export default function RedefinirSenhaPage() {
               onChange={(e) => setConfirm(e.target.value)}
               className="input-field"
               required
-              minLength={8}
+              inputMode="numeric"
+              pattern="\d{6}"
+              maxLength={6}
+              placeholder="6 dígitos"
               autoComplete="new-password"
             />
           </div>

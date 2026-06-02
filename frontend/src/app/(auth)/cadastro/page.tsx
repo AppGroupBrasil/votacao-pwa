@@ -33,8 +33,8 @@ export default function CadastroPage() {
       return;
     }
 
-    if (form.password.length < 8) {
-      setError("A senha deve ter pelo menos 8 caracteres.");
+    if (!/^\d{6}$/.test(form.password)) {
+      setError("A senha deve conter exatamente 6 dígitos numéricos.");
       return;
     }
 
@@ -138,7 +138,10 @@ export default function CadastroPage() {
                 onChange={(e) => update("password", e.target.value)}
                 className="input-field pr-10"
                 required
-                minLength={8}
+                inputMode="numeric"
+                pattern="\d{6}"
+                maxLength={6}
+                placeholder="6 dígitos"
                 autoComplete="new-password"
               />
               <button
@@ -161,7 +164,10 @@ export default function CadastroPage() {
               onChange={(e) => update("password2", e.target.value)}
               className="input-field"
               required
-              minLength={8}
+              inputMode="numeric"
+              pattern="\d{6}"
+              maxLength={6}
+              placeholder="6 dígitos"
               autoComplete="new-password"
             />
           </div>

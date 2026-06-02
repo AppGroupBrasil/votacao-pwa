@@ -186,8 +186,10 @@ export default function ContaPage() {
               className="input pr-10"
               value={form.new_password}
               onChange={(e) => setForm({ ...form, new_password: e.target.value })}
-              minLength={8}
-              placeholder="Mínimo 8 caracteres"
+              inputMode="numeric"
+              pattern="\d{6}"
+              maxLength={6}
+              placeholder="6 dígitos numéricos"
             />
             <button
               type="button"
