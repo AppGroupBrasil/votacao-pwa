@@ -2,12 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Building2 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Condominio } from "@/lib/types";
 
 export default function NovaAssembleiaPage() {
   const router = useRouter();
   const [condominios, setCondominios] = useState<Condominio[]>([]);
+  const [carregandoCond, setCarregandoCond] = useState(true);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     condominio: "",
@@ -22,7 +25,10 @@ export default function NovaAssembleiaPage() {
   });
 
   useEffect(() => {
-    api.getCondominios().then((data) => setCondominios(data.results || data));
+    api
+      .getCondominios()
+      .then((data) => setCondominios(data.results || data))
+      .finally(() => setCarregandoCond(false));
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -46,6 +52,21 @@ export default function NovaAssembleiaPage() {
     <div className="max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Nova Assembleia</h1>
 
+      {!carregandoCond && condominios.length === 0 ? (
+        <div className="card text-center py-10">
+          <Building2 className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+          <h2 className="text-lg font-semibold mb-1">
+            Cadastre um condomínio primeiro
+          </h2>
+          <p className="text-sm text-gray-500 mb-5 max-w-md mx-auto">
+            Para criar a primeira assembleia, é preciso ter ao menos um
+            condomínio cadastrado. Cadastre o condomínio e volte aqui.
+          </p>
+          <Link href="/admin/cadastro" className="btn-primary inline-flex">
+            Cadastrar condomínio
+          </Link>
+        </div>
+      ) : (
       <form onSubmit={handleSubmit} className="card space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -193,6 +214,7 @@ export default function NovaAssembleiaPage() {
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 }

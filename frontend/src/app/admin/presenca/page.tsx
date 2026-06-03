@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { UserCheck, ChevronRight, Loader2 } from "lucide-react";
+import { UserCheck, ChevronRight, Loader2, ClipboardList } from "lucide-react";
 import { api } from "@/lib/api";
 import type { AssembleiaListItem } from "@/lib/types";
 
@@ -28,7 +28,8 @@ export default function PresencaHubPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Lista de Presença</h1>
         <p className="text-sm text-gray-500">
-          Escolha a assembleia para ver quem entrou e marcar presenças.
+          Cada assembleia tem a sua própria lista. Escolha uma assembleia
+          abaixo para ver quem entrou e marcar presenças.
         </p>
       </div>
 
@@ -38,12 +39,19 @@ export default function PresencaHubPage() {
         </div>
       ) : assembleias.length === 0 ? (
         <div className="card text-center py-10">
-          <p className="text-gray-500">
-            Nenhuma assembleia cadastrada.{" "}
-            <Link href="/admin/assembleias" className="text-primary-600 hover:underline">
-              Cadastrar agora
-            </Link>
+          <ClipboardList className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+          <h2 className="text-lg font-semibold mb-1">
+            A lista de presença é criada dentro de uma assembleia
+          </h2>
+          <p className="text-sm text-gray-500 mb-5 max-w-md mx-auto">
+            Não existe uma lista de presença separada: ela é gerada
+            automaticamente para cada assembleia. Crie uma assembleia e a lista
+            será preenchida conforme os moradores se autenticarem (ou você marcar
+            presença manualmente).
           </p>
+          <Link href="/admin/assembleias/nova" className="btn-primary inline-flex">
+            Cadastrar Assembleia Agora
+          </Link>
         </div>
       ) : (
         <div className="space-y-3">

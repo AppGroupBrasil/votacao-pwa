@@ -46,6 +46,48 @@ class EnqueteOpcao(models.Model):
         return self.texto
 
 
+class ListaPresenca(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    condominio = models.ForeignKey(
+        Condominio,
+        on_delete=models.CASCADE,
+        related_name="listas_presenca",
+        null=True,
+        blank=True,
+    )
+    titulo = models.CharField(max_length=255)
+    ativa = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+        verbose_name = "Lista de presença manual"
+        verbose_name_plural = "Listas de presença manual"
+
+    def __str__(self):
+        return self.titulo
+
+
+class PresencaManual(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lista = models.ForeignKey(
+        ListaPresenca, on_delete=models.CASCADE, related_name="registros"
+    )
+    nome = models.CharField(max_length=200)
+    bloco = models.CharField(max_length=20, blank=True, default="")
+    apartamento = models.CharField(max_length=20, blank=True, default="")
+    selfie = models.TextField(blank=True, default="")
+    assinatura = models.TextField(blank=True, default="")
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["criado_em"]
+
+    def __str__(self):
+        return self.nome
+
+
 class EnqueteVoto(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     enquete = models.ForeignKey(

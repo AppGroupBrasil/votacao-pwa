@@ -532,6 +532,60 @@ export const api = {
       }),
     }),
 
+  getControleVotacao: (assembleiaId: string) =>
+    request<import("./types").ControleVotacao>(
+      `/assembleias/${assembleiaId}/controle-votacao/`
+    ),
+
+  // Listas de presença manual (Votação Simples)
+  getListasPresenca: () =>
+    request<
+      import("./types").PaginatedResponse<import("./types").ListaPresenca>
+    >("/enquetes/listas-presenca/"),
+
+  createListaPresenca: (titulo: string, condominio?: string | null) =>
+    request<import("./types").ListaPresenca>("/enquetes/listas-presenca/", {
+      method: "POST",
+      body: JSON.stringify({ titulo, condominio: condominio ?? null }),
+    }),
+
+  updateListaPresenca: (
+    id: string,
+    data: Partial<{ titulo: string; ativa: boolean }>
+  ) =>
+    request<import("./types").ListaPresenca>(
+      `/enquetes/listas-presenca/${id}/`,
+      { method: "PATCH", body: JSON.stringify(data) }
+    ),
+
+  deleteListaPresenca: (id: string) =>
+    request<void>(`/enquetes/listas-presenca/${id}/`, { method: "DELETE" }),
+
+  getRegistrosPresenca: (id: string) =>
+    request<import("./types").PresencaManualRegistro[]>(
+      `/enquetes/listas-presenca/${id}/registros/`
+    ),
+
+  getListaPresencaPublica: (id: string) =>
+    request<{ id: string; titulo: string; ativa: boolean }>(
+      `/enquetes/listas-presenca/${id}/publica/`
+    ),
+
+  registrarPresencaManual: (
+    id: string,
+    data: {
+      nome: string;
+      bloco?: string;
+      apartamento?: string;
+      selfie?: string;
+      assinatura: string;
+    }
+  ) =>
+    request<{ ok: boolean }>(
+      `/enquetes/listas-presenca/${id}/registrar/`,
+      { method: "POST", body: JSON.stringify(data) }
+    ),
+
   // Master
   masterDashboard: () =>
     request<MasterDashboard>("/auth/master/dashboard/"),

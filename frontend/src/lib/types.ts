@@ -230,6 +230,49 @@ export interface Enquete {
   total_votos: number;
 }
 
+export interface ControleVotacaoEleitor {
+  eleitor_id: string;
+  nome: string;
+  bloco: string;
+  apartamento: string;
+  respondidas: number;
+  votou: boolean;
+  completo: boolean;
+  pendente: boolean;
+  ultimo_voto: string | null;
+}
+
+export interface ControleVotacao {
+  total_questoes: number;
+  resumo: {
+    total_eleitores: number;
+    votaram: number;
+    completos: number;
+    faltam: number;
+    percentual: number;
+  };
+  eleitores: ControleVotacaoEleitor[];
+}
+
+export interface ListaPresenca {
+  id: string;
+  condominio: string | null;
+  titulo: string;
+  ativa: boolean;
+  criado_em: string;
+  total_registros: number;
+}
+
+export interface PresencaManualRegistro {
+  id: string;
+  nome: string;
+  bloco: string;
+  apartamento: string;
+  selfie: string;
+  assinatura: string;
+  criado_em: string;
+}
+
 export interface EnquetePublica {
   id: string;
   titulo: string;

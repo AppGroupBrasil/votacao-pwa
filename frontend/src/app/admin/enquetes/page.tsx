@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import NextLink from "next/link";
 import {
   Plus,
   X,
@@ -11,9 +12,11 @@ import {
   Power,
   Lock,
   Eye,
+  ClipboardList,
+  Users,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import type { Enquete } from "@/lib/types";
+import type { Enquete, ListaPresenca } from "@/lib/types";
 
 export default function EnquetesPage() {
   const [enquetes, setEnquetes] = useState<Enquete[]>([]);
@@ -26,6 +29,11 @@ export default function EnquetesPage() {
   const [erro, setErro] = useState("");
   const [copiado, setCopiado] = useState<string>("");
 
+  const [listas, setListas] = useState<ListaPresenca[]>([]);
+  const [listaModalOpen, setListaModalOpen] = useState(false);
+  const [listaTitulo, setListaTitulo] = useState("");
+  const [salvandoLista, setSalvandoLista] = useState(false);
+
   function carregar() {
     setLoading(true);
     api
@@ -34,9 +42,56 @@ export default function EnquetesPage() {
       .finally(() => setLoading(false));
   }
 
+  function carregarListas() {
+    api
+      .getListasPresenca()
+      .then((d) => setListas(d.results || (d as any)))
+      .catch(() => {});
+  }
+
   useEffect(() => {
     carregar();
+    carregarListas();
   }, []);
+
+  async function salvarLista() {
+    if (!listaTitulo.trim()) return;
+    setSalvandoLista(true);
+    try {
+      await api.createListaPresenca(listaTitulo.trim());
+      setListaTitulo("");
+      setListaModalOpen(false);
+      carregarListas();
+    } finally {
+      setSalvandoLista(false);
+    }
+  }
+
+  function linkListaPublico(id: string) {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/presenca-manual/${id}`;
+  }
+
+  async function copiarLinkLista(id: string) {
+    try {
+      await navigator.clipboard.writeText(linkListaPublico(id));
+      setCopiado(`lista-${id}`);
+      setTimeout(() => setCopiado(""), 2000);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function alternarListaAtiva(l: ListaPresenca) {
+    await api.updateListaPresenca(l.id, { ativa: !l.ativa });
+    carregarListas();
+  }
+
+  async function excluirLista(id: string) {
+    if (!confirm("Excluir esta lista e todos os registros de presença?")) return;
+    await api.deleteListaPresenca(id);
+    carregarListas();
+  }
 
   function abrirModal() {
     setTitulo("");
@@ -198,6 +253,128 @@ export default function EnquetesPage() {
           </div>
         ))}
       </div>
+
+      <div className="mt-10 mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <ClipboardList className="w-5 h-5 text-indigo-600" /> Lista de
+            presença manual
+          </h2>
+          <p className="text-sm text-gray-500">
+            Gere um link para que os presentes registrem presença pelo celular:
+            selfie, nome, bloco, apartamento e assinatura na tela.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            setListaTitulo("");
+            setListaModalOpen(true);
+          }}
+          className="btn-primary flex items-center gap-2 shrink-0"
+        >
+          <Plus className="w-4 h-4" /> Nova lista
+        </button>
+      </div>
+
+      {listas.length === 0 && (
+        <div className="card text-center py-8">
+          <p className="text-gray-500">Nenhuma lista de presença criada ainda.</p>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {listas.map((l) => (
+          <div key={l.id} className="card">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="font-semibold text-lg">{l.titulo}</h3>
+                <p className="text-sm text-gray-500">
+                  {l.total_registros} presença
+                  {l.total_registros !== 1 ? "s" : ""} ·{" "}
+                  {l.ativa ? (
+                    <span className="text-green-600">aberta</span>
+                  ) : (
+                    <span className="text-gray-400">encerrada</span>
+                  )}
+                </p>
+              </div>
+              <NextLink
+                href={`/admin/listas-presenca/${l.id}`}
+                className="btn-secondary inline-flex items-center gap-1 text-sm shrink-0"
+              >
+                <Users className="w-4 h-4" /> Ver presenças
+              </NextLink>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => copiarLinkLista(l.id)}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+              >
+                {copiado === `lista-${l.id}` ? (
+                  <>
+                    <Check className="w-4 h-4 text-green-600" /> Copiado!
+                  </>
+                ) : (
+                  <>
+                    <LinkIcon className="w-4 h-4" /> Copiar link
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => alternarListaAtiva(l)}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+              >
+                <Power className="w-4 h-4" /> {l.ativa ? "Encerrar" : "Reabrir"}
+              </button>
+              <button
+                onClick={() => excluirLista(l.id)}
+                className="inline-flex items-center gap-1 rounded-lg border border-red-300 text-red-600 px-3 py-1.5 text-sm hover:bg-red-50"
+              >
+                <Trash2 className="w-4 h-4" /> Excluir
+              </button>
+              <span className="text-xs text-gray-400 truncate">
+                {linkListaPublico(l.id)}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {listaModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">Nova lista de presença</h2>
+              <button onClick={() => setListaModalOpen(false)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <label className="block text-sm font-medium mb-1">Título</label>
+            <input
+              value={listaTitulo}
+              onChange={(e) => setListaTitulo(e.target.value)}
+              placeholder="Ex.: Assembleia ordinária 06/2026"
+              className="input-field w-full mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setListaModalOpen(false)}
+                className="btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarLista}
+                disabled={salvandoLista}
+                className="btn-primary disabled:opacity-50"
+              >
+                {salvandoLista ? "Criando..." : "Criar e gerar link"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

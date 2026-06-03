@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Enquete, EnqueteOpcao
+from .models import Enquete, EnqueteOpcao, ListaPresenca, PresencaManual
 
 
 class EnqueteOpcaoSerializer(serializers.ModelSerializer):
@@ -69,3 +69,36 @@ class EnqueteSerializer(serializers.ModelSerializer):
                 ]
             )
         return instance
+
+
+class PresencaManualSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PresencaManual
+        fields = [
+            "id",
+            "nome",
+            "bloco",
+            "apartamento",
+            "selfie",
+            "assinatura",
+            "criado_em",
+        ]
+
+
+class ListaPresencaSerializer(serializers.ModelSerializer):
+    total_registros = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ListaPresenca
+        fields = [
+            "id",
+            "condominio",
+            "titulo",
+            "ativa",
+            "criado_em",
+            "total_registros",
+        ]
+        read_only_fields = ["id", "criado_em"]
+
+    def get_total_registros(self, obj):
+        return obj.registros.count()

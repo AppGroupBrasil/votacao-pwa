@@ -3,15 +3,29 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     EnqueteViewSet,
+    ListaPresencaViewSet,
     enquete_publica,
+    lista_presenca_publica,
+    registrar_presenca_manual,
     resultado_enquete,
     votar_enquete,
 )
 
 router = DefaultRouter()
+router.register("listas-presenca", ListaPresencaViewSet, basename="lista-presenca")
 router.register("", EnqueteViewSet, basename="enquete")
 
 urlpatterns = [
+    path(
+        "listas-presenca/<uuid:lista_id>/publica/",
+        lista_presenca_publica,
+        name="lista-presenca-publica",
+    ),
+    path(
+        "listas-presenca/<uuid:lista_id>/registrar/",
+        registrar_presenca_manual,
+        name="lista-presenca-registrar",
+    ),
     path("<uuid:enquete_id>/publica/", enquete_publica, name="enquete-publica"),
     path("<uuid:enquete_id>/votar/", votar_enquete, name="enquete-votar"),
     path(

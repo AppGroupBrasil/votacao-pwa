@@ -298,6 +298,78 @@ class AssembleiaViewSet(viewsets.ModelViewSet):
         qs = assembleia.logs.all()
         return Response(LogAuditoriaSerializer(qs, many=True).data)
 
+    @action(detail=True, methods=["get"], url_path="controle-votacao")
+    def controle_votacao(self, request, pk=None):
+        """Mapa de votação (exclusivo do síndico/administradora): quem já votou
+        e quem falta. NUNCA expõe a opção escolhida — somente a identidade do
+        eleitor e quantas questões já respondeu, preservando o sigilo do voto."""
+        from django.db.models import Count, Max
+
+        assembleia = self.get_object()
+        total_questoes = assembleia.questoes.count()
+
+        base = assembleia.votantes.all()
+        if not base.exists():
+            base = assembleia.condominio.eleitores.all()
+        base = base.order_by("nome").values("id", "nome", "bloco", "apartamento")
+
+        # Votos validados agregados por eleitor (sem trazer a opção escolhida).
+        agg = (
+            assembleia.votos.filter(status="validado")
+            .values("eleitor_id")
+            .annotate(
+                respondidas=Count("questao", distinct=True),
+                ultimo=Max("timestamp"),
+            )
+        )
+        por_eleitor = {a["eleitor_id"]: a for a in agg}
+
+        pendentes = set(
+            assembleia.votos.filter(status="pendente").values_list(
+                "eleitor_id", flat=True
+            )
+        )
+
+        itens = []
+        votaram = completos = 0
+        for e in base:
+            info = por_eleitor.get(e["id"])
+            respondidas = info["respondidas"] if info else 0
+            votou = respondidas > 0
+            completo = total_questoes > 0 and respondidas >= total_questoes
+            if votou:
+                votaram += 1
+            if completo:
+                completos += 1
+            itens.append(
+                {
+                    "eleitor_id": str(e["id"]),
+                    "nome": e["nome"],
+                    "bloco": e["bloco"],
+                    "apartamento": e["apartamento"],
+                    "respondidas": respondidas,
+                    "votou": votou,
+                    "completo": completo,
+                    "pendente": e["id"] in pendentes,
+                    "ultimo_voto": info["ultimo"] if info else None,
+                }
+            )
+
+        total = len(itens)
+        return Response(
+            {
+                "total_questoes": total_questoes,
+                "resumo": {
+                    "total_eleitores": total,
+                    "votaram": votaram,
+                    "completos": completos,
+                    "faltam": total - votaram,
+                    "percentual": round(votaram * 100 / total, 1) if total else 0,
+                },
+                "eleitores": itens,
+            }
+        )
+
 
 class QuestaoViewSet(viewsets.ModelViewSet):
     serializer_class = QuestaoSerializer

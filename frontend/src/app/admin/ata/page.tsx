@@ -38,12 +38,10 @@ export default function AtaHubPage() {
         </div>
       ) : assembleias.length === 0 ? (
         <div className="card text-center py-10">
-          <p className="text-gray-500">
-            Nenhuma assembleia cadastrada.{" "}
-            <Link href="/admin/assembleias" className="text-primary-600 hover:underline">
-              Cadastrar agora
-            </Link>
-          </p>
+          <p className="text-gray-500 mb-5">Nenhuma assembleia cadastrada.</p>
+          <Link href="/admin/assembleias/nova" className="btn-primary inline-flex">
+            Cadastrar Assembleia Agora
+          </Link>
         </div>
       ) : (
         <div className="space-y-3">
