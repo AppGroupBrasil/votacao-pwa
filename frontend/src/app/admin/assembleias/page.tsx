@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Plus, Calendar, Users, ChevronRight, Trash2, Square } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, Calendar, Users, ChevronRight, Trash2, Square, ClipboardList } from "lucide-react";
 import { api } from "@/lib/api";
 import type { AssembleiaListItem } from "@/lib/types";
 import { clsx } from "clsx";
@@ -14,6 +15,7 @@ const statusMap = {
 };
 
 export default function AssembleiasPage() {
+  const router = useRouter();
   const [assembleias, setAssembleias] = useState<AssembleiaListItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -43,7 +45,7 @@ export default function AssembleiasPage() {
   async function handleEncerrar(e: React.MouseEvent, id: string, titulo: string) {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm(`ATENÇÃO: Encerrar a votação "${titulo}" IMEDIATAMENTE?\n\nNenhum eleitor poderá mais votar após esta ação.`)) return;
+    if (!confirm(`ATENÇÃO: Encerrar a votação "${titulo}" IMEDIATAMENTE?\n\nNenhum morador poderá mais votar após esta ação.`)) return;
     if (!confirm("Confirmar encerramento? Clique OK para encerrar agora.")) return;
     try {
       await api.encerrarAssembleia(id);
@@ -53,24 +55,44 @@ export default function AssembleiasPage() {
     }
   }
 
+  const assembleiaPresenca =
+    assembleias.find((a) => a.status === "aberta") || assembleias[0];
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Assembleias</h1>
-        <Link href="/admin/assembleias/nova" className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" />
-          Nova Assembleia
-        </Link>
+        <div className="flex items-center gap-2">
+          {assembleiaPresenca ? (
+            <Link
+              href={`/admin/assembleias/${assembleiaPresenca.id}/presenca`}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <ClipboardList className="w-4 h-4" />
+              Lista de Presença
+            </Link>
+          ) : (
+            <button
+              disabled
+              title="Cadastre uma assembleia para ver a lista de presença"
+              className="btn-secondary flex items-center gap-2 opacity-50 cursor-not-allowed"
+            >
+              <ClipboardList className="w-4 h-4" />
+              Lista de Presença
+            </button>
+          )}
+          <Link href="/admin/assembleias/nova" className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            Adicionar Nova Assembleia
+          </Link>
+        </div>
       </div>
 
       {loading ? (
         <p className="text-gray-500">Carregando...</p>
       ) : assembleias.length === 0 ? (
         <div className="card text-center py-12">
-          <p className="text-gray-500 mb-4">Nenhuma assembleia cadastrada.</p>
-          <Link href="/admin/assembleias/nova" className="btn-primary">
-            Criar Primeira Assembleia
-          </Link>
+          <p className="text-gray-500">Nenhuma assembleia cadastrada.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -107,6 +129,17 @@ export default function AssembleiasPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      router.push(`/admin/assembleias/${a.id}/presenca`);
+                    }}
+                    className="text-gray-300 hover:text-primary-600 p-1.5 rounded hover:bg-primary-50 transition-colors"
+                    title="Lista de presença"
+                  >
+                    <ClipboardList className="w-4 h-4" />
+                  </button>
                   {a.status === "aberta" && (
                     <button
                       onClick={(e) => handleEncerrar(e, a.id, a.titulo)}

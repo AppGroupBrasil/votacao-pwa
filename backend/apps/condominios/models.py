@@ -17,6 +17,13 @@ class Condominio(models.Model):
         blank=True,
         help_text='Lista de blocos/torres, ex: ["A","B","C"] ou ["Torre 1","Torre 2"]',
     )
+    autocadastro_ativo = models.BooleanField(
+        default=False,
+        help_text="Se True, moradores podem se autocadastrar pelo link público.",
+    )
+    autocadastro_token = models.CharField(
+        max_length=64, unique=True, blank=True, null=True
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 

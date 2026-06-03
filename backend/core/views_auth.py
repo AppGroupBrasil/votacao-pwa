@@ -49,13 +49,17 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ["id", "username", "email", "password", "first_name", "last_name"]
 
     def create(self, validated_data):
+        from .models import PerfilAdmin
+
         user = User.objects.create_user(
             username=validated_data["username"],
             email=validated_data.get("email", ""),
             password=validated_data["password"],
             first_name=validated_data.get("first_name", ""),
             last_name=validated_data.get("last_name", ""),
+            is_staff=True,
         )
+        PerfilAdmin.objects.create(user=user, role="sindico")
         return user
 
 

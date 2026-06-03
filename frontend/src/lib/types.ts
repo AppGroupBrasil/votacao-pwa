@@ -6,6 +6,8 @@ export interface Condominio {
   total_unidades: number;
   adimplente: boolean;
   blocos: string[];
+  autocadastro_ativo: boolean;
+  autocadastro_token: string | null;
   criado_em: string;
   atualizado_em: string;
 }
@@ -22,6 +24,8 @@ export interface Eleitor {
   perfil: "proprietario" | "procurador";
   email: string;
   cadastro_completo: boolean;
+  bloqueado: boolean;
+  inadimplente: boolean;
   criado_em: string;
   atualizado_em: string;
 }
@@ -100,6 +104,8 @@ export interface VotoPayload {
   questao_id: string;
   opcao_id: string;
   auth_token: string;
+  device_id?: string;
+  por_procuracao?: boolean;
 }
 
 export interface VotoResponse {
@@ -121,6 +127,24 @@ export interface Resultado {
   total_votantes: number;
   percentual_participacao: number;
   opcoes: OpcaoResultado[];
+  procuracoes_pendentes: number;
+}
+
+export interface UnidadeVotante {
+  id: string;
+  nome: string;
+  bloco: string;
+  apartamento: string;
+}
+
+export interface ProcuracaoPendente {
+  eleitor_id: string;
+  nome: string;
+  bloco: string;
+  apartamento: string;
+  procurador_nome: string;
+  horario: string;
+  votos: { questao: string; opcao: string }[];
 }
 
 export interface RelatorioVotoItem {
@@ -145,6 +169,46 @@ export interface RelatorioVotoResponse {
   assembleia_titulo: string;
   total_registros: number;
   votos: RelatorioVotoItem[];
+}
+
+// === Enquetes (votação simples / anônima) ===
+export interface EnqueteOpcaoItem {
+  id: string;
+  texto: string;
+  ordem: number;
+}
+
+export interface Enquete {
+  id: string;
+  condominio: string | null;
+  titulo: string;
+  ativa: boolean;
+  criado_em: string;
+  opcoes: EnqueteOpcaoItem[];
+  total_votos: number;
+}
+
+export interface EnquetePublica {
+  id: string;
+  titulo: string;
+  ativa: boolean;
+  opcoes: { id: string; texto: string }[];
+}
+
+export interface EnqueteResultadoOpcao {
+  id: string;
+  texto: string;
+  votos: number;
+  percentual: number;
+}
+
+export interface EnqueteResultado {
+  id: string;
+  titulo: string;
+  ativa: boolean;
+  total_votos: number;
+  opcoes: EnqueteResultadoOpcao[];
+  vencedor: EnqueteResultadoOpcao | null;
 }
 
 // === Auth ===

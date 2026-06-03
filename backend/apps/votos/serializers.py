@@ -24,6 +24,8 @@ class VotoCreateSerializer(serializers.Serializer):
     questao_id = serializers.UUIDField()
     opcao_id = serializers.UUIDField()
     auth_token = serializers.CharField()
+    device_id = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    por_procuracao = serializers.BooleanField(required=False, default=False)
 
 
 class ResultadoQuestaoSerializer(serializers.Serializer):
@@ -67,4 +69,4 @@ class RelatorioVotoSerializer(serializers.ModelSerializer):
         ]
 
     def get_por_procuracao(self, obj):
-        return obj.eleitor.perfil == "procurador"
+        return obj.por_procuracao or obj.eleitor.perfil == "procurador"

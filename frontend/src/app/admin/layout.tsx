@@ -13,6 +13,7 @@ import {
   X,
   Shield,
   UserCircle,
+  ListChecks,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
@@ -20,8 +21,9 @@ import { clsx } from "clsx";
 
 const navItems = [
   { href: "/admin/assembleias", label: "Assembleias", icon: Vote },
-  { href: "/admin/eleitores", label: "Eleitores", icon: Users },
   { href: "/admin/resultados", label: "Resultados", icon: BarChart3 },
+  { href: "/admin/enquetes", label: "Votação Simples", icon: ListChecks },
+  { href: "/admin/eleitores", label: "Moradores", icon: Users },
   { href: "/admin/condominios", label: "Condomínios", icon: Building2 },
 ];
 

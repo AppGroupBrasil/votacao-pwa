@@ -1,15 +1,22 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus } from "lucide-react";
+import Link from "next/link";
+import { Plus, Pencil } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Condominio } from "@/lib/types";
+import BlocosEditor from "@/components/BlocosEditor";
 
 export default function CondominiosPage() {
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ nome: "", cnpj: "", total_unidades: 0, blocos: "" });
+  const [form, setForm] = useState({
+    nome: "",
+    cnpj: "",
+    total_unidades: 0,
+    blocos: [] as string[],
+  });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -27,13 +34,9 @@ export default function CondominiosPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const blocos = form.blocos
-        .split(",")
-        .map((b) => b.trim())
-        .filter(Boolean);
-      await api.createCondominio({ ...form, blocos });
+      await api.createCondominio(form);
       setShowForm(false);
-      setForm({ nome: "", cnpj: "", total_unidades: 0, blocos: "" });
+      setForm({ nome: "", cnpj: "", total_unidades: 0, blocos: [] });
       loadData();
     } catch {
       alert("Erro ao criar condomínio.");
@@ -103,21 +106,10 @@ export default function CondominiosPage() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Blocos / Torres
-            </label>
-            <input
-              type="text"
-              value={form.blocos}
-              onChange={(e) => setForm({ ...form, blocos: e.target.value })}
-              className="input-field"
-              placeholder="Ex: A, B, C ou Torre 1, Torre 2"
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              Separe os blocos por vírgula. Deixe vazio se não houver blocos.
-            </p>
-          </div>
+          <BlocosEditor
+            blocos={form.blocos}
+            onChange={(blocos) => setForm({ ...form, blocos })}
+          />
           <div className="flex gap-3">
             <button type="submit" disabled={saving} className="btn-primary">
               {saving ? "Salvando..." : "Salvar"}
@@ -143,7 +135,16 @@ export default function CondominiosPage() {
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {condominios.map((c) => (
             <div key={c.id} className="card">
-              <h3 className="font-semibold text-lg">{c.nome}</h3>
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="font-semibold text-lg">{c.nome}</h3>
+                <Link
+                  href={`/admin/condominios/${c.id}/editar`}
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors shrink-0"
+                  title="Editar condomínio"
+                >
+                  <Pencil className="w-4 h-4" />
+                </Link>
+              </div>
               <p className="text-sm text-gray-500 mt-1">CNPJ: {c.cnpj}</p>
               <p className="text-sm text-gray-500">
                 {c.total_unidades} unidade{c.total_unidades !== 1 ? "s" : ""}

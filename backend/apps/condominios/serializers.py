@@ -7,4 +7,4 @@ class CondominioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Condominio
         fields = "__all__"
-        read_only_fields = ["id", "criado_em", "atualizado_em"]
+        read_only_fields = ["id", "criado_em", "atualizado_em", "autocadastro_token"]

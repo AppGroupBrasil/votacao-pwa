@@ -15,7 +15,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from apps.assembleias.models import Assembleia, OpcaoVoto, Questao
+from apps.assembleias.models import Assembleia, OpcaoVoto, Presenca, Questao
 from apps.eleitores.models import Eleitor
 from core.permissions import IsAdminWithRole, get_user_condominios
 
@@ -153,21 +153,66 @@ def registrar_voto(request, assembleia_id):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        eleitor_id = auth_context["eleitor_id"]
+        auth_eleitor_id = auth_context["eleitor_id"]
         request_eleitor_id = serializer.validated_data.get("eleitor_id")
-        if request_eleitor_id and str(request_eleitor_id) != eleitor_id:
+        por_procuracao = bool(serializer.validated_data.get("por_procuracao"))
+        procurador = None
+
+        if por_procuracao:
+            # O morador autenticado vota por outra unidade que representa.
+            # Esse voto fica pendente até o síndico validar a procuração.
+            if not request_eleitor_id:
+                return Response(
+                    {"error": "Informe a unidade representada para o voto por procuração"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            procurador = get_object_or_404(Eleitor, id=auth_eleitor_id)
+            eleitor = get_object_or_404(Eleitor, id=request_eleitor_id)
+            if eleitor.id == procurador.id:
+                return Response(
+                    {"error": "A unidade representada deve ser diferente da sua"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            if request_eleitor_id and str(request_eleitor_id) != auth_eleitor_id:
+                return Response(
+                    {"error": "Token de autenticação não corresponde ao eleitor informado"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            eleitor = get_object_or_404(Eleitor, id=auth_eleitor_id)
+
+        if eleitor.bloqueado:
             return Response(
-                {"error": "Token de autenticação não corresponde ao eleitor informado"},
+                {"error": "Morador bloqueado. Procure a administração."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        eleitor = get_object_or_404(Eleitor, id=eleitor_id)
+        if eleitor.inadimplente:
+            return Response(
+                {"error": "Unidade inadimplente. Voto não permitido. Regularize com a administração."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         if not assembleia.votantes.filter(id=eleitor.id).exists():
             return Response(
                 {"error": "Eleitor não está na lista de votantes desta assembleia"},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        device_id = (serializer.validated_data.get("device_id") or "").strip()
+        if device_id and not por_procuracao:
+            conflito = (
+                Voto.objects.filter(assembleia=assembleia, device_id=device_id)
+                .exclude(eleitor=eleitor)
+                .exists()
+            )
+            if conflito:
+                return Response(
+                    {
+                        "error": "Você já votou neste dispositivo. Se tiver procuração, solicite o voto por procuração à administração do condomínio."
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
 
         questao = get_object_or_404(
             Questao, id=serializer.validated_data["questao_id"], assembleia=assembleia
@@ -191,6 +236,10 @@ def registrar_voto(request, assembleia_id):
             ip_address=get_client_ip(request),
             user_agent=get_client_user_agent(request),
             device_info=infer_device_info(get_client_user_agent(request)),
+            device_id=device_id,
+            por_procuracao=por_procuracao,
+            procurador=procurador,
+            status=Voto.Status.PENDENTE if por_procuracao else Voto.Status.VALIDADO,
         )
         voto.save()
 
@@ -208,6 +257,65 @@ def registrar_voto(request, assembleia_id):
     )
 
 
+@ratelimit(key="ip", rate="60/m", block=True)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def registrar_presenca(request, assembleia_id):
+    """
+    Registra a presença do morador na assembleia após autenticação
+    (biometria/desbloqueio via webauthn, facial ou token por e-mail/OTP).
+    A presença só é registrada com um auth_token válido.
+    """
+    auth_token = request.data.get("auth_token")
+    if not auth_token:
+        return Response(
+            {"error": "Autenticação obrigatória para registrar presença"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    assembleia = get_object_or_404(Assembleia, id=assembleia_id)
+
+    try:
+        auth_context = resolve_vote_auth_token(auth_token, assembleia.id)
+    except ValueError as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+    eleitor = get_object_or_404(Eleitor, id=auth_context["eleitor_id"])
+
+    if eleitor.condominio_id != assembleia.condominio_id:
+        return Response(
+            {"error": "Morador não pertence ao condomínio desta assembleia"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if eleitor.bloqueado:
+        return Response(
+            {"error": "Morador bloqueado. Procure a administração."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    presenca, created = Presenca.objects.get_or_create(
+        assembleia=assembleia,
+        eleitor=eleitor,
+        defaults={
+            "nome": eleitor.nome,
+            "bloco": eleitor.bloco,
+            "apartamento": eleitor.apartamento,
+            "perfil": eleitor.perfil,
+            "metodo_auth": auth_context["metodo_auth"],
+        },
+    )
+
+    return Response(
+        {
+            "registrado": True,
+            "novo": created,
+            "horario_entrada": presenca.horario_entrada,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAdminWithRole])
 def resultados(request, assembleia_id):
@@ -219,12 +327,27 @@ def resultados(request, assembleia_id):
     data = []
     total_votantes = assembleia.votantes.count()
 
+    procuracoes_pendentes = (
+        Voto.objects.filter(
+            assembleia=assembleia,
+            por_procuracao=True,
+            status=Voto.Status.PENDENTE,
+        )
+        .values("eleitor")
+        .distinct()
+        .count()
+    )
+
     for questao in questoes:
         opcoes_resultado = []
         total_votos_questao = 0
 
         for opcao in questao.opcoes.annotate(
-            votos_count=Count("votos", filter=Q(votos__questao=questao))
+            votos_count=Count(
+                "votos",
+                filter=Q(votos__questao=questao)
+                & Q(votos__status=Voto.Status.VALIDADO),
+            )
         ):
             count = opcao.votos_count
             total_votos_questao += count
@@ -248,10 +371,101 @@ def resultados(request, assembleia_id):
                     else 0
                 ),
                 "opcoes": opcoes_resultado,
+                "procuracoes_pendentes": procuracoes_pendentes,
             }
         )
 
     return Response(data)
+
+
+@ratelimit(key="ip", rate="30/m", block=True)
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def unidades_assembleia(request, assembleia_id):
+    """Lista pública (resumida) das unidades votantes, para seleção de
+    voto por procuração. Retorna só nome/bloco/apto, sem dados sensíveis."""
+    assembleia = get_object_or_404(Assembleia, id=assembleia_id)
+    votantes = assembleia.votantes.filter(bloqueado=False, inadimplente=False).order_by(
+        "bloco", "apartamento"
+    )
+    data = [
+        {
+            "id": str(e.id),
+            "nome": e.nome,
+            "bloco": e.bloco,
+            "apartamento": e.apartamento,
+        }
+        for e in votantes
+    ]
+    return Response(data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminWithRole])
+def procuracoes_pendentes(request, assembleia_id):
+    assembleia = get_accessible_assembleia(request, assembleia_id)
+    votos = (
+        Voto.objects.filter(
+            assembleia=assembleia,
+            por_procuracao=True,
+            status=Voto.Status.PENDENTE,
+        )
+        .select_related("eleitor", "procurador", "questao", "opcao_escolhida")
+        .order_by("eleitor__bloco", "eleitor__apartamento", "questao__ordem")
+    )
+
+    unidades = {}
+    for v in votos:
+        key = str(v.eleitor_id)
+        if key not in unidades:
+            unidades[key] = {
+                "eleitor_id": key,
+                "nome": v.eleitor.nome,
+                "bloco": v.eleitor.bloco,
+                "apartamento": v.eleitor.apartamento,
+                "procurador_nome": v.procurador.nome if v.procurador else "",
+                "horario": v.timestamp,
+                "votos": [],
+            }
+        unidades[key]["votos"].append(
+            {
+                "questao": v.questao.titulo,
+                "opcao": v.opcao_escolhida.texto,
+            }
+        )
+
+    lista = list(unidades.values())
+    return Response({"total_unidades": len(lista), "unidades": lista})
+
+
+@api_view(["POST"])
+@permission_classes([IsAdminWithRole])
+def validar_procuracao(request, assembleia_id):
+    assembleia = get_accessible_assembleia(request, assembleia_id)
+    eleitor_id = request.data.get("eleitor_id")
+    acao = str(request.data.get("acao", "")).strip().lower()
+
+    if not eleitor_id or acao not in {"aprovar", "rejeitar"}:
+        return Response(
+            {"error": "Informe eleitor_id e acao (aprovar/rejeitar)"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    novo_status = (
+        Voto.Status.VALIDADO if acao == "aprovar" else Voto.Status.REJEITADO
+    )
+    atualizados = Voto.objects.filter(
+        assembleia=assembleia,
+        eleitor_id=eleitor_id,
+        por_procuracao=True,
+        status=Voto.Status.PENDENTE,
+    ).update(status=novo_status)
+
+    audit.info(
+        "procuracao_%s assembleia=%s eleitor=%s votos=%s admin=%s",
+        acao, assembleia.id, eleitor_id, atualizados, request.user.id,
+    )
+    return Response({"status": novo_status, "votos_atualizados": atualizados})
 
 
 @api_view(["GET"])

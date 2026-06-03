@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "apps.eleitores",
     "apps.assembleias",
     "apps.votos",
+    "apps.enquetes",
 ]
 
 MIDDLEWARE = [

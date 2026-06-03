@@ -16,9 +16,12 @@ class EleitorSerializer(serializers.ModelSerializer):
             "condominio_nome",
             "nome",
             "cpf_hash",
+            "bloco",
             "apartamento",
             "email",
             "cadastro_completo",
+            "bloqueado",
+            "inadimplente",
             "criado_em",
             "atualizado_em",
         ]

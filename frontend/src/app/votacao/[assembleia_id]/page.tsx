@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { Vote, CheckCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, Link2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { Vote, CheckCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, Link2, Users, Clock, ArrowLeft } from "lucide-react";
+import { api, getDeviceId } from "@/lib/api";
 import WebAuthnVerify from "@/components/webauthn/WebAuthnVerify";
 import FaceVerify from "@/components/FaceVerify";
 import OtpVerify from "@/components/OtpVerify";
-import type { Assembleia } from "@/lib/types";
+import type { Assembleia, UnidadeVotante } from "@/lib/types";
 
 export default function VotacaoPage() {
   const params = useParams();
@@ -27,6 +27,31 @@ export default function VotacaoPage() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [error, setError] = useState("");
 
+  // Voto por procuração / mais de uma unidade
+  const [ehProcuracao, setEhProcuracao] = useState(false);
+  const [unidadeProc, setUnidadeProc] = useState<UnidadeVotante | null>(null);
+  const [unidades, setUnidades] = useState<UnidadeVotante[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [procConcluida, setProcConcluida] = useState(false);
+  const [procFeitas, setProcFeitas] = useState<string[]>([]);
+
+  function abrirProcuracao() {
+    setPickerOpen(true);
+    if (unidades.length === 0) {
+      api.getUnidades(assembleiaId).then(setUnidades).catch(() => {});
+    }
+  }
+
+  function iniciarVotoProcuracao(u: UnidadeVotante) {
+    setUnidadeProc(u);
+    setEhProcuracao(true);
+    setPickerOpen(false);
+    setProcConcluida(false);
+    setDone(false);
+    setCurrentQuestao(0);
+    setSelectedOpcao(null);
+  }
+
   // eleitor_id comes from URL param (sent via convite link)
   const eleitorId = typeof window !== "undefined"
     ? new URLSearchParams(window.location.search).get("eleitor") || ""
@@ -37,6 +62,14 @@ export default function VotacaoPage() {
       setError("Assembleia não encontrada.");
     });
   }, [assembleiaId]);
+
+  // Lista de presença: registra a presença somente após autenticação
+  // (webauthn/desbloqueio, facial ou token por e-mail/OTP).
+  useEffect(() => {
+    if (authToken) {
+      api.registrarPresenca(assembleiaId, authToken).catch(() => {});
+    }
+  }, [assembleiaId, authToken]);
 
   if (error) {
     return (
@@ -99,6 +132,91 @@ export default function VotacaoPage() {
   const questoes = assembleia.questoes || [];
   const questao = questoes[currentQuestao];
 
+  // Seletor de unidade para voto por procuração
+  if (pickerOpen) {
+    const disponiveis = unidades.filter(
+      (u) => u.id !== eleitorId && !procFeitas.includes(u.id)
+    );
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
+        <div className="card w-full max-w-md">
+          <div className="flex items-center gap-2 mb-1">
+            <Users className="w-6 h-6 text-primary-600" />
+            <h1 className="text-lg font-bold">Voto por procuração</h1>
+          </div>
+          <p className="text-sm text-gray-500 mb-4">
+            Selecione a unidade que você representa. O voto ficará pendente até
+            o síndico validar a procuração.
+          </p>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {disponiveis.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-6">
+                Nenhuma unidade disponível.
+              </p>
+            ) : (
+              disponiveis.map((u) => (
+                <button
+                  key={u.id}
+                  onClick={() => iniciarVotoProcuracao(u)}
+                  className="w-full text-left px-4 py-3 rounded-lg border-2 border-gray-200 hover:border-primary-400 transition-colors"
+                >
+                  <span className="font-medium">{u.nome}</span>
+                  <span className="block text-xs text-gray-500">
+                    {u.bloco ? `${u.bloco} / ` : ""}
+                    {u.apartamento}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+          <button
+            onClick={() => setPickerOpen(false)}
+            className="btn-secondary w-full mt-4 flex items-center justify-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" /> Voltar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Conclusão de um voto por procuração (pendente de validação)
+  if (procConcluida) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-white px-4">
+        <div className="card w-full max-w-md text-center">
+          <Clock className="w-16 h-16 text-amber-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Voto por procuração enviado</h1>
+          <p className="text-gray-600 mb-1">
+            Unidade {unidadeProc?.bloco ? `${unidadeProc.bloco} / ` : ""}
+            {unidadeProc?.apartamento}
+          </p>
+          <p className="text-gray-600 mb-6">
+            Aguardando validação do síndico/administrador. O voto só será
+            contabilizado após a aprovação.
+          </p>
+          <button
+            onClick={abrirProcuracao}
+            className="btn-primary w-full mb-2 flex items-center justify-center gap-2"
+          >
+            <Users className="w-4 h-4" /> Votar por outra unidade
+          </button>
+          <button
+            onClick={() => {
+              setProcConcluida(false);
+              setEhProcuracao(false);
+              setUnidadeProc(null);
+              setDone(true);
+            }}
+            className="btn-secondary w-full"
+          >
+            Concluir
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (done || currentQuestao >= questoes.length) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-white px-4">
@@ -145,6 +263,18 @@ export default function VotacaoPage() {
               </>
             )}
           </button>
+
+          <div className="mt-6 pt-4 border-t text-left">
+            <p className="text-xs text-gray-500 mb-2">
+              Possui procuração ou mais de uma unidade?
+            </p>
+            <button
+              onClick={abrirProcuracao}
+              className="btn-primary w-full flex items-center justify-center gap-2"
+            >
+              <Users className="w-4 h-4" /> Voto por procuração / outra unidade
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -156,20 +286,29 @@ export default function VotacaoPage() {
 
     try {
       const result = await api.votar(assembleiaId, {
-        eleitor_id: eleitorId,
+        eleitor_id: ehProcuracao && unidadeProc ? unidadeProc.id : eleitorId,
         questao_id: questao.id,
         opcao_id: selectedOpcao,
         auth_token: authToken,
+        device_id: getDeviceId(),
+        por_procuracao: ehProcuracao,
       });
 
-      setComprovantes((prev) => [
-        ...prev,
-        { questao: questao.titulo, hash: result.hash_voto },
-      ]);
+      if (!ehProcuracao) {
+        setComprovantes((prev) => [
+          ...prev,
+          { questao: questao.titulo, hash: result.hash_voto },
+        ]);
+      }
       setSelectedOpcao(null);
 
       if (currentQuestao + 1 >= questoes.length) {
-        setDone(true);
+        if (ehProcuracao) {
+          if (unidadeProc) setProcFeitas((p) => [...p, unidadeProc.id]);
+          setProcConcluida(true);
+        } else {
+          setDone(true);
+        }
       } else {
         setCurrentQuestao((prev) => prev + 1);
       }
@@ -185,6 +324,13 @@ export default function VotacaoPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center px-4">
       <div className="card w-full max-w-md">
+        {ehProcuracao && unidadeProc && (
+          <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800 flex items-center gap-2">
+            <Users className="w-4 h-4 shrink-0" />
+            Voto por procuração — {unidadeProc.bloco ? `${unidadeProc.bloco} / ` : ""}
+            {unidadeProc.apartamento} (pendente de validação)
+          </div>
+        )}
         <div className="flex items-center gap-2 mb-6">
           <Vote className="w-6 h-6 text-primary-600" />
           <span className="text-sm text-gray-500">

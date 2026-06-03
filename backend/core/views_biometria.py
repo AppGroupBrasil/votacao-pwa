@@ -34,6 +34,12 @@ def facial_auth_verify(request):
 
     eleitor = get_object_or_404(Eleitor, id=eleitor_id)
 
+    if eleitor.bloqueado:
+        return Response(
+            {"error": "Morador bloqueado. Procure a administração."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     if not eleitor.biometria_hash:
         return Response(
             {"error": "Biometria facial não cadastrada para este eleitor"},

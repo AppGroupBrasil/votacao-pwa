@@ -16,6 +16,21 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
+// Identificador persistente do dispositivo: impede que o mesmo aparelho
+// vote em mais de uma conta na mesma assembleia (evita compartilhar login).
+export function getDeviceId(): string {
+  if (typeof window === "undefined") return "";
+  let id = localStorage.getItem("device_id");
+  if (!id) {
+    id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem("device_id", id);
+  }
+  return id;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
@@ -100,11 +115,39 @@ export const api = {
   getCondominios: () =>
     request<PaginatedResponse<Condominio>>("/condominios/"),
 
+  getCondominio: (id: string) => request<Condominio>(`/condominios/${id}/`),
+
   createCondominio: (data: Partial<Condominio>) =>
     request<Condominio>("/condominios/", {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  updateCondominio: (id: string, data: Partial<Condominio>) =>
+    request<Condominio>(`/condominios/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  gerarLinkAutocadastro: (condominioId: string) =>
+    request<{ autocadastro_token: string }>(
+      `/condominios/${condominioId}/autocadastro-link/`,
+      { method: "POST" }
+    ),
+
+  getAutocadastro: (token: string) =>
+    request<{ condominio_nome: string; blocos: string[] }>(
+      `/eleitores/autocadastro/${token}/`
+    ),
+
+  autocadastrar: (
+    token: string,
+    data: { nome: string; cpf_hash: string; bloco?: string; apartamento: string; email: string }
+  ) =>
+    request<{ message: string; token: string }>(
+      `/eleitores/autocadastro/${token}/`,
+      { method: "POST", body: JSON.stringify(data) }
+    ),
 
   // Eleitores
   getEleitores: () =>
@@ -115,6 +158,41 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  bulkCreateEleitores: (
+    condominio: string,
+    eleitores: { nome: string; cpf_hash: string; bloco?: string; apartamento: string; email: string }[]
+  ) =>
+    request<{ criados: number; erros: { linha: number; erros: Record<string, string[]> }[] }>(
+      "/eleitores/bulk/",
+      {
+        method: "POST",
+        body: JSON.stringify({ condominio, eleitores }),
+      }
+    ),
+
+  getEleitor: (id: string) => request<Eleitor>(`/eleitores/${id}/`),
+
+  updateEleitor: (id: string, data: Partial<Eleitor>) =>
+    request<Eleitor>(`/eleitores/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteEleitor: (id: string) =>
+    request<void>(`/eleitores/${id}/`, { method: "DELETE" }),
+
+  setBloqueioEleitor: (id: string, bloqueado: boolean) =>
+    request<{ bloqueado: boolean }>(`/eleitores/${id}/bloqueio/`, {
+      method: "POST",
+      body: JSON.stringify({ bloqueado }),
+    }),
+
+  setInadimplenciaEleitor: (id: string, inadimplente: boolean) =>
+    request<{ inadimplente: boolean; afetados: string[] }>(
+      `/eleitores/${id}/inadimplencia/`,
+      { method: "POST", body: JSON.stringify({ inadimplente }) }
+    ),
 
   enviarConvite: (eleitorId: string) =>
     request<{ message: string; token: string; url: string }>(
@@ -219,6 +297,12 @@ export const api = {
   },
 
   // Votos
+  registrarPresenca: (assembleiaId: string, authToken: string) =>
+    request<{ registrado: boolean; novo: boolean; horario_entrada: string }>(
+      `/votos/${assembleiaId}/presenca/`,
+      { method: "POST", body: JSON.stringify({ auth_token: authToken }) }
+    ),
+
   votar: (assembleiaId: string, data: VotoPayload) =>
     request<VotoResponse>(`/votos/${assembleiaId}/votar/`, {
       method: "POST",
@@ -227,6 +311,27 @@ export const api = {
 
   getResultados: (assembleiaId: string) =>
     request<Resultado[]>(`/votos/${assembleiaId}/resultados/`),
+
+  getUnidades: (assembleiaId: string) =>
+    request<import("./types").UnidadeVotante[]>(
+      `/votos/${assembleiaId}/unidades/`
+    ),
+
+  getProcuracoesPendentes: (assembleiaId: string) =>
+    request<{
+      total_unidades: number;
+      unidades: import("./types").ProcuracaoPendente[];
+    }>(`/votos/${assembleiaId}/procuracoes/`),
+
+  validarProcuracao: (
+    assembleiaId: string,
+    eleitorId: string,
+    acao: "aprovar" | "rejeitar"
+  ) =>
+    request<{ status: string; votos_atualizados: number }>(
+      `/votos/${assembleiaId}/procuracoes/validar/`,
+      { method: "POST", body: JSON.stringify({ eleitor_id: eleitorId, acao }) }
+    ),
 
   getRelatorioVotos: (assembleiaId: string) =>
     request<RelatorioVotoResponse>(`/votos/${assembleiaId}/relatorio/`),
@@ -316,6 +421,42 @@ export const api = {
     request<{ reset: boolean }>("/auth/password-reset/confirm/", {
       method: "POST",
       body: JSON.stringify({ uid, token, new_password }),
+    }),
+
+  // Enquetes (votação simples / anônima)
+  getEnquetes: () =>
+    request<
+      import("./types").PaginatedResponse<import("./types").Enquete>
+    >("/enquetes/"),
+
+  createEnquete: (titulo: string, opcoes_texto: string[], condominio?: string) =>
+    request<import("./types").Enquete>("/enquetes/", {
+      method: "POST",
+      body: JSON.stringify({ titulo, opcoes_texto, condominio: condominio ?? null }),
+    }),
+
+  updateEnquete: (
+    id: string,
+    data: Partial<{ titulo: string; ativa: boolean; opcoes_texto: string[] }>
+  ) =>
+    request<import("./types").Enquete>(`/enquetes/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteEnquete: (id: string) =>
+    request<void>(`/enquetes/${id}/`, { method: "DELETE" }),
+
+  getEnquetePublica: (id: string) =>
+    request<import("./types").EnquetePublica>(`/enquetes/${id}/publica/`),
+
+  getEnqueteResultado: (id: string) =>
+    request<import("./types").EnqueteResultado>(`/enquetes/${id}/resultado/`),
+
+  votarEnquete: (id: string, opcaoId: string) =>
+    request<import("./types").EnqueteResultado>(`/enquetes/${id}/votar/`, {
+      method: "POST",
+      body: JSON.stringify({ opcao_id: opcaoId, device_id: getDeviceId() }),
     }),
 
   // Master

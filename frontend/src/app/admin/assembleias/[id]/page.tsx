@@ -151,7 +151,7 @@ export default function AssembleiaDetailPage() {
   }
 
   async function handleEncerrar() {
-    if (!confirm("ATENÇÃO: Isso vai encerrar a votação IMEDIATAMENTE.\n\nNenhum eleitor poderá mais votar após esta ação.\n\nDeseja continuar?")) return;
+    if (!confirm("ATENÇÃO: Isso vai encerrar a votação IMEDIATAMENTE.\n\nNenhum morador poderá mais votar após esta ação.\n\nDeseja continuar?")) return;
     if (!confirm("Confirmar encerramento da assembleia?\n\nClique OK para encerrar agora.")) return;
     setActionLoading(true);
     try {
@@ -599,7 +599,7 @@ export default function AssembleiaDetailPage() {
           </div>
           {assembleia.presencas.length === 0 ? (
             <div className="card text-center py-8">
-              <p className="text-gray-500">Nenhum eleitor se autenticou ainda.</p>
+              <p className="text-gray-500">Nenhum morador se autenticou ainda.</p>
             </div>
           ) : (
             <div className="card overflow-hidden">
@@ -1018,7 +1018,7 @@ export default function AssembleiaDetailPage() {
       {assembleia.status === "aberta" && (
         <div className="card bg-green-50 border border-green-200">
           <p className="text-sm font-medium text-green-800 mb-2">
-            Link de votação para os eleitores:
+            Link de votação para os moradores:
           </p>
           <div className="flex items-center gap-2">
             <code className="text-sm bg-white px-3 py-1.5 rounded border border-green-200 flex-1 truncate">

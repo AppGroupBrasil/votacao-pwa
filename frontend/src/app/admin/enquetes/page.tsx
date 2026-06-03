@@ -1,0 +1,256 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import {
+  Plus,
+  X,
+  Trash2,
+  Link as LinkIcon,
+  Check,
+  BarChart3,
+  Power,
+} from "lucide-react";
+import { api } from "@/lib/api";
+import type { Enquete } from "@/lib/types";
+
+export default function EnquetesPage() {
+  const [enquetes, setEnquetes] = useState<Enquete[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [titulo, setTitulo] = useState("");
+  const [opcoes, setOpcoes] = useState<string[]>(["", ""]);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [copiado, setCopiado] = useState<string>("");
+
+  function carregar() {
+    setLoading(true);
+    api
+      .getEnquetes()
+      .then((d) => setEnquetes(d.results || (d as any)))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  function abrirModal() {
+    setTitulo("");
+    setOpcoes(["", ""]);
+    setErro("");
+    setModalOpen(true);
+  }
+
+  function setOpcao(i: number, v: string) {
+    setOpcoes((o) => o.map((x, idx) => (idx === i ? v : x)));
+  }
+
+  async function salvar() {
+    setErro("");
+    const limpo = opcoes.map((o) => o.trim()).filter(Boolean);
+    if (!titulo.trim()) {
+      setErro("Informe a pergunta.");
+      return;
+    }
+    if (limpo.length < 2) {
+      setErro("Informe pelo menos duas respostas.");
+      return;
+    }
+    setSalvando(true);
+    try {
+      await api.createEnquete(titulo.trim(), limpo);
+      setModalOpen(false);
+      carregar();
+    } catch {
+      setErro("Erro ao criar a votação.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  function linkPublico(id: string) {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/enquete/${id}`;
+  }
+
+  async function copiarLink(id: string) {
+    try {
+      await navigator.clipboard.writeText(linkPublico(id));
+      setCopiado(id);
+      setTimeout(() => setCopiado(""), 2000);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function alternarAtiva(e: Enquete) {
+    await api.updateEnquete(e.id, { ativa: !e.ativa });
+    carregar();
+  }
+
+  async function excluir(id: string) {
+    if (!confirm("Excluir esta votação e todos os votos?")) return;
+    await api.deleteEnquete(id);
+    carregar();
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">Votação Simples</h1>
+          <p className="text-sm text-gray-500">
+            Enquete anônima: gere um link e compartilhe. Sem identificar morador.
+          </p>
+        </div>
+        <button
+          onClick={abrirModal}
+          className="btn-primary flex items-center gap-2"
+        >
+          <Plus className="w-4 h-4" /> Nova Votação
+        </button>
+      </div>
+
+      {loading && <p className="text-gray-500">Carregando...</p>}
+
+      {!loading && enquetes.length === 0 && (
+        <div className="card text-center py-10">
+          <p className="text-gray-500">Nenhuma votação criada ainda.</p>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {enquetes.map((e) => (
+          <div key={e.id} className="card">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="font-semibold text-lg">{e.titulo}</h3>
+                <p className="text-sm text-gray-500">
+                  {e.opcoes.length} respostas · {e.total_votos} voto
+                  {e.total_votos !== 1 ? "s" : ""} ·{" "}
+                  {e.ativa ? (
+                    <span className="text-green-600">aberta</span>
+                  ) : (
+                    <span className="text-gray-400">encerrada</span>
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={`/enquete/${e.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-secondary inline-flex items-center gap-1 text-sm"
+                >
+                  <BarChart3 className="w-4 h-4" /> Resultado
+                </a>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => copiarLink(e.id)}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+              >
+                {copiado === e.id ? (
+                  <>
+                    <Check className="w-4 h-4 text-green-600" /> Copiado!
+                  </>
+                ) : (
+                  <>
+                    <LinkIcon className="w-4 h-4" /> Copiar link
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => alternarAtiva(e)}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+              >
+                <Power className="w-4 h-4" /> {e.ativa ? "Encerrar" : "Reabrir"}
+              </button>
+              <button
+                onClick={() => excluir(e.id)}
+                className="inline-flex items-center gap-1 rounded-lg border border-red-300 text-red-600 px-3 py-1.5 text-sm hover:bg-red-50"
+              >
+                <Trash2 className="w-4 h-4" /> Excluir
+              </button>
+              <span className="text-xs text-gray-400 truncate">
+                {linkPublico(e.id)}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">Nova Votação</h2>
+              <button onClick={() => setModalOpen(false)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <label className="block text-sm font-medium mb-1">Pergunta</label>
+            <input
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder="Ex.: Qual cor para a fachada?"
+              className="input-field w-full mb-4"
+            />
+
+            <label className="block text-sm font-medium mb-1">Respostas</label>
+            <div className="space-y-2">
+              {opcoes.map((o, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    value={o}
+                    onChange={(e) => setOpcao(i, e.target.value)}
+                    placeholder={`Resposta ${i + 1}`}
+                    className="input-field w-full"
+                  />
+                  {opcoes.length > 2 && (
+                    <button
+                      onClick={() =>
+                        setOpcoes((ops) => ops.filter((_, idx) => idx !== i))
+                      }
+                      className="text-gray-400 hover:text-red-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setOpcoes((o) => [...o, ""])}
+              className="mt-2 inline-flex items-center gap-1 text-sm text-primary-600 hover:underline"
+            >
+              <Plus className="w-4 h-4" /> Adicionar resposta
+            </button>
+
+            {erro && <p className="mt-3 text-sm text-red-600">{erro}</p>}
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvar}
+                disabled={salvando}
+                className="btn-primary disabled:opacity-50"
+              >
+                {salvando ? "Criando..." : "Criar e gerar link"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -23,6 +23,14 @@ class Eleitor(models.Model):
     biometria_hash = models.CharField(max_length=64, blank=True, default="")
     webauthn_credential = models.JSONField(blank=True, null=True)
     cadastro_completo = models.BooleanField(default=False)
+    bloqueado = models.BooleanField(
+        default=False,
+        help_text="Se True, o morador não pode autenticar nem votar.",
+    )
+    inadimplente = models.BooleanField(
+        default=False,
+        help_text="Inadimplência por unidade. Se True, o morador acessa mas não pode votar.",
+    )
     convite_token = models.CharField(max_length=64, unique=True, blank=True, null=True)
     convite_expira_em = models.DateTimeField(blank=True, null=True)
     criado_em = models.DateTimeField(auto_now_add=True)

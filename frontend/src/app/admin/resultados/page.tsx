@@ -1,16 +1,34 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Download } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Download, Clock, Check, X } from "lucide-react";
 import { api } from "@/lib/api";
-import type { AssembleiaListItem, Resultado } from "@/lib/types";
+import type {
+  AssembleiaListItem,
+  Resultado,
+  ProcuracaoPendente,
+} from "@/lib/types";
 
 export default function ResultadosPage() {
   const [assembleias, setAssembleias] = useState<AssembleiaListItem[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [resultados, setResultados] = useState<Resultado[]>([]);
+  const [pendentes, setPendentes] = useState<ProcuracaoPendente[]>([]);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  const carregarPendentes = useCallback((id: string) => {
+    api
+      .getProcuracoesPendentes(id)
+      .then((d) => setPendentes(d.unidades))
+      .catch(() => setPendentes([]));
+  }, []);
+
+  async function validar(eleitorId: string, acao: "aprovar" | "rejeitar") {
+    await api.validarProcuracao(selected, eleitorId, acao);
+    carregarPendentes(selected);
+    api.getResultados(selected).then(setResultados);
+  }
 
   function csvValue(value: string | number | boolean | null | undefined) {
     const text = value == null ? "" : String(value);
@@ -88,7 +106,8 @@ export default function ResultadosPage() {
       .getResultados(selected)
       .then(setResultados)
       .finally(() => setLoading(false));
-  }, [selected]);
+    carregarPendentes(selected);
+  }, [selected, carregarPendentes]);
 
   // Auto-refresh every 5 seconds when assembly is open
   useEffect(() => {
@@ -135,6 +154,57 @@ export default function ResultadosPage() {
           O relatório detalhado inclui nome, bloco, apartamento, perfil, IP, autenticação, data/hora e aparelho inferido pelo navegador no momento do voto.
         </p>
       </div>
+
+      {selected && pendentes.length > 0 && (
+        <div className="card mb-6 border-amber-200 bg-amber-50">
+          <div className="flex items-center gap-2 mb-3">
+            <Clock className="w-5 h-5 text-amber-600" />
+            <h3 className="font-semibold text-amber-800">
+              Faltam registrar {pendentes.length} voto
+              {pendentes.length !== 1 ? "s" : ""} por procuração / mais de uma
+              unidade
+            </h3>
+          </div>
+          <p className="text-sm text-amber-700 mb-4">
+            Esses votos só entram na totalização após sua validação.
+          </p>
+          <div className="space-y-2">
+            {pendentes.map((p) => (
+              <div
+                key={p.eleitor_id}
+                className="flex items-center justify-between gap-3 rounded-lg bg-white border border-amber-200 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium truncate">
+                    {p.bloco ? `${p.bloco} / ` : ""}
+                    {p.apartamento} — {p.nome}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {p.procurador_nome
+                      ? `Procurador: ${p.procurador_nome} · `
+                      : ""}
+                    {p.votos.length} voto{p.votos.length !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => validar(p.eleitor_id, "aprovar")}
+                    className="inline-flex items-center gap-1 rounded-lg bg-green-600 text-white px-3 py-1.5 text-sm hover:bg-green-700"
+                  >
+                    <Check className="w-4 h-4" /> Aprovar
+                  </button>
+                  <button
+                    onClick={() => validar(p.eleitor_id, "rejeitar")}
+                    className="inline-flex items-center gap-1 rounded-lg border border-red-300 text-red-600 px-3 py-1.5 text-sm hover:bg-red-50"
+                  >
+                    <X className="w-4 h-4" /> Rejeitar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading && <p className="text-gray-500">Carregando resultados...</p>}
 

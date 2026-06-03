@@ -13,6 +13,11 @@ class Voto(models.Model):
         WEBAUTHN = "webauthn", "WebAuthn"
         OTP = "otp", "OTP"
 
+    class Status(models.TextChoices):
+        VALIDADO = "validado", "Validado"
+        PENDENTE = "pendente", "Pendente de validação"
+        REJEITADO = "rejeitado", "Rejeitado"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     assembleia = models.ForeignKey(
         Assembleia, on_delete=models.PROTECT, related_name="votos"
@@ -31,6 +36,21 @@ class Voto(models.Model):
     ip_address = models.GenericIPAddressField()
     user_agent = models.TextField(blank=True, default="")
     device_info = models.CharField(max_length=255, blank=True, default="")
+    device_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.VALIDADO,
+        db_index=True,
+    )
+    por_procuracao = models.BooleanField(default=False)
+    procurador = models.ForeignKey(
+        Eleitor,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="votos_como_procurador",
+    )
     hash_voto = models.CharField(max_length=64, unique=True)
 
     class Meta:
