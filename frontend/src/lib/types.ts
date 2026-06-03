@@ -50,14 +50,39 @@ export interface Questao {
 
 export interface Presenca {
   id: string;
-  eleitor: string;
+  eleitor: string | null;
   nome: string;
   bloco: string;
   apartamento: string;
   perfil: "proprietario" | "procurador";
   metodo_auth: string;
   assinatura_facial: string;
+  ip_address: string | null;
+  device_info: string;
+  user_agent: string;
   horario_entrada: string;
+}
+
+export interface Quorum {
+  base_eleitores: number;
+  presentes: number;
+  percentual: number;
+  necessario_primeira: number;
+  necessario_segunda: number;
+  atingido_primeira: boolean;
+  atingido_segunda: boolean;
+  regra_primeira: string;
+  regra_segunda: string;
+}
+
+export interface LogAuditoria {
+  id: string;
+  acao: string;
+  acao_display: string;
+  descricao: string;
+  ator: string;
+  ip_address: string | null;
+  criado_em: string;
 }
 
 export interface Assembleia {
@@ -75,6 +100,7 @@ export interface Assembleia {
   segunda_chamada_qualquer_numero: boolean;
   total_votantes: number;
   total_presentes: number;
+  quorum: Quorum;
   questoes: Questao[];
   presencas: Presenca[];
   criado_em: string;
@@ -96,6 +122,21 @@ export interface AssembleiaListItem {
   total_votantes: number;
   total_questoes: number;
   criado_em: string;
+}
+
+// === Ata / Resumo ===
+export interface Ata {
+  id: string;
+  assembleia: string;
+  link_gravacao: string;
+  transcricao: string;
+  resumo: string;
+  ata_texto: string;
+  provedor_ia: "deepseek" | "openai";
+  status: "pendente" | "transcrevendo" | "transcrita" | "gerando" | "pronta" | "erro";
+  erro_mensagem: string;
+  criado_em: string;
+  atualizado_em: string;
 }
 
 // === Votos ===
@@ -183,6 +224,7 @@ export interface Enquete {
   condominio: string | null;
   titulo: string;
   ativa: boolean;
+  voto_aberto: boolean;
   criado_em: string;
   opcoes: EnqueteOpcaoItem[];
   total_votos: number;
@@ -192,7 +234,15 @@ export interface EnquetePublica {
   id: string;
   titulo: string;
   ativa: boolean;
+  voto_aberto: boolean;
   opcoes: { id: string; texto: string }[];
+}
+
+export interface EnqueteVotante {
+  nome: string;
+  bloco: string;
+  apartamento: string;
+  horario: string;
 }
 
 export interface EnqueteResultadoOpcao {
@@ -200,12 +250,14 @@ export interface EnqueteResultadoOpcao {
   texto: string;
   votos: number;
   percentual: number;
+  votantes?: EnqueteVotante[];
 }
 
 export interface EnqueteResultado {
   id: string;
   titulo: string;
   ativa: boolean;
+  voto_aberto: boolean;
   total_votos: number;
   opcoes: EnqueteResultadoOpcao[];
   vencedor: EnqueteResultadoOpcao | null;

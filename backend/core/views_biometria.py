@@ -12,6 +12,7 @@ from rest_framework.response import Response
 
 from apps.eleitores.models import Eleitor
 from apps.assembleias.models import Presenca
+from core.request_info import presenca_request_defaults
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def facial_auth_verify(request):
@@ -73,6 +74,7 @@ def facial_auth_verify(request):
                 "perfil": eleitor.perfil,
                 "metodo_auth": "facial",
                 "assinatura_facial": face_hash,
+                **presenca_request_defaults(request),
             },
         )
 

@@ -465,6 +465,14 @@ def validar_procuracao(request, assembleia_id):
         "procuracao_%s assembleia=%s eleitor=%s votos=%s admin=%s",
         acao, assembleia.id, eleitor_id, atualizados, request.user.id,
     )
+    from apps.assembleias.audit import registrar_log
+    from apps.assembleias.models import LogAuditoria
+    registrar_log(
+        request, assembleia,
+        LogAuditoria.Acao.VALIDAR_PROCURACAO if acao == "aprovar"
+        else LogAuditoria.Acao.REJEITAR_PROCURACAO,
+        f"{atualizados} voto(s) por procuração {acao}(s).",
+    )
     return Response({"status": novo_status, "votos_atualizados": atualizados})
 
 
@@ -499,10 +507,22 @@ def verificar_voto(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    existe = Voto.objects.filter(hash_voto=hash_voto).exists()
-    if not existe:
+    voto = (
+        Voto.objects.filter(hash_voto=hash_voto)
+        .select_related("assembleia", "questao")
+        .first()
+    )
+    if voto is None:
         return Response(
             {"encontrado": False},
             status=status.HTTP_404_NOT_FOUND,
         )
-    return Response({"encontrado": True})
+    # Confirma a existência e o contexto do voto sem revelar quem votou ou
+    # qual opção foi escolhida (preserva o sigilo do voto).
+    return Response({
+        "encontrado": True,
+        "assembleia": voto.assembleia.titulo,
+        "questao": voto.questao.titulo,
+        "timestamp": voto.timestamp,
+        "status": voto.get_status_display(),
+    })

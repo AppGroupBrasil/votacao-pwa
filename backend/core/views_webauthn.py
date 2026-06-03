@@ -11,6 +11,7 @@ from webauthn.helpers import base64url_to_bytes
 
 from apps.eleitores.models import Eleitor
 from apps.assembleias.models import Presenca
+from core.request_info import presenca_request_defaults
 from core.webauthn import (
     get_authentication_options_json,
     get_registration_options_json,
@@ -194,6 +195,7 @@ def webauthn_auth_verify(request):
                 "apartamento": eleitor.apartamento,
                 "perfil": eleitor.perfil,
                 "metodo_auth": "webauthn",
+                **presenca_request_defaults(request),
             },
         )
 

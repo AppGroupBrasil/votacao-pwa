@@ -56,15 +56,35 @@ def _resultado_payload(enquete):
         enquete.opcoes.annotate(qtd=Count("votos")).order_by("ordem")
     )
     total = sum(o.qtd for o in opcoes)
-    itens = [
-        {
+
+    votantes_por_opcao = {}
+    if enquete.voto_aberto:
+        votos = enquete.votos.order_by("criado_em").values(
+            "opcao_id", "votante_nome", "votante_bloco",
+            "votante_apartamento", "criado_em",
+        )
+        for v in votos:
+            votantes_por_opcao.setdefault(v["opcao_id"], []).append(
+                {
+                    "nome": v["votante_nome"],
+                    "bloco": v["votante_bloco"],
+                    "apartamento": v["votante_apartamento"],
+                    "horario": v["criado_em"],
+                }
+            )
+
+    itens = []
+    for o in opcoes:
+        item = {
             "id": str(o.id),
             "texto": o.texto,
             "votos": o.qtd,
             "percentual": round(o.qtd * 100 / total, 1) if total else 0,
         }
-        for o in opcoes
-    ]
+        if enquete.voto_aberto:
+            item["votantes"] = votantes_por_opcao.get(o.id, [])
+        itens.append(item)
+
     vencedor = None
     if total:
         top = max(itens, key=lambda i: i["votos"])
@@ -74,6 +94,7 @@ def _resultado_payload(enquete):
         "id": str(enquete.id),
         "titulo": enquete.titulo,
         "ativa": enquete.ativa,
+        "voto_aberto": enquete.voto_aberto,
         "total_votos": total,
         "opcoes": itens,
         "vencedor": vencedor,
@@ -96,6 +117,7 @@ def enquete_publica(request, enquete_id):
             "id": str(enquete.id),
             "titulo": enquete.titulo,
             "ativa": enquete.ativa,
+            "voto_aberto": enquete.voto_aberto,
             "opcoes": [
                 {"id": str(o.id), "texto": o.texto} for o in enquete.opcoes.all()
             ],
@@ -157,12 +179,30 @@ def votar_enquete(request, enquete_id):
             status=status.HTTP_409_CONFLICT,
         )
 
+    votante_nome = ""
+    votante_bloco = ""
+    votante_apartamento = ""
+    if enquete.voto_aberto:
+        votante_nome = str(request.data.get("votante_nome", "")).strip()[:200]
+        votante_bloco = str(request.data.get("votante_bloco", "")).strip()[:20]
+        votante_apartamento = str(
+            request.data.get("votante_apartamento", "")
+        ).strip()[:20]
+        if not votante_nome or not votante_apartamento:
+            return Response(
+                {"error": "Nesta votação você precisa se identificar (nome e apartamento)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
     try:
         EnqueteVoto.objects.create(
             enquete=enquete,
             opcao=opcao,
             device_id=device_id,
             ip_address=get_client_ip(request),
+            votante_nome=votante_nome,
+            votante_bloco=votante_bloco,
+            votante_apartamento=votante_apartamento,
         )
     except IntegrityError:
         # Corrida: o mesmo dispositivo enviou dois votos quase simultâneos.

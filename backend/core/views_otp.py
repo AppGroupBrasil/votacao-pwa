@@ -17,6 +17,7 @@ from django_ratelimit.decorators import ratelimit
 from apps.eleitores.models import Eleitor
 from apps.assembleias.models import Presenca
 from core.otp import gerar_otp, validar_otp
+from core.request_info import presenca_request_defaults
 
 
 @ratelimit(key="ip", rate="5/m", block=True)
@@ -119,6 +120,7 @@ def otp_verify(request):
                 "apartamento": eleitor.apartamento,
                 "perfil": eleitor.perfil,
                 "metodo_auth": "otp",
+                **presenca_request_defaults(request),
             },
         )
 

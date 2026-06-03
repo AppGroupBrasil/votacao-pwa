@@ -21,6 +21,8 @@ import {
   Eye,
   FileText as FileContract,
   Scale,
+  Link2,
+  Sparkles,
 } from "lucide-react";
 
 const features = [
@@ -55,14 +57,19 @@ const features = [
     desc: "Vote pelo site, pelo aplicativo ou receba o link direto no WhatsApp.",
   },
   {
+    icon: Link2,
+    title: "Votação Simples por Link",
+    desc: "Crie uma enquete em segundos e compartilhe um link. Voto secreto (anônimo) ou aberto (identifica quem votou), com resultado e PDF.",
+  },
+  {
     icon: Video,
     title: "Gravação da Assembleia",
     desc: "Gravação completa da reunião para até 500 participantes simultâneos.",
   },
   {
-    icon: FileText,
-    title: "Ata e Transcrição Automática",
-    desc: "Geração da ata, transcrição completa da assembleia e exportação do chat em PDF.",
+    icon: Sparkles,
+    title: "Resumo e Ata com IA",
+    desc: "A partir da gravação, a IA gera a transcrição, um resumo dos pontos principais e a ata formal — editável e exportável em TXT ou PDF.",
   },
   {
     icon: Ban,
@@ -172,7 +179,8 @@ export default function HomePage() {
             </h2>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
               Confirmada automaticamente pela biometria facial — sem papel, sem
-              assinatura, sem fraude.
+              assinatura, sem fraude. O síndico ainda pode marcar presença
+              manualmente, inclusive de visitantes sem cadastro.
             </p>
           </div>
 
@@ -443,7 +451,7 @@ export default function HomePage() {
                 "Tudo do Plano Votação",
                 "Videochamada com até 500 participantes",
                 "Gravação completa da assembleia",
-                "Transcrição automática por IA",
+                "Resumo e ata da assembleia por IA",
                 "Chat ao vivo exportável em PDF",
                 "Compartilhamento de tela e documentos",
                 "Sala de espera com verificação de identidade",
@@ -477,6 +485,7 @@ export default function HomePage() {
                 "Condomínios ilimitados",
                 "Votações ilimitadas por mês",
                 "Sem limite de votantes por assembleia",
+                "Votação simples por link (secreta ou aberta)",
                 "Biometria facial + WebAuthn + OTP",
                 "Lista de presença digital com assinatura facial",
                 "Resultados em tempo real",
@@ -495,7 +504,7 @@ export default function HomePage() {
 
             <div className="mb-4 bg-gray-50 rounded-lg p-3">
               <p className="text-xs text-gray-500 font-medium mb-1">Não incluso neste plano:</p>
-              <p className="text-xs text-gray-400">Videochamada, gravação da assembleia, transcrição automática e chat ao vivo.</p>
+              <p className="text-xs text-gray-400">Videochamada, gravação da assembleia, resumo e ata por IA e chat ao vivo.</p>
             </div>
 
             <Link href="/login" className="btn-secondary w-full text-center block">

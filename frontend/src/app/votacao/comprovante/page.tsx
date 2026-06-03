@@ -11,6 +11,7 @@ export default function ComprovantePage() {
     timestamp?: string;
     assembleia?: string;
     questao?: string;
+    status?: string;
   } | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -66,6 +67,11 @@ export default function ComprovantePage() {
                   <p className="text-sm text-green-700">
                     Questão: {result.questao}
                   </p>
+                  {result.status && (
+                    <p className="text-sm text-green-700">
+                      Situação: {result.status}
+                    </p>
+                  )}
                   <p className="text-xs text-green-600 mt-1">
                     Registrado em:{" "}
                     {new Date(result.timestamp!).toLocaleString("pt-BR")}

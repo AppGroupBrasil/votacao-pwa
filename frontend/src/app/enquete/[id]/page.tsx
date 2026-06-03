@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { Check, Trophy, Loader2 } from "lucide-react";
+import { Check, Trophy, Loader2, Eye, Printer } from "lucide-react";
 import { api } from "@/lib/api";
 import type { EnquetePublica, EnqueteResultado } from "@/lib/types";
 
@@ -17,6 +17,9 @@ export default function EnquetePublicaPage() {
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
   const [jaVotou, setJaVotou] = useState(false);
+  const [nome, setNome] = useState("");
+  const [bloco, setBloco] = useState("");
+  const [apartamento, setApartamento] = useState("");
 
   useEffect(() => {
     if (!id) return;
@@ -44,10 +47,24 @@ export default function EnquetePublicaPage() {
       setErro("Selecione uma resposta.");
       return;
     }
+    if (enquete?.voto_aberto && (!nome.trim() || !apartamento.trim())) {
+      setErro("Informe seu nome e apartamento para votar.");
+      return;
+    }
     setEnviando(true);
     setErro("");
     try {
-      const r = await api.votarEnquete(id, selecionada);
+      const r = await api.votarEnquete(
+        id,
+        selecionada,
+        enquete?.voto_aberto
+          ? {
+              nome: nome.trim(),
+              bloco: bloco.trim(),
+              apartamento: apartamento.trim(),
+            }
+          : undefined
+      );
       if (typeof window !== "undefined")
         localStorage.setItem(`enquete_${id}`, "1");
       setResultado(r);
@@ -91,11 +108,42 @@ export default function EnquetePublicaPage() {
           <p className="text-sm text-gray-500 mb-5">
             {jaVotou || resultado
               ? "Resultado da votação"
+              : enquete?.voto_aberto
+              ? "Votação aberta — identifique-se e escolha uma opção."
               : "Votação anônima — escolha uma opção."}
           </p>
 
           {!jaVotou && !resultado && (
             <>
+              {enquete?.voto_aberto && (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="mb-2 flex items-center gap-1 text-xs font-medium text-amber-700">
+                    <Eye className="w-3.5 h-3.5" /> Nesta votação seu voto é
+                    identificado.
+                  </p>
+                  <input
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    placeholder="Seu nome completo"
+                    className="input-field w-full mb-2"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      value={bloco}
+                      onChange={(e) => setBloco(e.target.value)}
+                      placeholder="Bloco"
+                      className="input-field w-full"
+                    />
+                    <input
+                      value={apartamento}
+                      onChange={(e) => setApartamento(e.target.value)}
+                      placeholder="Apartamento"
+                      className="input-field w-full"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 {enquete?.opcoes.map((o) => (
                   <button
@@ -157,6 +205,7 @@ function Resultados({ resultado }: { resultado: EnqueteResultado }) {
     <div>
       <p className="text-sm text-gray-500 mb-4">
         {total} voto{total !== 1 ? "s" : ""} no total
+        {resultado.voto_aberto && " · votação aberta"}
       </p>
       <div className="space-y-3">
         {resultado.opcoes.map((o) => {
@@ -184,6 +233,24 @@ function Resultados({ resultado }: { resultado: EnqueteResultado }) {
                   style={{ width: `${o.percentual}%` }}
                 />
               </div>
+              {resultado.voto_aberto &&
+                o.votantes &&
+                o.votantes.length > 0 && (
+                  <ul className="mt-1.5 ml-1 space-y-0.5">
+                    {o.votantes.map((v, i) => (
+                      <li key={i} className="text-xs text-gray-500">
+                        {v.nome}
+                        {v.apartamento && (
+                          <span className="text-gray-400">
+                            {" "}
+                            — {v.bloco ? `${v.bloco}/` : ""}
+                            {v.apartamento}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
             </div>
           );
         })}
@@ -196,6 +263,12 @@ function Resultados({ resultado }: { resultado: EnqueteResultado }) {
           {resultado.vencedor.votos !== 1 ? "s" : ""} ({resultado.vencedor.percentual}%)
         </div>
       )}
+      <button
+        onClick={() => window.print()}
+        className="btn-secondary w-full mt-5 flex items-center justify-center gap-2 print:hidden"
+      >
+        <Printer className="w-4 h-4" /> Gerar PDF
+      </button>
     </div>
   );
 }

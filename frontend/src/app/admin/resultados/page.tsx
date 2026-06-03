@@ -122,9 +122,21 @@ export default function ResultadosPage() {
     return () => clearInterval(interval);
   }, [selected, assembleias]);
 
+  const aoVivo =
+    !!selected &&
+    assembleias.find((a) => a.id === selected)?.status === "aberta";
+
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Resultados</h1>
+      <h1 className="text-2xl font-bold mb-6 flex items-center gap-3">
+        Resultados
+        {aoVivo && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+            ao vivo
+          </span>
+        )}
+      </h1>
 
       <div className="mb-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center">

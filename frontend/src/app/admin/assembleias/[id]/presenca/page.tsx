@@ -3,9 +3,18 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Users, Printer, FileDown } from "lucide-react";
+import {
+  ArrowLeft,
+  Users,
+  Printer,
+  FileDown,
+  UserPlus,
+  X,
+  Search,
+  Check,
+} from "lucide-react";
 import { api } from "@/lib/api";
-import type { Assembleia } from "@/lib/types";
+import type { Assembleia, Eleitor } from "@/lib/types";
 
 const perfilLabel: Record<string, string> = {
   proprietario: "Proprietário",
@@ -17,6 +26,7 @@ const metodoLabel: Record<string, string> = {
   facial: "Reconhecimento facial",
   webauthn: "Biometria do dispositivo",
   otp: "Código (OTP)",
+  manual: "Marcado pelo síndico",
 };
 
 export default function ListaPresencaPage() {
@@ -24,24 +34,33 @@ export default function ListaPresencaPage() {
   const assembleiaId = params.id as string;
   const [assembleia, setAssembleia] = useState<Assembleia | null>(null);
   const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  function carregar() {
+    return api.getAssembleia(assembleiaId).then(setAssembleia);
+  }
 
   useEffect(() => {
-    api
-      .getAssembleia(assembleiaId)
-      .then(setAssembleia)
-      .finally(() => setLoading(false));
+    carregar().finally(() => setLoading(false));
+    const t = setInterval(() => {
+      carregar().catch(() => {});
+    }, 15000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assembleiaId]);
 
   function exportarCsv() {
     if (!assembleia) return;
     const linhas = [
-      ["Nome", "Bloco", "Apartamento", "Perfil", "Método", "Horário de entrada"],
+      ["Nome", "Bloco", "Apartamento", "Perfil", "Método", "IP", "Aparelho", "Horário de entrada"],
       ...presencas.map((p) => [
         p.nome,
         p.bloco || "",
         p.apartamento || "",
         perfilLabel[p.perfil] || p.perfil,
         metodoLabel[p.metodo_auth] || p.metodo_auth,
+        p.ip_address || "",
+        p.device_info || "",
         new Date(p.horario_entrada).toLocaleString("pt-BR"),
       ]),
     ];
@@ -66,6 +85,7 @@ export default function ListaPresencaPage() {
       new Date(a.horario_entrada).getTime() -
       new Date(b.horario_entrada).getTime()
   );
+  const encerrada = assembleia.status === "encerrada";
 
   return (
     <div>
@@ -78,6 +98,15 @@ export default function ListaPresencaPage() {
           Voltar
         </Link>
         <div className="flex items-center gap-2">
+          {!encerrada && (
+            <button
+              onClick={() => setModalOpen(true)}
+              className="btn-primary flex items-center gap-2"
+            >
+              <UserPlus className="w-4 h-4" />
+              Marcar presença
+            </button>
+          )}
           <button
             onClick={exportarCsv}
             className="btn-secondary flex items-center gap-2"
@@ -87,7 +116,7 @@ export default function ListaPresencaPage() {
           </button>
           <button
             onClick={() => window.print()}
-            className="btn-primary flex items-center gap-2"
+            className="btn-secondary flex items-center gap-2"
           >
             <Printer className="w-4 h-4" />
             Imprimir
@@ -103,6 +132,10 @@ export default function ListaPresencaPage() {
           {presencas.length} presente{presencas.length !== 1 ? "s" : ""}
         </p>
       </div>
+
+      {assembleia.quorum && (
+        <QuorumCard q={assembleia.quorum} />
+      )}
 
       {presencas.length === 0 ? (
         <div className="card text-center py-12">
@@ -120,6 +153,8 @@ export default function ListaPresencaPage() {
                 <th className="px-4 py-3 font-medium">Unidade</th>
                 <th className="px-4 py-3 font-medium">Perfil</th>
                 <th className="px-4 py-3 font-medium">Método</th>
+                <th className="px-4 py-3 font-medium">IP</th>
+                <th className="px-4 py-3 font-medium">Aparelho</th>
                 <th className="px-4 py-3 font-medium">Entrada</th>
               </tr>
             </thead>
@@ -127,7 +162,14 @@ export default function ListaPresencaPage() {
               {presencas.map((p, i) => (
                 <tr key={p.id} className="border-b last:border-0">
                   <td className="px-4 py-3 text-gray-400">{i + 1}</td>
-                  <td className="px-4 py-3 font-medium">{p.nome}</td>
+                  <td className="px-4 py-3 font-medium">
+                    {p.nome}
+                    {!p.eleitor && (
+                      <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
+                        avulso
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-gray-600">
                     {p.bloco ? `${p.bloco} / ` : ""}
                     {p.apartamento}
@@ -138,6 +180,12 @@ export default function ListaPresencaPage() {
                   <td className="px-4 py-3 text-gray-600">
                     {metodoLabel[p.metodo_auth] || p.metodo_auth}
                   </td>
+                  <td className="px-4 py-3 text-gray-500 font-mono text-xs">
+                    {p.ip_address || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">
+                    {p.device_info || "—"}
+                  </td>
                   <td className="px-4 py-3 text-gray-600">
                     {new Date(p.horario_entrada).toLocaleString("pt-BR")}
                   </td>
@@ -147,6 +195,302 @@ export default function ListaPresencaPage() {
           </table>
         </div>
       )}
+
+      {modalOpen && (
+        <MarcarPresencaModal
+          assembleia={assembleia}
+          onClose={() => setModalOpen(false)}
+          onSaved={() => {
+            carregar();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function QuorumCard({ q }: { q: import("@/lib/types").Quorum }) {
+  const pct = Math.min(q.percentual, 100);
+  const corBarra = q.atingido_primeira
+    ? "bg-green-500"
+    : q.atingido_segunda
+    ? "bg-amber-500"
+    : "bg-gray-400";
+  return (
+    <div className="card mb-6">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-semibold text-gray-600">Quórum</h2>
+        <span className="text-sm text-gray-500">
+          {q.presentes} de {q.base_eleitores} ({q.percentual}%)
+        </span>
+      </div>
+      <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden">
+        <div
+          className={`h-full ${corBarra} transition-all`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+        <div
+          className={`rounded-lg border px-3 py-2 ${
+            q.atingido_primeira
+              ? "border-green-200 bg-green-50 text-green-700"
+              : "border-gray-200 text-gray-600"
+          }`}
+        >
+          <p className="font-medium">
+            1ª chamada · {q.regra_primeira}
+          </p>
+          <p className="text-xs">
+            {q.atingido_primeira
+              ? "Quórum atingido"
+              : `Faltam ${Math.max(q.necessario_primeira - q.presentes, 0)} (mín. ${q.necessario_primeira})`}
+          </p>
+        </div>
+        <div
+          className={`rounded-lg border px-3 py-2 ${
+            q.atingido_segunda
+              ? "border-amber-200 bg-amber-50 text-amber-700"
+              : "border-gray-200 text-gray-600"
+          }`}
+        >
+          <p className="font-medium">2ª chamada · {q.regra_segunda}</p>
+          <p className="text-xs">
+            {q.atingido_segunda
+              ? "Quórum atingido"
+              : `Faltam ${Math.max(q.necessario_segunda - q.presentes, 0)} (mín. ${q.necessario_segunda})`}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MarcarPresencaModal({
+  assembleia,
+  onClose,
+  onSaved,
+}: {
+  assembleia: Assembleia;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [aba, setAba] = useState<"cadastrado" | "avulso">("cadastrado");
+  const [eleitores, setEleitores] = useState<Eleitor[]>([]);
+  const [busca, setBusca] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [ok, setOk] = useState("");
+  // avulso
+  const [nome, setNome] = useState("");
+  const [bloco, setBloco] = useState("");
+  const [apartamento, setApartamento] = useState("");
+
+  useEffect(() => {
+    api
+      .getEleitores()
+      .then((d) => {
+        const lista = d.results || (d as any);
+        setEleitores(
+          lista.filter((e: Eleitor) => e.condominio === assembleia.condominio)
+        );
+      })
+      .catch(() => {});
+  }, [assembleia.condominio]);
+
+  const presentesIds = new Set(
+    (assembleia.presencas || []).map((p) => p.eleitor).filter(Boolean)
+  );
+
+  const filtrados = eleitores.filter((e) => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      e.nome.toLowerCase().includes(q) ||
+      (e.apartamento || "").toLowerCase().includes(q) ||
+      (e.bloco || "").toLowerCase().includes(q)
+    );
+  });
+
+  async function marcarCadastrado(e: Eleitor) {
+    setErro("");
+    setOk("");
+    setSalvando(true);
+    try {
+      await api.marcarPresenca(assembleia.id, { eleitor_id: e.id });
+      setOk(`${e.nome} marcado(a) como presente.`);
+      onSaved();
+    } catch (err: any) {
+      setErro(err?.response?.data?.error || "Erro ao marcar presença.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function marcarAvulso() {
+    setErro("");
+    setOk("");
+    if (!nome.trim() || !apartamento.trim()) {
+      setErro("Informe nome e apartamento.");
+      return;
+    }
+    setSalvando(true);
+    try {
+      await api.marcarPresenca(assembleia.id, {
+        nome: nome.trim(),
+        apartamento: apartamento.trim(),
+        bloco: bloco.trim(),
+      });
+      setOk(`${nome.trim()} marcado(a) como presente.`);
+      setNome("");
+      setBloco("");
+      setApartamento("");
+      onSaved();
+    } catch (err: any) {
+      setErro(err?.response?.data?.error || "Erro ao marcar presença.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold">Marcar presença</h2>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="flex gap-1 rounded-lg bg-gray-100 p-1 mb-4">
+          <button
+            onClick={() => setAba("cadastrado")}
+            className={`flex-1 rounded-md py-1.5 text-sm font-medium transition ${
+              aba === "cadastrado" ? "bg-white shadow-sm" : "text-gray-500"
+            }`}
+          >
+            Morador cadastrado
+          </button>
+          <button
+            onClick={() => setAba("avulso")}
+            className={`flex-1 rounded-md py-1.5 text-sm font-medium transition ${
+              aba === "avulso" ? "bg-white shadow-sm" : "text-gray-500"
+            }`}
+          >
+            Sem cadastro
+          </button>
+        </div>
+
+        {erro && <p className="mb-3 text-sm text-red-600">{erro}</p>}
+        {ok && (
+          <p className="mb-3 text-sm text-green-600 flex items-center gap-1">
+            <Check className="w-4 h-4" /> {ok}
+          </p>
+        )}
+
+        {aba === "cadastrado" ? (
+          <div>
+            <div className="relative mb-3">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar por nome, bloco ou apartamento"
+                className="input-field w-full pl-9"
+              />
+            </div>
+            <div className="max-h-72 overflow-y-auto divide-y border rounded-lg">
+              {filtrados.length === 0 && (
+                <p className="p-4 text-sm text-gray-500 text-center">
+                  Nenhum morador encontrado.
+                </p>
+              )}
+              {filtrados.map((e) => {
+                const presente = presentesIds.has(e.id);
+                return (
+                  <div
+                    key={e.id}
+                    className="flex items-center justify-between gap-3 px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{e.nome}</p>
+                      <p className="text-xs text-gray-500">
+                        {e.bloco ? `${e.bloco} / ` : ""}
+                        {e.apartamento} · {perfilLabel[e.perfil] || e.perfil}
+                      </p>
+                    </div>
+                    {presente ? (
+                      <span className="text-xs text-green-600 flex items-center gap-1 shrink-0">
+                        <Check className="w-4 h-4" /> Presente
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => marcarCadastrado(e)}
+                        disabled={salvando}
+                        className="btn-primary text-sm py-1.5 px-3 shrink-0 disabled:opacity-50"
+                      >
+                        Marcar
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Nome</label>
+              <input
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                placeholder="Nome do morador"
+                className="input-field w-full"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Bloco</label>
+                <input
+                  value={bloco}
+                  onChange={(e) => setBloco(e.target.value)}
+                  placeholder="Opcional"
+                  className="input-field w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Apartamento
+                </label>
+                <input
+                  value={apartamento}
+                  onChange={(e) => setApartamento(e.target.value)}
+                  placeholder="Ex.: 101"
+                  className="input-field w-full"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">
+              Morador sem cadastro entra como <strong>avulso</strong>: conta na
+              presença, mas não vota pelo aplicativo.
+            </p>
+            <button
+              onClick={marcarAvulso}
+              disabled={salvando}
+              className="btn-primary w-full disabled:opacity-50"
+            >
+              {salvando ? "Marcando..." : "Marcar presença"}
+            </button>
+          </div>
+        )}
+
+        <div className="mt-5 flex justify-end">
+          <button onClick={onClose} className="btn-secondary">
+            Concluir
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

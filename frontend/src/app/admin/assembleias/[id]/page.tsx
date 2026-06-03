@@ -20,6 +20,7 @@ import {
   FileDown,
   ExternalLink,
   ClipboardList,
+  ShieldCheck,
 } from "lucide-react";
 import type { Condominio } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -596,6 +597,12 @@ export default function AssembleiaDetailPage() {
               <ClipboardList className="w-5 h-5 text-gray-400" />
               Lista de Presença ({assembleia.total_presentes})
             </h2>
+            <Link
+              href={`/admin/assembleias/${assembleia.id}/auditoria`}
+              className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
+            >
+              <ShieldCheck className="w-4 h-4" /> Trilha de auditoria
+            </Link>
           </div>
           {assembleia.presencas.length === 0 ? (
             <div className="card text-center py-8">

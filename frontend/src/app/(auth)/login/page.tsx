@@ -37,7 +37,7 @@ export default function LoginPage() {
       } else {
         localStorage.removeItem(REMEMBER_KEY);
       }
-      router.push("/admin/assembleias");
+      router.push("/admin");
     } catch {
       setError("Usuário ou senha incorretos.");
     } finally {

@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 
 from django.contrib.auth.models import User
@@ -208,4 +209,8 @@ class VotoReportTests(APITestCase):
         )
         response = self.client.get(f"/api/votos/verificar/?hash={voto.hash_voto}")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, {"encontrado": True})
+        self.assertTrue(response.data["encontrado"])
+        # Confirma contexto sem revelar eleitor ou opção escolhida.
+        corpo = json.dumps(response.data, default=str)
+        self.assertNotIn(self.eleitor.nome, corpo)
+        self.assertNotIn(self.opcao.texto, corpo)

@@ -1,11 +1,14 @@
 import type {
   Assembleia,
   AssembleiaListItem,
+  Ata,
   Condominio,
   Eleitor,
+  LogAuditoria,
   MasterDashboard,
   MasterUser,
   PaginatedResponse,
+  Presenca,
   Questao,
   Resultado,
   RelatorioVotoResponse,
@@ -250,6 +253,56 @@ export const api = {
   encerrarAssembleia: (id: string) =>
     request<Assembleia>(`/assembleias/${id}/encerrar/`, { method: "POST" }),
 
+  marcarPresenca: (
+    assembleiaId: string,
+    data: { eleitor_id: string } | { nome: string; apartamento: string; bloco?: string }
+  ) =>
+    request<Presenca>(`/assembleias/${assembleiaId}/marcar-presenca/`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  // Ata / Resumo
+  getAta: (assembleiaId: string) =>
+    request<Ata>(`/assembleias/${assembleiaId}/ata/`),
+
+  salvarAta: (
+    assembleiaId: string,
+    data: Partial<
+      Pick<Ata, "link_gravacao" | "transcricao" | "ata_texto" | "provedor_ia">
+    >
+  ) =>
+    request<Ata>(`/assembleias/${assembleiaId}/ata/`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  baixarAtaPdf: async (assembleiaId: string) => {
+    const res = await fetch(`${API_URL}/assembleias/${assembleiaId}/ata-pdf/`, {
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("Falha ao gerar o PDF da ata.");
+    return res.blob();
+  },
+
+  transcreverAta: (assembleiaId: string, linkGravacao?: string) =>
+    request<Ata>(`/assembleias/${assembleiaId}/transcrever/`, {
+      method: "POST",
+      body: JSON.stringify(linkGravacao ? { link_gravacao: linkGravacao } : {}),
+    }),
+
+  getLogsAuditoria: (assembleiaId: string) =>
+    request<LogAuditoria[]>(`/assembleias/${assembleiaId}/logs/`),
+
+  gerarAta: (
+    assembleiaId: string,
+    data?: { transcricao?: string; provedor_ia?: "deepseek" | "openai" }
+  ) =>
+    request<Ata>(`/assembleias/${assembleiaId}/gerar-ata/`, {
+      method: "POST",
+      body: JSON.stringify(data || {}),
+    }),
+
   // Questões
   createQuestao: (assembleiaId: string, data: {
     titulo: string;
@@ -342,6 +395,7 @@ export const api = {
       timestamp?: string;
       assembleia?: string;
       questao?: string;
+      status?: string;
     }>(`/votos/verificar/?hash=${encodeURIComponent(hash)}`),
 
   // WebAuthn
@@ -429,15 +483,24 @@ export const api = {
       import("./types").PaginatedResponse<import("./types").Enquete>
     >("/enquetes/"),
 
-  createEnquete: (titulo: string, opcoes_texto: string[], condominio?: string) =>
+  createEnquete: (
+    titulo: string,
+    opcoes_texto: string[],
+    opts?: { voto_aberto?: boolean; condominio?: string }
+  ) =>
     request<import("./types").Enquete>("/enquetes/", {
       method: "POST",
-      body: JSON.stringify({ titulo, opcoes_texto, condominio: condominio ?? null }),
+      body: JSON.stringify({
+        titulo,
+        opcoes_texto,
+        voto_aberto: opts?.voto_aberto ?? false,
+        condominio: opts?.condominio ?? null,
+      }),
     }),
 
   updateEnquete: (
     id: string,
-    data: Partial<{ titulo: string; ativa: boolean; opcoes_texto: string[] }>
+    data: Partial<{ titulo: string; ativa: boolean; voto_aberto: boolean; opcoes_texto: string[] }>
   ) =>
     request<import("./types").Enquete>(`/enquetes/${id}/`, {
       method: "PATCH",
@@ -453,10 +516,20 @@ export const api = {
   getEnqueteResultado: (id: string) =>
     request<import("./types").EnqueteResultado>(`/enquetes/${id}/resultado/`),
 
-  votarEnquete: (id: string, opcaoId: string) =>
+  votarEnquete: (
+    id: string,
+    opcaoId: string,
+    votante?: { nome: string; bloco?: string; apartamento: string }
+  ) =>
     request<import("./types").EnqueteResultado>(`/enquetes/${id}/votar/`, {
       method: "POST",
-      body: JSON.stringify({ opcao_id: opcaoId, device_id: getDeviceId() }),
+      body: JSON.stringify({
+        opcao_id: opcaoId,
+        device_id: getDeviceId(),
+        votante_nome: votante?.nome ?? "",
+        votante_bloco: votante?.bloco ?? "",
+        votante_apartamento: votante?.apartamento ?? "",
+      }),
     }),
 
   // Master

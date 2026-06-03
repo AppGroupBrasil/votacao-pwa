@@ -25,6 +25,7 @@ class EnqueteSerializer(serializers.ModelSerializer):
             "condominio",
             "titulo",
             "ativa",
+            "voto_aberto",
             "criado_em",
             "opcoes",
             "opcoes_texto",

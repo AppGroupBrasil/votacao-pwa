@@ -2,7 +2,40 @@ import json
 
 from rest_framework import serializers
 
-from .models import Assembleia, OpcaoVoto, Presenca, Questao
+from .models import Assembleia, Ata, LogAuditoria, OpcaoVoto, Presenca, Questao
+
+
+class LogAuditoriaSerializer(serializers.ModelSerializer):
+    acao_display = serializers.CharField(source="get_acao_display", read_only=True)
+
+    class Meta:
+        model = LogAuditoria
+        fields = [
+            "id", "acao", "acao_display", "descricao",
+            "ator", "ip_address", "criado_em",
+        ]
+
+
+class AtaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Ata
+        fields = [
+            "id",
+            "assembleia",
+            "link_gravacao",
+            "transcricao",
+            "resumo",
+            "ata_texto",
+            "provedor_ia",
+            "status",
+            "erro_mensagem",
+            "criado_em",
+            "atualizado_em",
+        ]
+        read_only_fields = [
+            "id", "assembleia", "status", "erro_mensagem",
+            "criado_em", "atualizado_em",
+        ]
 
 
 class PresencaSerializer(serializers.ModelSerializer):
@@ -10,7 +43,8 @@ class PresencaSerializer(serializers.ModelSerializer):
         model = Presenca
         fields = [
             "id", "eleitor", "nome", "bloco", "apartamento",
-            "perfil", "metodo_auth", "assinatura_facial", "horario_entrada",
+            "perfil", "metodo_auth", "assinatura_facial",
+            "ip_address", "device_info", "user_agent", "horario_entrada",
         ]
         read_only_fields = fields
 
@@ -107,6 +141,7 @@ class AssembleiaSerializer(serializers.ModelSerializer):
     presencas = PresencaSerializer(many=True, read_only=True)
     total_votantes = serializers.SerializerMethodField()
     total_presentes = serializers.SerializerMethodField()
+    quorum = serializers.SerializerMethodField()
     condominio_nome = serializers.CharField(
         source="condominio.nome", read_only=True
     )
@@ -128,6 +163,7 @@ class AssembleiaSerializer(serializers.ModelSerializer):
             "segunda_chamada_qualquer_numero",
             "total_votantes",
             "total_presentes",
+            "quorum",
             "questoes",
             "presencas",
             "criado_em",
@@ -136,10 +172,45 @@ class AssembleiaSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "criado_em", "atualizado_em"]
 
     def get_total_votantes(self, obj):
-        return obj.votantes.count()
+        return self._base_eleitores(obj)
 
     def get_total_presentes(self, obj):
         return obj.presencas.count()
+
+    def _base_eleitores(self, obj):
+        total = obj.votantes.count()
+        if total == 0:
+            total = obj.condominio.eleitores.count()
+        return total
+
+    def get_quorum(self, obj):
+        import math
+
+        base = self._base_eleitores(obj)
+        presentes = obj.presencas.count()
+
+        if obj.primeira_chamada_50_mais_1:
+            necessario_1 = base // 2 + 1 if base else 0
+        else:
+            necessario_1 = math.ceil(base * obj.quorum_minimo / 100) if base else 0
+
+        if obj.segunda_chamada_qualquer_numero:
+            necessario_2 = 1 if base else 0
+        else:
+            necessario_2 = math.ceil(base * obj.quorum_segunda_chamada / 100) if base else 0
+
+        percentual = round(presentes / base * 100, 1) if base else 0
+        return {
+            "base_eleitores": base,
+            "presentes": presentes,
+            "percentual": percentual,
+            "necessario_primeira": necessario_1,
+            "necessario_segunda": necessario_2,
+            "atingido_primeira": presentes >= necessario_1 and base > 0,
+            "atingido_segunda": presentes >= necessario_2 and base > 0,
+            "regra_primeira": "50% + 1" if obj.primeira_chamada_50_mais_1 else f"{obj.quorum_minimo}%",
+            "regra_segunda": "qualquer número" if obj.segunda_chamada_qualquer_numero else f"{obj.quorum_segunda_chamada}%",
+        }
 
 
 class AssembleiaListSerializer(serializers.ModelSerializer):

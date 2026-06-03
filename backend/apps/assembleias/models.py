@@ -104,13 +104,69 @@ class OpcaoVoto(models.Model):
         verbose_name_plural = "opções de voto"
 
 
+class Ata(models.Model):
+    """Resumo e ata da assembleia gerados a partir de uma gravação.
+
+    Fluxo: link da gravação -> transcrição (manual ou IA) -> resumo/ata por IA
+    -> ata editável e exportável (TXT/PDF).
+    """
+
+    class Status(models.TextChoices):
+        PENDENTE = "pendente", "Pendente"
+        TRANSCREVENDO = "transcrevendo", "Transcrevendo"
+        TRANSCRITA = "transcrita", "Transcrita"
+        GERANDO = "gerando", "Gerando ata"
+        PRONTA = "pronta", "Pronta"
+        ERRO = "erro", "Erro"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    assembleia = models.OneToOneField(
+        Assembleia, on_delete=models.CASCADE, related_name="ata"
+    )
+    link_gravacao = models.URLField(
+        blank=True, default="",
+        help_text="Link da gravação (YouTube, Drive, etc.) — origem da ata",
+    )
+    transcricao = models.TextField(
+        blank=True, default="",
+        help_text="Transcrição da gravação (colada manualmente ou via IA)",
+    )
+    resumo = models.TextField(blank=True, default="")
+    ata_texto = models.TextField(
+        blank=True, default="",
+        help_text="Ata final, editável pelo síndico",
+    )
+    provedor_ia = models.CharField(
+        max_length=20,
+        choices=[("deepseek", "DeepSeek"), ("openai", "OpenAI Mini")],
+        default="deepseek",
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDENTE
+    )
+    erro_mensagem = models.CharField(max_length=500, blank=True, default="")
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "atas"
+
+    def __str__(self):
+        return f"Ata — {self.assembleia.titulo}"
+
+
 class Presenca(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     assembleia = models.ForeignKey(
         Assembleia, on_delete=models.CASCADE, related_name="presencas"
     )
     eleitor = models.ForeignKey(
-        Eleitor, on_delete=models.CASCADE, related_name="presencas"
+        Eleitor,
+        on_delete=models.CASCADE,
+        related_name="presencas",
+        null=True,
+        blank=True,
+        help_text="Vazio quando a presença é avulsa (morador sem cadastro)",
     )
     nome = models.CharField(max_length=200)
     bloco = models.CharField(max_length=20, blank=True, default="")
@@ -124,6 +180,15 @@ class Presenca(models.Model):
     assinatura_facial = models.CharField(
         max_length=64, blank=True, default="",
         help_text="Hash SHA-256 do vetor facial capturado na autenticação",
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True, blank=True,
+        help_text="IP de onde a presença foi registrada",
+    )
+    user_agent = models.TextField(blank=True, default="")
+    device_info = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Aparelho/navegador que registrou a presença",
     )
     horario_entrada = models.DateTimeField(auto_now_add=True)
 
@@ -139,3 +204,36 @@ class Presenca(models.Model):
 
     def __str__(self):
         return f"{self.nome} - {self.apartamento}"
+
+
+class LogAuditoria(models.Model):
+    class Acao(models.TextChoices):
+        ABRIR = "abrir", "Abrir assembleia"
+        ENCERRAR = "encerrar", "Encerrar assembleia"
+        VALIDAR_PROCURACAO = "validar_procuracao", "Validar voto por procuração"
+        REJEITAR_PROCURACAO = "rejeitar_procuracao", "Rejeitar voto por procuração"
+        MARCAR_PRESENCA = "marcar_presenca", "Marcar presença"
+        TRANSCREVER = "transcrever", "Transcrever gravação"
+        GERAR_ATA = "gerar_ata", "Gerar ata"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    assembleia = models.ForeignKey(
+        Assembleia, on_delete=models.CASCADE, related_name="logs",
+        null=True, blank=True,
+    )
+    condominio = models.ForeignKey(
+        Condominio, on_delete=models.CASCADE, related_name="logs",
+        null=True, blank=True,
+    )
+    acao = models.CharField(max_length=30, choices=Acao.choices)
+    descricao = models.CharField(max_length=500, blank=True, default="")
+    ator = models.CharField(max_length=255, blank=True, default="")
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+        verbose_name_plural = "logs de auditoria"
+
+    def __str__(self):
+        return f"{self.get_acao_display()} — {self.criado_em:%d/%m/%Y %H:%M}"

@@ -9,6 +9,8 @@ import {
   Check,
   BarChart3,
   Power,
+  Lock,
+  Eye,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Enquete } from "@/lib/types";
@@ -19,6 +21,7 @@ export default function EnquetesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [titulo, setTitulo] = useState("");
   const [opcoes, setOpcoes] = useState<string[]>(["", ""]);
+  const [votoAberto, setVotoAberto] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
   const [copiado, setCopiado] = useState<string>("");
@@ -38,6 +41,7 @@ export default function EnquetesPage() {
   function abrirModal() {
     setTitulo("");
     setOpcoes(["", ""]);
+    setVotoAberto(false);
     setErro("");
     setModalOpen(true);
   }
@@ -59,7 +63,7 @@ export default function EnquetesPage() {
     }
     setSalvando(true);
     try {
-      await api.createEnquete(titulo.trim(), limpo);
+      await api.createEnquete(titulo.trim(), limpo, { voto_aberto: votoAberto });
       setModalOpen(false);
       carregar();
     } catch {
@@ -101,7 +105,8 @@ export default function EnquetesPage() {
         <div>
           <h1 className="text-2xl font-bold">Votação Simples</h1>
           <p className="text-sm text-gray-500">
-            Enquete anônima: gere um link e compartilhe. Sem identificar morador.
+            Gere um link e compartilhe. Voto secreto (anônimo) ou aberto
+            (identifica quem votou).
           </p>
         </div>
         <button
@@ -125,7 +130,18 @@ export default function EnquetesPage() {
           <div key={e.id} className="card">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h3 className="font-semibold text-lg">{e.titulo}</h3>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-semibold text-lg">{e.titulo}</h3>
+                  {e.voto_aberto ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-xs font-medium">
+                      <Eye className="w-3 h-3" /> Aberta
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 text-gray-600 px-2 py-0.5 text-xs font-medium">
+                      <Lock className="w-3 h-3" /> Secreta
+                    </span>
+                  )}
+                </div>
                 <p className="text-sm text-gray-500">
                   {e.opcoes.length} respostas · {e.total_votos} voto
                   {e.total_votos !== 1 ? "s" : ""} ·{" "}
@@ -230,6 +246,48 @@ export default function EnquetesPage() {
             >
               <Plus className="w-4 h-4" /> Adicionar resposta
             </button>
+
+            <label className="mt-5 block text-sm font-medium mb-2">
+              Tipo de voto
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setVotoAberto(false)}
+                className={`flex items-start gap-2 rounded-lg border p-3 text-left ${
+                  !votoAberto
+                    ? "border-primary-600 bg-primary-50"
+                    : "border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                <Lock className="w-5 h-5 shrink-0 text-primary-600" />
+                <span>
+                  <span className="block text-sm font-medium">
+                    Voto secreto
+                  </span>
+                  <span className="block text-xs text-gray-500">
+                    Anônimo. Ninguém sabe quem votou em quê.
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setVotoAberto(true)}
+                className={`flex items-start gap-2 rounded-lg border p-3 text-left ${
+                  votoAberto
+                    ? "border-primary-600 bg-primary-50"
+                    : "border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                <Eye className="w-5 h-5 shrink-0 text-primary-600" />
+                <span>
+                  <span className="block text-sm font-medium">Voto aberto</span>
+                  <span className="block text-xs text-gray-500">
+                    Identifica quem votou em cada resposta.
+                  </span>
+                </span>
+              </button>
+            </div>
 
             {erro && <p className="mt-3 text-sm text-red-600">{erro}</p>}
 
