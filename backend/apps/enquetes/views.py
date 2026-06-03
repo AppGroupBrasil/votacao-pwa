@@ -1,7 +1,9 @@
+from django.db import IntegrityError
 from django.db.models import Count
 from django_ratelimit.decorators import ratelimit
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
@@ -28,6 +30,25 @@ class EnqueteViewSet(viewsets.ModelViewSet):
         if condominios is None:
             return qs
         return qs.filter(condominio__in=condominios)
+
+    def perform_create(self, serializer):
+        condominios = get_user_condominios(self.request.user)
+        condominio = serializer.validated_data.get("condominio")
+        # Admin com escopo: a enquete precisa pertencer a um condomínio dele,
+        # senão sumiria da própria lista (get_queryset filtra por condominio).
+        if condominios is not None:
+            if condominio is None:
+                perfil = getattr(self.request.user, "perfil_admin", None)
+                condominio = perfil.condominios.first() if perfil else None
+                if condominio is None:
+                    raise PermissionDenied(
+                        "Nenhum condomínio associado ao seu usuário."
+                    )
+                serializer.save(condominio=condominio)
+                return
+            if condominio.id not in condominios:
+                raise PermissionDenied("Condomínio fora do seu escopo.")
+        serializer.save()
 
 
 def _resultado_payload(enquete):
@@ -136,10 +157,17 @@ def votar_enquete(request, enquete_id):
             status=status.HTTP_409_CONFLICT,
         )
 
-    EnqueteVoto.objects.create(
-        enquete=enquete,
-        opcao=opcao,
-        device_id=device_id,
-        ip_address=get_client_ip(request),
-    )
+    try:
+        EnqueteVoto.objects.create(
+            enquete=enquete,
+            opcao=opcao,
+            device_id=device_id,
+            ip_address=get_client_ip(request),
+        )
+    except IntegrityError:
+        # Corrida: o mesmo dispositivo enviou dois votos quase simultâneos.
+        return Response(
+            {"error": "Você já votou nesta enquete."},
+            status=status.HTTP_409_CONFLICT,
+        )
     return Response(_resultado_payload(enquete), status=status.HTTP_201_CREATED)
