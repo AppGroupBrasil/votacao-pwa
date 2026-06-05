@@ -19,6 +19,7 @@ export default function EleitoresPage() {
   const [eleitores, setEleitores] = useState<Eleitor[]>([]);
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [filtroCondominio, setFiltroCondominio] = useState("");
+  const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [importando, setImportando] = useState(false);
@@ -195,9 +196,16 @@ export default function EleitoresPage() {
     ]).finally(() => setLoading(false));
   }, []);
 
-  const filtered = filtroCondominio
-    ? eleitores.filter((e) => e.condominio === filtroCondominio)
-    : eleitores;
+  const termo = busca.trim().toLowerCase();
+  const filtered = eleitores
+    .filter((e) => (filtroCondominio ? e.condominio === filtroCondominio : true))
+    .filter((e) =>
+      termo
+        ? [e.nome, e.bloco, e.apartamento, e.email]
+            .filter(Boolean)
+            .some((v) => String(v).toLowerCase().includes(termo))
+        : true
+    );
 
   return (
     <div>
@@ -236,6 +244,16 @@ export default function EleitoresPage() {
             Novo Morador
           </Link>
         </div>
+      </div>
+
+      <div className="mb-4">
+        <input
+          type="text"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por nome, bloco, apto ou email..."
+          className="input-field w-full sm:w-96"
+        />
       </div>
 
       {condominios.length > 1 && (
