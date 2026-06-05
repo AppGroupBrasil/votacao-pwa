@@ -65,3 +65,7 @@ frontend/android/app/build/
 frontend/android/.gradle/
 frontend/android/local.properties
 frontend/android/app/release/
+
+interlagos_dump.json
+dump.json
+dump.err
