@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import type { Condominio } from "@/lib/types";
 import { api } from "@/lib/api";
+import ComoFunciona from "@/components/ComoFunciona";
 import type { Assembleia } from "@/lib/types";
 import { clsx } from "clsx";
 
@@ -331,6 +332,7 @@ export default function AssembleiaDetailPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-2xl font-bold">{assembleia.titulo}</h1>
+              <ComoFunciona tutorial="assembleia" />
               <span
                 className={clsx(
                   "text-xs font-medium px-2 py-0.5 rounded-full",

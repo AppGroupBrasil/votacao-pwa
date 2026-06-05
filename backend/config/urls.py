@@ -51,6 +51,7 @@ urlpatterns = [
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     path("api/auth/", include("core.urls_auth")),
+    path("api/eleitor/", include("core.urls_eleitor_auth")),
     path("api/webauthn/", include("core.urls_webauthn")),
     path("api/biometria/", include("core.urls_biometria")),
     path("api/otp/", include("core.urls_otp")),

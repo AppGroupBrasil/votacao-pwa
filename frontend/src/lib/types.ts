@@ -8,6 +8,7 @@ export interface Condominio {
   blocos: string[];
   autocadastro_ativo: boolean;
   autocadastro_token: string | null;
+  whatsapp_administradora?: string;
   criado_em: string;
   atualizado_em: string;
 }

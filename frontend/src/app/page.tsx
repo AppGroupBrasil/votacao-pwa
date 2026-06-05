@@ -23,6 +23,8 @@ import {
   Scale,
   Link2,
   Sparkles,
+  ListChecks,
+  PenLine,
 } from "lucide-react";
 
 const features = [
@@ -70,6 +72,16 @@ const features = [
     icon: Sparkles,
     title: "Resumo e Ata com IA",
     desc: "A partir da gravação, a IA gera a transcrição, um resumo dos pontos principais e a ata formal — editável e exportável em TXT ou PDF.",
+  },
+  {
+    icon: ListChecks,
+    title: "Controle de Votação",
+    desc: "Painel exclusivo do síndico e da administradora: acompanhe em tempo real quem já votou e quem falta — sem nunca revelar em qual opção cada um votou.",
+  },
+  {
+    icon: PenLine,
+    title: "Lista de Presença Manual",
+    desc: "Gere um link público e colete presença com selfie, nome, bloco, apartamento e assinatura na tela do celular — ideal para visitantes e quem não tem cadastro.",
   },
   {
     icon: Ban,
@@ -476,18 +488,20 @@ export default function HomePage() {
 
             <div className="flex items-baseline gap-1 mb-6">
               <span className="text-sm text-gray-500">R$</span>
-              <span className="text-5xl font-bold text-primary-700">299</span>
+              <span className="text-5xl font-bold text-primary-700">350</span>
               <span className="text-gray-500">/mês</span>
             </div>
 
             <ul className="space-y-3 mb-8 flex-1">
               {[
-                "Condomínios ilimitados",
-                "Votações ilimitadas por mês",
+                "Uso ilimitado de todo o sistema",
+                "Condomínios e votações ilimitados",
                 "Sem limite de votantes por assembleia",
                 "Votação simples por link (secreta ou aberta)",
                 "Biometria facial + WebAuthn + OTP",
                 "Lista de presença digital com assinatura facial",
+                "Lista de presença manual (selfie + assinatura)",
+                "Controle de votação: quem votou e quem falta",
                 "Resultados em tempo real",
                 "Relatórios e auditoria completa",
                 "Bloqueio automático de inadimplentes",

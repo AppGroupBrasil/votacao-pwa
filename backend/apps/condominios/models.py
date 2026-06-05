@@ -24,6 +24,12 @@ class Condominio(models.Model):
     autocadastro_token = models.CharField(
         max_length=64, unique=True, blank=True, null=True
     )
+    whatsapp_administradora = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Número (com DDD) da administradora para contato dos inadimplentes.",
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 

@@ -34,13 +34,16 @@ export default function NovoEleitorPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      // Hash CPF in browser before sending
+      // CPF é opcional; só hasheia no navegador se foi preenchido
       const cpfClean = form.cpf_hash.replace(/\D/g, "");
-      const encoder = new TextEncoder();
-      const data = encoder.encode(cpfClean);
-      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const cpfHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+      let cpfHash = "";
+      if (cpfClean) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(cpfClean);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        cpfHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+      }
 
       await api.createEleitor({
         ...form,
@@ -93,7 +96,7 @@ export default function NovoEleitorPage() {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            CPF
+            CPF <span className="text-gray-400 font-normal">(opcional)</span>
           </label>
           <input
             type="text"
@@ -101,7 +104,6 @@ export default function NovoEleitorPage() {
             onChange={(e) => setForm({ ...form, cpf_hash: e.target.value })}
             className="input-field"
             placeholder="000.000.000-00"
-            required
           />
           <p className="text-xs text-gray-400 mt-1">
             O CPF é hasheado no navegador antes do envio

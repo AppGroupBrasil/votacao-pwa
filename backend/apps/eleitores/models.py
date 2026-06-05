@@ -1,5 +1,6 @@
 import uuid
 
+from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 
 from apps.condominios.models import Condominio
@@ -11,7 +12,7 @@ class Eleitor(models.Model):
         Condominio, on_delete=models.CASCADE, related_name="eleitores"
     )
     nome = models.CharField(max_length=200)
-    cpf_hash = models.CharField(max_length=64, unique=True)
+    cpf_hash = models.CharField(max_length=64, unique=True, blank=True, null=True)
     bloco = models.CharField(max_length=20, blank=True, default="")
     apartamento = models.CharField(max_length=20)
     perfil = models.CharField(
@@ -20,6 +21,11 @@ class Eleitor(models.Model):
         default="proprietario",
     )
     email = models.EmailField(max_length=200)
+    senha = models.CharField(max_length=128, blank=True, default="")
+    senha_alterada = models.BooleanField(
+        default=False,
+        help_text="False obriga troca de senha no primeiro acesso.",
+    )
     biometria_hash = models.CharField(max_length=64, blank=True, default="")
     webauthn_credential = models.JSONField(blank=True, null=True)
     cadastro_completo = models.BooleanField(default=False)
@@ -41,10 +47,20 @@ class Eleitor(models.Model):
         verbose_name_plural = "eleitores"
         constraints = [
             models.UniqueConstraint(
-                fields=["condominio", "apartamento"],
+                fields=["condominio", "bloco", "apartamento", "nome"],
                 name="unique_eleitor_apartamento",
             )
         ]
+
+    def set_senha(self, raw):
+        self.senha = make_password(raw)
+
+    def check_senha(self, raw):
+        return bool(self.senha) and check_password(raw, self.senha)
+
+    @property
+    def tem_biometria(self):
+        return bool(self.biometria_hash or self.webauthn_credential)
 
     def __str__(self):
         return f"{self.nome} - {self.apartamento}"

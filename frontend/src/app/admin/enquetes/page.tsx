@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import ComoFunciona from "@/components/ComoFunciona";
 import type { Enquete, ListaPresenca } from "@/lib/types";
 
 export default function EnquetesPage() {
@@ -158,7 +159,10 @@ export default function EnquetesPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Votação Simples</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">Votação Simples</h1>
+            <ComoFunciona tutorial="enquete" />
+          </div>
           <p className="text-sm text-gray-500">
             Gere um link e compartilhe. Voto secreto (anônimo) ou aberto
             (identifica quem votou).
@@ -256,10 +260,13 @@ export default function EnquetesPage() {
 
       <div className="mt-10 mb-6 flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <ClipboardList className="w-5 h-5 text-indigo-600" /> Lista de
-            presença manual
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-indigo-600" /> Lista de
+              presença manual
+            </h2>
+            <ComoFunciona tutorial="presenca-manual" />
+          </div>
           <p className="text-sm text-gray-500">
             Gere um link para que os presentes registrem presença pelo celular:
             selfie, nome, bloco, apartamento e assinatura na tela.

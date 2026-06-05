@@ -18,6 +18,9 @@ export default function CondominiosPage() {
     blocos: [] as string[],
   });
   const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<
+    { tipo: "ok" | "erro"; texto: string } | null
+  >(null);
 
   useEffect(() => {
     loadData();
@@ -33,13 +36,28 @@ export default function CondominiosPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setMsg(null);
     try {
-      await api.createCondominio(form);
+      const criado = await api.createCondominio(form);
       setShowForm(false);
       setForm({ nome: "", cnpj: "", total_unidades: 0, blocos: [] });
       loadData();
-    } catch {
-      alert("Erro ao criar condomínio.");
+      setMsg({
+        tipo: "ok",
+        texto: `Condomínio "${criado.nome}" cadastrado com sucesso!`,
+      });
+    } catch (err: any) {
+      const data = err?.response?.data;
+      let detalhe = "Erro ao criar condomínio.";
+      if (err?.response?.status === 401) {
+        detalhe = "Sessão expirada. Faça login novamente para cadastrar.";
+      } else if (data && typeof data === "object") {
+        const campos = Object.entries(data)
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(" ") : v}`)
+          .join(" | ");
+        if (campos) detalhe = campos;
+      }
+      setMsg({ tipo: "erro", texto: detalhe });
     } finally {
       setSaving(false);
     }
@@ -57,6 +75,18 @@ export default function CondominiosPage() {
           Novo Condomínio
         </button>
       </div>
+
+      {msg && (
+        <div
+          className={`mb-4 rounded-xl border px-4 py-3 text-sm font-medium ${
+            msg.tipo === "ok"
+              ? "border-green-300 bg-green-50 text-green-700"
+              : "border-red-300 bg-red-50 text-red-700"
+          }`}
+        >
+          {msg.texto}
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="card mb-6 space-y-4">

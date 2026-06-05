@@ -12,6 +12,7 @@ import {
   Search,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import ComoFunciona from "@/components/ComoFunciona";
 import type { ControleVotacao } from "@/lib/types";
 
 type Filtro = "todos" | "votaram" | "faltam";
@@ -56,7 +57,10 @@ export default function ControleVotacaoPage() {
         <ArrowLeft className="w-4 h-4" /> Voltar à assembleia
       </Link>
 
-      <h1 className="text-2xl font-bold mb-1">Controle de votação</h1>
+      <div className="flex items-center gap-3 mb-1">
+        <h1 className="text-2xl font-bold">Controle de votação</h1>
+        <ComoFunciona tutorial="controle-votacao" />
+      </div>
       <p className="text-sm text-gray-500 mb-6">
         Acompanhe quem já votou e quem falta. O voto é secreto: esta tela nunca
         mostra em qual opção cada pessoa votou.

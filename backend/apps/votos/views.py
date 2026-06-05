@@ -189,7 +189,11 @@ def registrar_voto(request, assembleia_id):
 
         if eleitor.inadimplente:
             return Response(
-                {"error": "Unidade inadimplente. Voto não permitido. Regularize com a administração."},
+                {
+                    "error": "Entre em contato com sua administradora.",
+                    "code": "inadimplente",
+                    "whatsapp": (eleitor.condominio.whatsapp_administradora or "").strip(),
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -226,6 +230,28 @@ def registrar_voto(request, assembleia_id):
                 {"error": "Você já votou nesta questão"},
                 status=status.HTTP_409_CONFLICT,
             )
+
+        # Um voto por unidade: se outro morador da mesma unidade
+        # (condomínio + bloco + apartamento) já votou nesta questão, bloqueia.
+        if not por_procuracao:
+            unidade_ja_votou = (
+                Voto.objects.select_for_update()
+                .filter(
+                    assembleia=assembleia,
+                    questao=questao,
+                    eleitor__condominio=eleitor.condominio_id,
+                    eleitor__bloco=eleitor.bloco,
+                    eleitor__apartamento=eleitor.apartamento,
+                )
+                .exclude(eleitor=eleitor)
+                .exclude(status=Voto.Status.REJEITADO)
+                .exists()
+            )
+            if unidade_ja_votou:
+                return Response(
+                    {"error": "Sua unidade já tem um voto."},
+                    status=status.HTTP_409_CONFLICT,
+                )
 
         voto = Voto(
             assembleia=assembleia,

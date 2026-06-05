@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { Vote, CheckCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, Link2, Users, Clock, ArrowLeft } from "lucide-react";
+import { Vote, CheckCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, Link2, Users, Clock, ArrowLeft, MessageCircle, X } from "lucide-react";
 import { api, getDeviceId } from "@/lib/api";
 import WebAuthnVerify from "@/components/webauthn/WebAuthnVerify";
 import FaceVerify from "@/components/FaceVerify";
@@ -26,6 +26,9 @@ export default function VotacaoPage() {
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [error, setError] = useState("");
+  const [inadModal, setInadModal] = useState<
+    { msg: string; whatsapp: string } | null
+  >(null);
 
   // Voto por procuração / mais de uma unidade
   const [ehProcuracao, setEhProcuracao] = useState(false);
@@ -313,9 +316,15 @@ export default function VotacaoPage() {
         setCurrentQuestao((prev) => prev + 1);
       }
     } catch (err: any) {
-      const msg =
-        err?.response?.data?.error || "Erro ao registrar voto.";
-      alert(msg);
+      const data = err?.response?.data;
+      if (data?.code === "inadimplente") {
+        setInadModal({
+          msg: data.error || "Entre em contato com sua administradora.",
+          whatsapp: (data.whatsapp || "").replace(/\D/g, ""),
+        });
+      } else {
+        alert(data?.error || "Erro ao registrar voto.");
+      }
     } finally {
       setVotando(false);
     }
@@ -323,6 +332,43 @@ export default function VotacaoPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center px-4">
+      {inadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 relative">
+            <button
+              onClick={() => setInadModal(null)}
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+              aria-label="Fechar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="text-center">
+              <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                <Shield className="w-6 h-6 text-amber-600" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-900 mb-2">
+                Unidade inadimplente
+              </h2>
+              <p className="text-sm text-gray-600 mb-5">{inadModal.msg}</p>
+              {inadModal.whatsapp ? (
+                <a
+                  href={`https://wa.me/${inadModal.whatsapp}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 w-full rounded-xl bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-3"
+                >
+                  <MessageCircle className="w-5 h-5" />
+                  Falar com a administradora
+                </a>
+              ) : (
+                <p className="text-xs text-gray-400">
+                  Contato da administradora não configurado.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="card w-full max-w-md">
         {ehProcuracao && unidadeProc && (
           <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800 flex items-center gap-2">

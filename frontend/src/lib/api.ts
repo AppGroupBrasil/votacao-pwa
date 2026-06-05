@@ -17,6 +17,35 @@ import type {
   VotoResponse,
 } from "./types";
 
+export interface EleitorSession {
+  session_token?: string;
+  eleitor_id: string;
+  nome: string;
+  bloco: string;
+  apartamento: string;
+  perfil: string;
+  condominio_id: string;
+  precisa_trocar_senha: boolean;
+  precisa_biometria: boolean;
+  inadimplente: boolean;
+  login?: string;
+  ok?: boolean;
+}
+
+export interface EleitorPresencaResponse {
+  assembleia_id: string;
+  assembleia_titulo: string;
+  total_presentes: number;
+  presencas: {
+    nome: string;
+    bloco: string;
+    apartamento: string;
+    perfil: string;
+    horario_entrada: string;
+    eu: boolean;
+  }[];
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 // Identificador persistente do dispositivo: impede que o mesmo aparelho
@@ -585,6 +614,43 @@ export const api = {
       `/enquetes/listas-presenca/${id}/registrar/`,
       { method: "POST", body: JSON.stringify(data) }
     ),
+
+  // Acesso do morador (login + senha)
+  eleitorLogin: (login: string, senha: string) =>
+    request<EleitorSession>("/eleitor/login/", {
+      method: "POST",
+      body: JSON.stringify({ login, senha }),
+    }),
+
+  eleitorCadastro: (data: {
+    cnpj: string;
+    nome: string;
+    bloco: string;
+    apartamento: string;
+    senha: string;
+  }) =>
+    request<EleitorSession>("/eleitor/cadastro/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  eleitorTrocarSenha: (session_token: string, nova_senha: string) =>
+    request<EleitorSession>("/eleitor/trocar-senha/", {
+      method: "POST",
+      body: JSON.stringify({ session_token, nova_senha }),
+    }),
+
+  eleitorCadastrarBiometria: (session_token: string, biometria_hash: string) =>
+    request<EleitorSession>("/eleitor/biometria/", {
+      method: "POST",
+      body: JSON.stringify({ session_token, biometria_hash }),
+    }),
+
+  eleitorPresenca: (session_token: string) =>
+    request<EleitorPresencaResponse>("/eleitor/presenca/", {
+      method: "POST",
+      body: JSON.stringify({ session_token }),
+    }),
 
   // Master
   masterDashboard: () =>

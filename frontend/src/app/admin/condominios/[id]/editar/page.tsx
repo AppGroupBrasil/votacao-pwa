@@ -17,6 +17,7 @@ export default function EditarCondominioPage() {
     cnpj: "",
     total_unidades: 0,
     blocos: [] as string[],
+    whatsapp_administradora: "",
   });
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export default function EditarCondominioPage() {
           cnpj: c.cnpj,
           total_unidades: c.total_unidades,
           blocos: c.blocos || [],
+          whatsapp_administradora: c.whatsapp_administradora || "",
         })
       )
       .catch(() => alert("Erro ao carregar o condomínio."))
@@ -97,6 +99,24 @@ export default function EditarCondominioPage() {
               required
             />
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            WhatsApp da administradora
+          </label>
+          <input
+            type="text"
+            value={form.whatsapp_administradora}
+            onChange={(e) =>
+              setForm({ ...form, whatsapp_administradora: e.target.value })
+            }
+            className="input-field"
+            placeholder="Ex: 5561999998888 (DDI+DDD+número)"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Usado no botão de contato exibido a moradores inadimplentes.
+          </p>
         </div>
 
         <BlocosEditor
