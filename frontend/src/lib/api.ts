@@ -182,8 +182,18 @@ export const api = {
     ),
 
   // Eleitores
-  getEleitores: () =>
-    request<PaginatedResponse<Eleitor>>("/eleitores/"),
+  getEleitores: async () => {
+    const all: Eleitor[] = [];
+    let page = 1;
+    for (;;) {
+      const d = await request<PaginatedResponse<Eleitor>>(`/eleitores/?page=${page}`);
+      const results = ((d as any).results ?? d) as Eleitor[];
+      all.push(...results);
+      if (!(d as any).next) break;
+      page += 1;
+    }
+    return { count: all.length, next: null, previous: null, results: all } as PaginatedResponse<Eleitor>;
+  },
 
   createEleitor: (data: Partial<Eleitor>) =>
     request<Eleitor>("/eleitores/", {
