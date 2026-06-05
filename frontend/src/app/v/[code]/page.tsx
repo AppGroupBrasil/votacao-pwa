@@ -6,6 +6,11 @@ import { useParams, useRouter } from "next/navigation";
 const ALPHABET =
   "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+// Códigos curtos fixos por assembleia (atalhos para compartilhar no chat).
+const ATALHOS: Record<string, string> = {
+  "1": "76526cc0-9f0e-4e70-b15b-88a7b1b82983",
+};
+
 function decodeBase62ToUuid(code: string): string | null {
   try {
     let n = BigInt(0);
@@ -29,7 +34,7 @@ export default function ShortVotacaoRedirect() {
 
   useEffect(() => {
     const code = String(params?.code || "");
-    const uuid = decodeBase62ToUuid(code);
+    const uuid = ATALHOS[code] || decodeBase62ToUuid(code);
     router.replace(uuid ? `/votacao/${uuid}` : "/");
   }, [params, router]);
 
