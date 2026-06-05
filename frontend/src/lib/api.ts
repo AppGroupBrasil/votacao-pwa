@@ -622,6 +622,11 @@ export const api = {
       body: JSON.stringify({ login, senha }),
     }),
 
+  eleitorCondominioInfo: (cnpj: string) =>
+    request<{ nome: string; blocos: string[] }>(
+      `/eleitor/condominio-info/?cnpj=${encodeURIComponent(cnpj)}`
+    ),
+
   eleitorCadastro: (data: {
     cnpj: string;
     nome: string;

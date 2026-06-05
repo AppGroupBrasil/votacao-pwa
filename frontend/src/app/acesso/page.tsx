@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Vote,
   Eye,
@@ -47,6 +47,15 @@ export default function AcessoMoradorPage() {
   const [cBloco, setCBloco] = useState("");
   const [cApto, setCApto] = useState("");
   const [cSenha, setCSenha] = useState("");
+  const [blocos, setBlocos] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (step !== "cadastro" || blocos.length) return;
+    api
+      .eleitorCondominioInfo(CONDOMINIO_CNPJ)
+      .then((info) => setBlocos(info.blocos || []))
+      .catch(() => {});
+  }, [step, blocos.length]);
 
   // troca de senha
   const [novaSenha, setNovaSenha] = useState("");
@@ -262,13 +271,19 @@ export default function AcessoMoradorPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Bloco
                 </label>
-                <input
-                  type="text"
+                <select
                   value={cBloco}
                   onChange={(e) => setCBloco(e.target.value)}
                   className="input-field"
-                  placeholder="Ex: A"
-                />
+                  required={blocos.length > 0}
+                >
+                  <option value="">Selecione</option>
+                  {blocos.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

@@ -105,6 +105,20 @@ def _gerar_login(condominio, nome, bloco, apartamento):
     return login
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def eleitor_condominio_info(request):
+    """Dados públicos do condomínio por CNPJ (nome + blocos) para o autocadastro."""
+    cnpj = str(request.query_params.get("cnpj", "")).strip()
+    condominio = Condominio.objects.filter(cnpj=cnpj).first()
+    if not condominio:
+        return Response(
+            {"error": "Condomínio não encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return Response({"nome": condominio.nome, "blocos": condominio.blocos or []})
+
+
 @ratelimit(key="ip", rate="10/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
