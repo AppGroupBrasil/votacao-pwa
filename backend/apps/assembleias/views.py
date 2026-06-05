@@ -387,7 +387,10 @@ class QuestaoViewSet(viewsets.ModelViewSet):
         return QuestaoSerializer
 
     def _check_assembleia_locked(self):
-        """Retorna Response de erro se assembleia não está em rascunho."""
+        """Retorna Response de erro se assembleia não está em rascunho.
+        O master (superuser) pode alterar questões mesmo com a assembleia aberta."""
+        if getattr(self.request.user, "is_superuser", False):
+            return None
         assembleia = Assembleia.objects.get(pk=self.kwargs["assembleia_pk"])
         if assembleia.status != Assembleia.Status.RASCUNHO:
             return Response(

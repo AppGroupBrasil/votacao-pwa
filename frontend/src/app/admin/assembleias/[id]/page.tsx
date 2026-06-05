@@ -79,6 +79,8 @@ export default function AssembleiaDetailPage() {
   const [editQuestaoImagens, setEditQuestaoImagens] = useState<(File | null)[]>([]);
   const [editQuestaoArquivos, setEditQuestaoArquivos] = useState<(File | null)[]>([]);
 
+  const [isMaster, setIsMaster] = useState(false);
+
   const loadAssembleia = useCallback(() => {
     api
       .getAssembleia(id)
@@ -89,7 +91,10 @@ export default function AssembleiaDetailPage() {
 
   useEffect(() => {
     loadAssembleia();
+    api.me().then((u) => setIsMaster(!!u.is_superuser)).catch(() => {});
   }, [loadAssembleia]);
+
+  const podeEditarQuestoes = assembleia?.status === "rascunho" || isMaster;
 
   function startEditing() {
     if (!assembleia) return;
@@ -677,7 +682,7 @@ export default function AssembleiaDetailPage() {
           <h2 className="text-lg font-semibold">
             Questões ({assembleia.questoes.length})
           </h2>
-          {assembleia.status === "rascunho" && (
+          {podeEditarQuestoes && (
             <button
               onClick={() => setShowAddQuestao(!showAddQuestao)}
               className="btn-primary flex items-center gap-2 text-sm"
@@ -1006,7 +1011,7 @@ export default function AssembleiaDetailPage() {
                         ))}
                       </div>
                     </div>
-                    {assembleia.status === "rascunho" && (
+                    {podeEditarQuestoes && (
                       <div className="flex items-center gap-1 shrink-0">
                         <button
                           onClick={() => startEditQuestao(q)}
