@@ -20,6 +20,15 @@ const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
   poweredByHeader: false,
+  async redirects() {
+    return [
+      {
+        source: "/v/1",
+        destination: "/votacao/76526cc0-9f0e-4e70-b15b-88a7b1b82983",
+        permanent: false,
+      },
+    ];
+  },
   compiler: {
     removeConsole:
       process.env.NODE_ENV === "production"
