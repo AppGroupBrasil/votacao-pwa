@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
-import { Plus, Send, UserCheck, UserX, Link2, Check, Upload, Download, Pencil, Trash2, Lock, Unlock } from "lucide-react";
+import { Plus, Send, UserCheck, UserX, Link2, Check, Upload, Download, Pencil, Trash2, Lock, Unlock, Printer } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Eleitor, Condominio } from "@/lib/types";
 
@@ -175,6 +175,49 @@ export default function EleitoresPage() {
     } catch {
       alert("Erro ao excluir o morador.");
     }
+  }
+
+  function handlePrint(e: Eleitor) {
+    const fmt = (s: string | null | undefined) =>
+      s ? new Date(s).toLocaleString("pt-BR") : "—";
+    const status = e.cadastro_completo
+      ? "Biometria facial cadastrada (cadastro completo)"
+      : "Biometria pendente (cadastro não concluído)";
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Registro de biometria — ${e.nome}</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:680px;margin:32px auto;padding:0 24px}
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:#666;font-size:13px;margin-bottom:24px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td{padding:8px 6px;border-bottom:1px solid #e5e7eb;vertical-align:top}
+  td.k{color:#666;width:200px}
+  .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;
+    background:${e.cadastro_completo ? "#dcfce7" : "#fef3c7"};color:${e.cadastro_completo ? "#15803d" : "#b45309"}}
+  .foot{margin-top:28px;font-size:11px;color:#888}
+  @media print{button{display:none}}
+</style></head><body>
+<h1>Comprovante de cadastro de biometria facial</h1>
+<div class="sub">${e.condominio_nome || ""}</div>
+<table>
+  <tr><td class="k">Morador</td><td>${e.nome}</td></tr>
+  <tr><td class="k">Unidade</td><td>${e.bloco ? e.bloco + " / " : ""}${e.apartamento}</td></tr>
+  <tr><td class="k">Perfil</td><td>${e.perfil === "procurador" ? "Procurador" : "Proprietário"}</td></tr>
+  <tr><td class="k">E-mail / login</td><td>${e.email || "—"}</td></tr>
+  <tr><td class="k">Situação da biometria</td><td><span class="badge">${status}</span></td></tr>
+  <tr><td class="k">Cadastrado em</td><td>${fmt(e.criado_em)}</td></tr>
+  <tr><td class="k">Última atualização</td><td>${fmt(e.atualizado_em)}</td></tr>
+</table>
+<div class="foot">Documento gerado em ${new Date().toLocaleString("pt-BR")} — appvotacao.com.br</div>
+<script>window.onload=function(){window.print()}</script>
+</body></html>`;
+    const w = window.open("", "_blank", "width=720,height=800");
+    if (!w) {
+      alert("Permita pop-ups para imprimir o registro.");
+      return;
+    }
+    w.document.write(html);
+    w.document.close();
   }
 
   async function handleCopyLink(eleitorId: string) {
@@ -437,6 +480,13 @@ export default function EleitoresPage() {
                         ) : (
                           <Lock className="w-4 h-4" />
                         )}
+                      </button>
+                      <button
+                        onClick={() => handlePrint(e)}
+                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
+                        title="Imprimir registro da biometria facial"
+                      >
+                        <Printer className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDelete(e)}

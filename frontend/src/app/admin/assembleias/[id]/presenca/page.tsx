@@ -52,13 +52,14 @@ export default function ListaPresencaPage() {
   function exportarCsv() {
     if (!assembleia) return;
     const linhas = [
-      ["Nome", "Bloco", "Apartamento", "Perfil", "Método", "IP", "Aparelho", "Horário de entrada"],
+      ["Nome", "Bloco", "Apartamento", "Perfil", "Método", "Registro facial", "IP", "Aparelho", "Horário de entrada"],
       ...presencas.map((p) => [
         p.nome,
         p.bloco || "",
         p.apartamento || "",
         perfilLabel[p.perfil] || p.perfil,
         metodoLabel[p.metodo_auth] || p.metodo_auth,
+        p.assinatura_facial || "",
         p.ip_address || "",
         p.device_info || "",
         new Date(p.horario_entrada).toLocaleString("pt-BR"),
@@ -153,6 +154,7 @@ export default function ListaPresencaPage() {
                 <th className="px-4 py-3 font-medium">Unidade</th>
                 <th className="px-4 py-3 font-medium">Perfil</th>
                 <th className="px-4 py-3 font-medium">Método</th>
+                <th className="px-4 py-3 font-medium">Registro facial</th>
                 <th className="px-4 py-3 font-medium">IP</th>
                 <th className="px-4 py-3 font-medium">Aparelho</th>
                 <th className="px-4 py-3 font-medium">Entrada</th>
@@ -179,6 +181,11 @@ export default function ListaPresencaPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-600">
                     {metodoLabel[p.metodo_auth] || p.metodo_auth}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 font-mono text-xs" title={p.assinatura_facial || ""}>
+                    {p.assinatura_facial
+                      ? p.assinatura_facial.slice(0, 12) + "…"
+                      : "—"}
                   </td>
                   <td className="px-4 py-3 text-gray-500 font-mono text-xs">
                     {p.ip_address || "—"}

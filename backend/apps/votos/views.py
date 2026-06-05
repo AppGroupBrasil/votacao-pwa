@@ -240,8 +240,8 @@ def registrar_voto(request, assembleia_id):
                     assembleia=assembleia,
                     questao=questao,
                     eleitor__condominio=eleitor.condominio_id,
-                    eleitor__bloco=eleitor.bloco,
-                    eleitor__apartamento=eleitor.apartamento,
+                    eleitor__bloco__iexact=(eleitor.bloco or "").strip(),
+                    eleitor__apartamento__iexact=(eleitor.apartamento or "").strip(),
                 )
                 .exclude(eleitor=eleitor)
                 .exclude(status=Voto.Status.REJEITADO)
