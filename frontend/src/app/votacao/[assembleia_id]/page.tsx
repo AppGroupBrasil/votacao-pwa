@@ -220,6 +220,20 @@ export default function VotacaoPage() {
     );
   }
 
+  if (!done && questoes.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
+        <div className="card w-full max-w-md text-center">
+          <Shield className="w-16 h-16 text-primary-400 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Aguardando questões</h1>
+          <p className="text-gray-600">
+            Nenhuma questão foi liberada para votação ainda. Aguarde o início da votação.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (done || currentQuestao >= questoes.length) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-white px-4">
