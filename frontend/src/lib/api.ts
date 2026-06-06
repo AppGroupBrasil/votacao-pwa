@@ -267,7 +267,7 @@ export const api = {
     request<Assembleia>(`/assembleias/${id}/`),
 
   getAssembleiaPublic: (id: string) =>
-    request<Assembleia>(`/assembleias/${id}/`),
+    request<Assembleia>(`/votos/${id}/votacao/`),
 
   createAssembleia: (data: Partial<Assembleia>) =>
     request<Assembleia>("/assembleias/", {

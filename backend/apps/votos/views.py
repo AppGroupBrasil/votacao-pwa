@@ -349,6 +349,33 @@ def registrar_presenca(request, assembleia_id):
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
+def votacao_publica(request, assembleia_id):
+    """
+    Tela de votação do morador: devolve título, situação e questões/opções
+    SEM expor presenças, identidades ou votos. Acessível publicamente para
+    que o eleitor autenticado pelo /acesso consiga carregar as questões.
+    """
+    from apps.assembleias.serializers import QuestaoSerializer
+
+    assembleia = get_object_or_404(
+        Assembleia.objects.prefetch_related("questoes__opcoes"), id=assembleia_id
+    )
+    return Response(
+        {
+            "id": str(assembleia.id),
+            "titulo": assembleia.titulo,
+            "descricao": assembleia.descricao,
+            "status": assembleia.status,
+            "votacao_liberada": assembleia.votacao_liberada,
+            "questoes": QuestaoSerializer(
+                assembleia.questoes.order_by("ordem"), many=True
+            ).data,
+        }
+    )
+
+
+@api_view(["GET"])
 @permission_classes([IsAdminWithRole])
 def resultados(request, assembleia_id):
     assembleia = get_accessible_assembleia(request, assembleia_id)

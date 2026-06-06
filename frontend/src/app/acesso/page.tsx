@@ -462,11 +462,21 @@ export default function AcessoMoradorPage() {
               ))}
             </div>
 
+            {presenca.assembleia_id && (
+              <a
+                href={`/votacao/${presenca.assembleia_id}?eleitor=${session?.eleitor_id || ""}`}
+                className="btn-primary w-full flex items-center justify-center gap-2"
+              >
+                <Vote className="w-4 h-4" />
+                Ir para a votação
+              </a>
+            )}
+
             <a
               href={SALA_REUNIAO_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-primary w-full flex items-center justify-center gap-2"
+              className="btn-secondary w-full flex items-center justify-center gap-2"
             >
               <Video className="w-4 h-4" />
               Acessar sala da reunião online

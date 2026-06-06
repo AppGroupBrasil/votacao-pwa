@@ -61,11 +61,20 @@ export default function VotacaoPage() {
     : "";
 
   useEffect(() => {
-    api.getAssembleiaPublic(assembleiaId).then(setAssembleia).catch(() => {
-      // Sem sessão o endpoint responde 401: em vez de dar "não encontrada",
-      // leva o morador ao fluxo de entrada (login → biometria → votação).
-      window.location.replace("/acesso");
-    });
+    let ativo = true;
+    function carregar(redirecionar: boolean) {
+      api.getAssembleiaPublic(assembleiaId)
+        .then((a) => { if (ativo) setAssembleia(a); })
+        .catch(() => {
+          // Assembleia inexistente: leva o morador ao fluxo de entrada.
+          if (redirecionar) window.location.replace("/acesso");
+        });
+    }
+    carregar(true);
+    // Reconsulta enquanto a votação não foi liberada, para a tela de espera
+    // abrir sozinha assim que a administração liberar.
+    const t = setInterval(() => carregar(false), 6000);
+    return () => { ativo = false; clearInterval(t); };
   }, [assembleiaId]);
 
   // Lista de presença: registra a presença somente após autenticação
