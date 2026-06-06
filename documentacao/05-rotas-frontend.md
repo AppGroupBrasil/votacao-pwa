@@ -7,11 +7,24 @@
 | `/acesso` | **Porta de entrada do morador** (login → biometria → presença → votação). Link a compartilhar. |
 | `/votar` | Atalho → redireciona para `/acesso`. |
 | `/v/[code]` | Atalho curto. `/v/1` redireciona para `/acesso`. |
-| `/votacao/[assembleia_id]` | Tela de votação. Carrega questões via endpoint público; pede biometria; vota. |
+| `/votacao/[assembleia_id]` | Tela de votação. Carrega questões via endpoint público; identifica o morador; vota. Sequência mostra só questões não encerradas e acompanha as já respondidas por id (resiliente a encerramento ao vivo). Morador com `votos_permitidos > 1` vota N vezes no mesmo item. |
 | `/votacao/comprovante` | Conferência de comprovante (hash) sem expor a opção. |
 | `/enquete/[id]` | Enquete simples/anônima. |
 | `/presenca-manual/[id]` | Registro de presença manual (selfie + assinatura). |
 | `/contrato`, `/privacidade`, `/termos`, `/excluir-conta` | Páginas institucionais/legais. |
+
+## Identificação sem login (componentes)
+
+O morador acessa o link sem senha e se identifica por um destes métodos antes de votar:
+
+| Componente | Método |
+|---|---|
+| `FaceVerify.tsx` | Biometria facial. |
+| `webauthn/WebAuthnVerify.tsx` | Digital/WebAuthn. |
+| `IdentificacaoEmail.tsx` + `OtpVerify.tsx` | E-mail com código (OTP). Resolve o eleitor pelo condomínio da assembleia. |
+
+A verificação devolve `token` e `votos_permitidos`, usados na tela de votação. Morador do mesmo
+condomínio fora da lista de votantes é inscrito automaticamente ao votar (voto próprio).
 
 ## Autenticação (admin/morador)
 
