@@ -94,8 +94,28 @@ class AssembleiaViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         assembleia.status = Assembleia.Status.ABERTA
-        assembleia.save(update_fields=["status"])
-        registrar_log(request, assembleia, LogAuditoria.Acao.ABRIR, "Votação aberta.")
+        assembleia.votacao_liberada = False
+        assembleia.save(update_fields=["status", "votacao_liberada"])
+        registrar_log(request, assembleia, LogAuditoria.Acao.ABRIR, "Votação aberta (aguardando liberação).")
+        return Response(AssembleiaSerializer(assembleia).data)
+
+    @action(detail=True, methods=["post"], url_path="liberar-votacao")
+    def liberar_votacao(self, request, pk=None):
+        assembleia = self.get_object()
+        if assembleia.status != Assembleia.Status.ABERTA:
+            return Response(
+                {"error": "Só é possível liberar a votação de assembleias abertas"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        liberar = request.data.get("liberar", True)
+        assembleia.votacao_liberada = bool(liberar)
+        assembleia.save(update_fields=["votacao_liberada"])
+        registrar_log(
+            request,
+            assembleia,
+            LogAuditoria.Acao.ABRIR,
+            "Votação liberada." if assembleia.votacao_liberada else "Votação travada.",
+        )
         return Response(AssembleiaSerializer(assembleia).data)
 
     @action(detail=True, methods=["post"], url_path="encerrar")

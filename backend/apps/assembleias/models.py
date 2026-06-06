@@ -37,6 +37,10 @@ class Assembleia(models.Model):
         default=False,
         help_text="Se True, 2ª chamada aceita qualquer número dos presentes",
     )
+    votacao_liberada = models.BooleanField(
+        default=False,
+        help_text="Se False, a assembleia está aberta para presença mas os votos ficam travados até a liberação.",
+    )
     votantes = models.ManyToManyField(Eleitor, blank=True, related_name="assembleias")
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)

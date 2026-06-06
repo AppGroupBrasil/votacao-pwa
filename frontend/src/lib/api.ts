@@ -289,6 +289,12 @@ export const api = {
   abrirAssembleia: (id: string) =>
     request<Assembleia>(`/assembleias/${id}/abrir/`, { method: "POST" }),
 
+  liberarVotacao: (id: string, liberar: boolean) =>
+    request<Assembleia>(`/assembleias/${id}/liberar-votacao/`, {
+      method: "POST",
+      body: JSON.stringify({ liberar }),
+    }),
+
   encerrarAssembleia: (id: string) =>
     request<Assembleia>(`/assembleias/${id}/encerrar/`, { method: "POST" }),
 

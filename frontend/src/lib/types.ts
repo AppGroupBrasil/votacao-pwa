@@ -95,6 +95,7 @@ export interface Assembleia {
   data_inicio: string;
   data_fim: string;
   status: "rascunho" | "aberta" | "encerrada";
+  votacao_liberada?: boolean;
   quorum_minimo: number;
   primeira_chamada_50_mais_1: boolean;
   quorum_segunda_chamada: number;
@@ -116,6 +117,7 @@ export interface AssembleiaListItem {
   data_inicio: string;
   data_fim: string;
   status: "rascunho" | "aberta" | "encerrada";
+  votacao_liberada?: boolean;
   quorum_minimo: number;
   primeira_chamada_50_mais_1: boolean;
   quorum_segunda_chamada: number;

@@ -130,6 +130,12 @@ def registrar_voto(request, assembleia_id):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if not assembleia.votacao_liberada:
+            return Response(
+                {"error": "A votação ainda não foi liberada. Aguarde a liberação pela administração."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         agora = timezone.now()
         if assembleia.data_inicio and agora < assembleia.data_inicio:
             return Response(

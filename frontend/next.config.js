@@ -27,6 +27,7 @@ const nextConfig = {
         destination: "/votacao/76526cc0-9f0e-4e70-b15b-88a7b1b82983",
         permanent: false,
       },
+      { source: "/votar", destination: "/acesso", permanent: false },
     ];
   },
   compiler: {

@@ -62,7 +62,9 @@ export default function VotacaoPage() {
 
   useEffect(() => {
     api.getAssembleiaPublic(assembleiaId).then(setAssembleia).catch(() => {
-      setError("Assembleia não encontrada.");
+      // Sem sessão o endpoint responde 401: em vez de dar "não encontrada",
+      // leva o morador ao fluxo de entrada (login → biometria → votação).
+      window.location.replace("/acesso");
     });
   }, [assembleiaId]);
 
@@ -215,6 +217,20 @@ export default function VotacaoPage() {
           >
             Concluir
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!done && assembleia.votacao_liberada === false) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
+        <div className="card w-full max-w-md text-center">
+          <Clock className="w-16 h-16 text-primary-400 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Aguardando liberação</h1>
+          <p className="text-gray-600">
+            Sua presença está registrada. A votação será liberada pela administração em instantes — esta tela abre automaticamente.
+          </p>
         </div>
       </div>
     );
