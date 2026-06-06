@@ -1,47 +1,46 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Mail, Loader2, CheckCircle, AlertTriangle, RotateCcw } from "lucide-react";
+import { Mail, Loader2, CheckCircle, RotateCcw } from "lucide-react";
 import { api } from "@/lib/api";
 
-type Status = "idle" | "sending" | "awaiting-code" | "verifying" | "success" | "error";
+type Status = "email" | "sending" | "awaiting-code" | "verifying" | "success";
 
-interface OtpVerifyProps {
-  eleitorId: string;
+interface IdentificacaoEmailProps {
   assembleiaId: string;
-  onSuccess: (token: string, votos?: number) => void;
+  onSuccess: (token: string, eleitorId: string, votosPermitidos: number) => void;
 }
 
-export default function OtpVerify({
-  eleitorId,
+export default function IdentificacaoEmail({
   assembleiaId,
   onSuccess,
-}: OtpVerifyProps) {
-  const [status, setStatus] = useState<Status>("idle");
+}: IdentificacaoEmailProps) {
+  const [status, setStatus] = useState<Status>("email");
+  const [email, setEmail] = useState("");
   const [emailMasked, setEmailMasked] = useState("");
   const [code, setCode] = useState(["", "", "", "", "", ""]);
   const [error, setError] = useState("");
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Auto-focus first input when code entry appears
   useEffect(() => {
-    if (status === "awaiting-code") {
-      inputRefs.current[0]?.focus();
-    }
+    if (status === "awaiting-code") inputRefs.current[0]?.focus();
   }, [status]);
 
   async function handleSendOtp() {
+    if (!email.includes("@")) {
+      setError("Informe um e-mail válido.");
+      return;
+    }
     setError("");
     setStatus("sending");
     try {
-      const result = await api.otpSend(eleitorId, assembleiaId);
+      const result = await api.otpSendEmail(email.trim(), assembleiaId);
       setEmailMasked(result.email_masked);
       setCode(["", "", "", "", "", ""]);
       setStatus("awaiting-code");
     } catch (err: any) {
-      const msg = err?.response?.data?.error || "Erro ao enviar código.";
-      setError(msg);
-      setStatus("error");
+      setError(err?.response?.data?.error || "Erro ao enviar código.");
+      setStatus("email");
     }
   }
 
@@ -49,12 +48,14 @@ export default function OtpVerify({
     setError("");
     setStatus("verifying");
     try {
-      const result = await api.otpVerify(eleitorId, assembleiaId, fullCode);
+      const result = await api.otpVerifyEmail(email.trim(), assembleiaId, fullCode);
       setStatus("success");
-      setTimeout(() => onSuccess(result.token, result.votos_permitidos), 1000);
+      setTimeout(
+        () => onSuccess(result.token, result.eleitor_id, result.votos_permitidos || 1),
+        800
+      );
     } catch (err: any) {
-      const msg = err?.response?.data?.error || "Código inválido ou expirado.";
-      setError(msg);
+      setError(err?.response?.data?.error || "Código inválido ou expirado.");
       setStatus("awaiting-code");
       setCode(["", "", "", "", "", ""]);
       inputRefs.current[0]?.focus();
@@ -62,22 +63,14 @@ export default function OtpVerify({
   }
 
   function handleDigitChange(index: number, value: string) {
-    // Only digits
     const digit = value.replace(/\D/g, "").slice(-1);
     const newCode = [...code];
     newCode[index] = digit;
     setCode(newCode);
-
-    if (digit && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-
-    // Auto-submit when all 6 digits filled
+    if (digit && index < 5) inputRefs.current[index + 1]?.focus();
     if (digit && index === 5) {
-      const fullCode = newCode.join("");
-      if (fullCode.length === 6) {
-        handleVerify(fullCode);
-      }
+      const full = newCode.join("");
+      if (full.length === 6) handleVerify(full);
     }
   }
 
@@ -91,8 +84,7 @@ export default function OtpVerify({
     e.preventDefault();
     const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
     if (pasted.length === 6) {
-      const newCode = pasted.split("");
-      setCode(newCode);
+      setCode(pasted.split(""));
       inputRefs.current[5]?.focus();
       handleVerify(pasted);
     }
@@ -107,20 +99,29 @@ export default function OtpVerify({
     );
   }
 
-  if (status === "idle" || status === "sending" || status === "error") {
+  if (status === "email" || status === "sending") {
     return (
       <div className="text-center space-y-4">
         <Mail className="w-12 h-12 text-primary-600 mx-auto" />
-        <h3 className="font-semibold text-lg">Verificação por E-mail</h3>
+        <h3 className="font-semibold text-lg">Identifique-se</h3>
         <p className="text-sm text-gray-500">
-          Enviaremos um código de 6 dígitos para o e-mail cadastrado.
+          Digite o e-mail cadastrado. Enviaremos um código de 6 dígitos para
+          confirmar sua identidade — sem precisar de login.
         </p>
 
         {error && (
-          <div className="bg-red-50 text-red-700 text-sm rounded-lg p-3">
-            {error}
-          </div>
+          <div className="bg-red-50 text-red-700 text-sm rounded-lg p-3">{error}</div>
         )}
+
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSendOtp()}
+          placeholder="seu@email.com"
+          disabled={status === "sending"}
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-primary-500 focus:outline-none transition-colors"
+        />
 
         <button
           onClick={handleSendOtp}
@@ -129,13 +130,11 @@ export default function OtpVerify({
         >
           {status === "sending" ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Enviando...
+              <Loader2 className="w-4 h-4 animate-spin" /> Enviando...
             </>
           ) : (
             <>
-              <Mail className="w-4 h-4" />
-              Enviar Código
+              <Mail className="w-4 h-4" /> Enviar Código
             </>
           )}
         </button>
@@ -143,7 +142,6 @@ export default function OtpVerify({
     );
   }
 
-  // awaiting-code or verifying
   return (
     <div className="text-center space-y-4">
       <Mail className="w-12 h-12 text-primary-600 mx-auto" />
@@ -153,9 +151,7 @@ export default function OtpVerify({
       </p>
 
       {error && (
-        <div className="bg-red-50 text-red-700 text-sm rounded-lg p-3">
-          {error}
-        </div>
+        <div className="bg-red-50 text-red-700 text-sm rounded-lg p-3">{error}</div>
       )}
 
       <div className="flex justify-center gap-2" onPaste={handlePaste}>
@@ -177,8 +173,7 @@ export default function OtpVerify({
 
       {status === "verifying" && (
         <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Verificando...
+          <Loader2 className="w-4 h-4 animate-spin" /> Verificando...
         </div>
       )}
 
@@ -187,8 +182,7 @@ export default function OtpVerify({
         disabled={status === "verifying"}
         className="text-sm text-gray-400 hover:text-gray-600 flex items-center justify-center gap-1 mx-auto"
       >
-        <RotateCcw className="w-3 h-3" />
-        Reenviar código
+        <RotateCcw className="w-3 h-3" /> Reenviar código
       </button>
     </div>
   );

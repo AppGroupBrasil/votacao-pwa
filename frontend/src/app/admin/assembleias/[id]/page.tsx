@@ -224,6 +224,20 @@ export default function AssembleiaDetailPage() {
     }
   }
 
+  async function handleEncerrarQuestao(questaoId: string, encerrar: boolean) {
+    if (
+      encerrar &&
+      !confirm("Encerrar a votação deste item? Nenhum novo voto será aceito para esta questão.")
+    )
+      return;
+    try {
+      await api.encerrarQuestao(id, questaoId, encerrar);
+      loadAssembleia();
+    } catch {
+      alert("Erro ao alterar o item.");
+    }
+  }
+
   async function handleDeleteQuestao(questaoId: string) {
     if (!confirm("Remover esta questão?")) return;
     try {
@@ -1017,8 +1031,13 @@ export default function AssembleiaDetailPage() {
                   /* Question Display */
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium">
-                        {index + 1}. {q.titulo}
+                      <h3 className="font-medium flex items-center gap-2 flex-wrap">
+                        <span>{index + 1}. {q.titulo}</span>
+                        {q.encerrada && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                            Votação encerrada
+                          </span>
+                        )}
                       </h3>
                       {q.descricao && (
                         <p className="text-sm text-gray-500 mt-1">
@@ -1051,6 +1070,24 @@ export default function AssembleiaDetailPage() {
                         ))}
                       </div>
                     </div>
+                    {assembleia.status === "aberta" && (
+                      <button
+                        onClick={() => handleEncerrarQuestao(q.id, !q.encerrada)}
+                        className={clsx(
+                          "shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
+                          q.encerrada
+                            ? "bg-green-600 text-white hover:bg-green-700"
+                            : "bg-red-600 text-white hover:bg-red-700"
+                        )}
+                        title={q.encerrada ? "Reabrir votação deste item" : "Encerrar votação desse item"}
+                      >
+                        {q.encerrada ? (
+                          <><Play className="w-3.5 h-3.5" /> Reabrir votação</>
+                        ) : (
+                          <><Square className="w-3.5 h-3.5" /> Encerrar votação desse item</>
+                        )}
+                      </button>
+                    )}
                     {podeEditarQuestoes && (
                       <div className="flex items-center gap-1 shrink-0">
                         <button

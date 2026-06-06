@@ -18,6 +18,17 @@ Prefixo: `/api/`. Admin = exige JWT + `IsAdminWithRole`. Público = `AllowAny`.
 
 \* Públicas mas protegidas por `auth_token` assinado e/ou rate limit.
 
+## Identificação sem login por e-mail (`/api/otp/`)
+
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| POST | `/otp/send-email/` | Público | `{email, assembleia_id}` — resolve o eleitor pelo condomínio da assembleia e envia OTP. Retorna `{sent, email_masked}`. Rate limit ip 5/m, e-mail 3/m. |
+| POST | `/otp/verify-email/` | Público | `{email, assembleia_id, code}` — valida OTP, registra presença e devolve `{authenticated, method:"otp", eleitor_id, votos_permitidos, token}`. Rate limit ip 10/m, e-mail 5/m. |
+| POST | `/otp/send/` | Público | OTP por `eleitor_id` (fluxo com login). |
+| POST | `/otp/verify/` | Público | Verifica OTP por `eleitor_id`. |
+
+As respostas de verificação facial/WebAuthn/OTP também devolvem `votos_permitidos` para a tela do morador.
+
 ## Assembleias (`/api/assembleias/`)
 
 | Método | Rota | Acesso | Descrição |
@@ -29,6 +40,7 @@ Prefixo: `/api/`. Admin = exige JWT + `IsAdminWithRole`. Público = `AllowAny`.
 | POST | `/assembleias/{id}/liberar-votacao/` | Admin | `{liberar:true/false}` — libera/trava o voto. |
 | POST | `/assembleias/{id}/encerrar/` | Admin | Encerra a assembleia. |
 | ...  | `/assembleias/{id}/questoes/...` | Admin | CRUD de questões. |
+| POST | `/assembleias/{id}/questoes/{questao_id}/encerrar/` | Admin | `{encerrar:true/false}` — encerra/reabre a votação daquele item. |
 
 ## Eleitor / acesso (`core`)
 

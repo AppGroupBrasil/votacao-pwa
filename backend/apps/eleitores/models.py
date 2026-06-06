@@ -37,6 +37,10 @@ class Eleitor(models.Model):
         default=False,
         help_text="Inadimplência por unidade. Se True, o morador acessa mas não pode votar.",
     )
+    votos_permitidos = models.PositiveSmallIntegerField(
+        default=1,
+        help_text="Quantidade de votos a que tem direito (uma unidade = 1). Aumente quando o morador possui mais de uma unidade.",
+    )
     convite_token = models.CharField(max_length=64, unique=True, blank=True, null=True)
     convite_expira_em = models.DateTimeField(blank=True, null=True)
     criado_em = models.DateTimeField(auto_now_add=True)

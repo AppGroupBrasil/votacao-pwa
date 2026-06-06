@@ -7,6 +7,7 @@ import { api, getDeviceId } from "@/lib/api";
 import WebAuthnVerify from "@/components/webauthn/WebAuthnVerify";
 import FaceVerify from "@/components/FaceVerify";
 import OtpVerify from "@/components/OtpVerify";
+import IdentificacaoEmail from "@/components/IdentificacaoEmail";
 import type { Assembleia, UnidadeVotante } from "@/lib/types";
 
 export default function VotacaoPage() {
@@ -16,7 +17,10 @@ export default function VotacaoPage() {
   const [assembleia, setAssembleia] = useState<Assembleia | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [authMethod, setAuthMethod] = useState<"webauthn" | "facial" | "otp">("webauthn");
-  const [currentQuestao, setCurrentQuestao] = useState(0);
+  // Questões cuja cota de votos já foi cumprida (por id). Rastrear por id em vez
+  // de índice mantém a sequência correta mesmo que a administração encerre um
+  // item ao vivo (o que reordena a lista filtrada).
+  const [respondidas, setRespondidas] = useState<string[]>([]);
   const [selectedOpcao, setSelectedOpcao] = useState<string | null>(null);
   const [comprovantes, setComprovantes] = useState<
     { questao: string; hash: string }[]
@@ -51,14 +55,25 @@ export default function VotacaoPage() {
     setPickerOpen(false);
     setProcConcluida(false);
     setDone(false);
-    setCurrentQuestao(0);
+    setRespondidas([]);
     setSelectedOpcao(null);
+    setVotosNestaQuestao(0);
   }
 
-  // eleitor_id comes from URL param (sent via convite link)
-  const eleitorId = typeof window !== "undefined"
-    ? new URLSearchParams(window.location.search).get("eleitor") || ""
-    : "";
+  // eleitor_id pode vir do link de convite (?eleitor=) ou do cadastro feito
+  // neste dispositivo (localStorage). No link sem login não há nenhum dos
+  // dois — o morador se identifica pelo e-mail (OTP) na tela inicial.
+  const [eleitorId, setEleitorId] = useState("");
+  const [votosPermitidos, setVotosPermitidos] = useState(1);
+  const [votosNestaQuestao, setVotosNestaQuestao] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const fromUrl = new URLSearchParams(window.location.search).get("eleitor");
+    const fromStorage = localStorage.getItem("eleitor_id");
+    if (fromUrl) setEleitorId(fromUrl);
+    else if (fromStorage) setEleitorId(fromStorage);
+  }, []);
 
   useEffect(() => {
     let ativo = true;
@@ -103,6 +118,28 @@ export default function VotacaoPage() {
     );
   }
 
+  // Link sem login: ninguém identificado ainda → identificação por e-mail (OTP).
+  if (!authToken && !eleitorId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
+        <div className="card w-full max-w-md">
+          <div className="flex items-center gap-2 justify-center mb-6">
+            <Vote className="w-7 h-7 text-primary-600" />
+            <span className="font-bold text-lg">{assembleia.titulo}</span>
+          </div>
+          <IdentificacaoEmail
+            assembleiaId={assembleiaId}
+            onSuccess={(token, id, votos) => {
+              setEleitorId(id);
+              setVotosPermitidos(Math.max(1, votos || 1));
+              setAuthToken(token);
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Auth gate — verify identity before voting
   if (!authToken && eleitorId) {
     return (
@@ -117,7 +154,7 @@ export default function VotacaoPage() {
             <WebAuthnVerify
               eleitorId={eleitorId}
               assembleiaId={assembleiaId}
-              onSuccess={(token) => setAuthToken(token)}
+              onSuccess={(token, votos) => { setVotosPermitidos(Math.max(1, votos || 1)); setAuthToken(token); }}
               onFallback={() => setAuthMethod("facial")}
             />
           )}
@@ -126,7 +163,7 @@ export default function VotacaoPage() {
             <FaceVerify
               eleitorId={eleitorId}
               assembleiaId={assembleiaId}
-              onSuccess={(token) => setAuthToken(token)}
+              onSuccess={(token, votos) => { setVotosPermitidos(Math.max(1, votos || 1)); setAuthToken(token); }}
               onFallback={() => setAuthMethod("otp")}
             />
           )}
@@ -135,7 +172,7 @@ export default function VotacaoPage() {
             <OtpVerify
               eleitorId={eleitorId}
               assembleiaId={assembleiaId}
-              onSuccess={(token) => setAuthToken(token)}
+              onSuccess={(token, votos) => { setVotosPermitidos(Math.max(1, votos || 1)); setAuthToken(token); }}
             />
           )}
         </div>
@@ -143,8 +180,16 @@ export default function VotacaoPage() {
     );
   }
 
-  const questoes = assembleia.questoes || [];
-  const questao = questoes[currentQuestao];
+  // Questões encerradas pela administração não entram na sequência de votação.
+  const questoes = (assembleia.questoes || []).filter((q) => !q.encerrada);
+  // A questão atual é a primeira ainda pendente — robusto a itens encerrados ao
+  // vivo, que somem da lista filtrada sem deslocar um índice fixo.
+  const pendentes = questoes.filter((q) => !respondidas.includes(q.id));
+  const questao = pendentes[0];
+  const indiceAtual = questoes.length - pendentes.length;
+  // Em voto por procuração cada unidade tem direito a 1 voto; a cota de
+  // múltiplas unidades (votos_permitidos) vale só para o voto próprio.
+  const cotaQuestao = ehProcuracao ? 1 : votosPermitidos;
 
   // Seletor de unidade para voto por procuração
   if (pickerOpen) {
@@ -259,7 +304,7 @@ export default function VotacaoPage() {
     );
   }
 
-  if (done || currentQuestao >= questoes.length) {
+  if (done || (questoes.length > 0 && pendentes.length === 0)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-white px-4">
         <div className="card w-full max-w-md text-center">
@@ -344,15 +389,25 @@ export default function VotacaoPage() {
       }
       setSelectedOpcao(null);
 
-      if (currentQuestao + 1 >= questoes.length) {
+      // Múltiplos votos na mesma questão (mais de uma unidade): permanece na
+      // questão até consumir a cota, podendo escolher opções diferentes.
+      const votosFeitos = votosNestaQuestao + 1;
+      if (votosFeitos < cotaQuestao) {
+        setVotosNestaQuestao(votosFeitos);
+        return;
+      }
+      setVotosNestaQuestao(0);
+      setRespondidas((prev) => [...prev, questao.id]);
+
+      // Era a última pendente? (pendentes[0] é a atual; resta o resto da lista)
+      const ultima = pendentes.length <= 1;
+      if (ultima) {
         if (ehProcuracao) {
           if (unidadeProc) setProcFeitas((p) => [...p, unidadeProc.id]);
           setProcConcluida(true);
         } else {
           setDone(true);
         }
-      } else {
-        setCurrentQuestao((prev) => prev + 1);
       }
     } catch (err: any) {
       const data = err?.response?.data;
@@ -419,9 +474,17 @@ export default function VotacaoPage() {
         <div className="flex items-center gap-2 mb-6">
           <Vote className="w-6 h-6 text-primary-600" />
           <span className="text-sm text-gray-500">
-            Questão {currentQuestao + 1} de {questoes.length}
+            Questão {indiceAtual + 1} de {questoes.length}
           </span>
         </div>
+
+        {cotaQuestao > 1 && (
+          <div className="mb-4 rounded-lg bg-primary-50 border border-primary-200 px-3 py-2 text-sm text-primary-800">
+            Você tem direito a {cotaQuestao} votos nesta questão (mais de uma
+            unidade). Voto {votosNestaQuestao + 1} de {cotaQuestao} — pode
+            escolher opções diferentes a cada voto.
+          </div>
+        )}
 
         <h2 className="text-xl font-bold mb-4">{questao.titulo}</h2>
 
@@ -481,7 +544,7 @@ export default function VotacaoPage() {
           <div
             className="h-full bg-primary-500 transition-all duration-300"
             style={{
-              width: `${((currentQuestao + 1) / questoes.length) * 100}%`,
+              width: `${((indiceAtual + 1) / questoes.length) * 100}%`,
             }}
           />
         </div>

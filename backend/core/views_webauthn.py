@@ -203,5 +203,6 @@ def webauthn_auth_verify(request):
         "authenticated": True,
         "method": "webauthn",
         "eleitor_id": str(eleitor.id),
+        "votos_permitidos": max(1, eleitor.votos_permitidos or 1),
         "token": vote_token,
     })

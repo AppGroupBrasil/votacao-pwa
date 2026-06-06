@@ -27,6 +27,7 @@ export interface Eleitor {
   cadastro_completo: boolean;
   bloqueado: boolean;
   inadimplente: boolean;
+  votos_permitidos: number;
   criado_em: string;
   atualizado_em: string;
 }
@@ -46,6 +47,7 @@ export interface Questao {
   titulo: string;
   descricao: string;
   ordem: number;
+  encerrada?: boolean;
   opcoes: OpcaoVoto[];
 }
 

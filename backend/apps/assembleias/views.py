@@ -445,3 +445,20 @@ class QuestaoViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(assembleia_id=self.kwargs["assembleia_pk"])
+
+    @action(detail=True, methods=["post"], url_path="encerrar")
+    def encerrar(self, request, assembleia_pk=None, pk=None):
+        """Encerra (ou reabre) a votação de um item específico, sem afetar os
+        demais. Item encerrado não aceita novos votos."""
+        questao = self.get_object()
+        encerrar = request.data.get("encerrar", True)
+        questao.encerrada = bool(encerrar)
+        questao.save(update_fields=["encerrada"])
+        registrar_log(
+            request,
+            questao.assembleia,
+            LogAuditoria.Acao.ENCERRAR,
+            f"Votação do item '{questao.titulo}' "
+            + ("encerrada." if questao.encerrada else "reaberta."),
+        )
+        return Response(QuestaoSerializer(questao).data)

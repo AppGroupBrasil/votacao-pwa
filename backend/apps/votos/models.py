@@ -56,12 +56,9 @@ class Voto(models.Model):
     class Meta:
         ordering = ["-timestamp"]
         verbose_name_plural = "votos"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["eleitor", "questao"],
-                name="unique_voto_por_questao",
-            )
-        ]
+        # Sem unique (eleitor, questao): moradores com mais de uma unidade
+        # (votos_permitidos > 1) votam N vezes na mesma questão. A cota é
+        # garantida na aplicação (registrar_voto, contagem sob select_for_update).
         indexes = [
             models.Index(fields=["assembleia", "questao"], name="voto_assemb_quest_idx"),
             models.Index(fields=["assembleia", "-timestamp"], name="voto_assemb_ts_idx"),

@@ -16,6 +16,7 @@ export default function NovoEleitorPage() {
     bloco: "",
     apartamento: "",
     email: "",
+    votos_permitidos: 1,
   });
 
   useEffect(() => {
@@ -165,6 +166,25 @@ export default function NovoEleitorPage() {
             className="input-field"
             required
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Votos a que tem direito
+          </label>
+          <input
+            type="number"
+            min={1}
+            value={form.votos_permitidos}
+            onChange={(e) =>
+              setForm({ ...form, votos_permitidos: Math.max(1, Number(e.target.value) || 1) })
+            }
+            className="input-field"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Padrão 1 (uma unidade). Aumente quando o morador possui mais de uma
+            unidade — ele terá esse número de votos por questão.
+          </p>
         </div>
 
         <div className="flex gap-3 pt-2">

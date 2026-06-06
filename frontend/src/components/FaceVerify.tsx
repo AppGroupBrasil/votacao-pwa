@@ -26,7 +26,7 @@ type Status =
 interface FaceVerifyProps {
   eleitorId: string;
   assembleiaId: string;
-  onSuccess: (token: string) => void;
+  onSuccess: (token: string, votos?: number) => void;
   onFallback?: () => void;
 }
 
@@ -142,7 +142,7 @@ export default function FaceVerify({
 
       stopCamera();
       setStatus("success");
-      setTimeout(() => onSuccess(result.token), 1000);
+      setTimeout(() => onSuccess(result.token, result.votos_permitidos), 1000);
     } catch (err: any) {
       console.error("[FaceVerify] Verify error:", err);
       const msg =

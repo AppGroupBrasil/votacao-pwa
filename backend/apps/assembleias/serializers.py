@@ -80,7 +80,7 @@ class QuestaoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Questao
-        fields = ["id", "titulo", "descricao", "ordem", "opcoes"]
+        fields = ["id", "titulo", "descricao", "ordem", "encerrada", "opcoes"]
         read_only_fields = ["id"]
 
 

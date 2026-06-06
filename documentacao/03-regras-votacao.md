@@ -14,12 +14,22 @@ exige `auth_token` válido.
    assembleia e ao eleitor; senão HTTP 403.
 5. **Inadimplente** — bloqueado (HTTP 403, código `inadimplente`, com WhatsApp da administradora).
 6. **Bloqueado** — morador bloqueado pela administração (HTTP 403).
-7. **Um voto por unidade** — barra outra pessoa da mesma unidade (mesmo condomínio + bloco +
-   apartamento). Comparação **case-insensitive e sem espaços** (`iexact` + `.strip()`).
-8. **Sem voto duplicado na questão** — o eleitor não pode votar duas vezes na mesma questão
-   (HTTP 409).
-9. **Conflito de dispositivo** — mesmo `device_id` em eleitores diferentes (HTTP 409).
-10. **Eleitor na lista de votantes** — precisa estar em `assembleia.votantes` (HTTP 403).
+7. **Item encerrado** — se a questão tem `encerrada == true`, recusa o voto (HTTP 409,
+   "A votação deste item foi encerrada").
+8. **Cota de votos na questão** — o eleitor pode votar até `votos_permitidos` vezes na mesma
+   questão (default 1; > 1 quando possui mais de uma unidade). Ao exceder, HTTP 409. Procuração
+   **não** consome a cota do procurador.
+9. **Um voto por unidade** — barra outra pessoa da mesma unidade (mesmo condomínio + bloco +
+   apartamento). Comparação **case-insensitive e sem espaços** (`iexact` + `.strip()`); exclui o
+   próprio eleitor (permite os votos múltiplos da cota acima).
+10. **Conflito de dispositivo** — mesmo `device_id` em eleitores diferentes (HTTP 409).
+11. **Eleitor na lista de votantes** — no voto próprio, um morador do **mesmo condomínio** que
+    ainda não esteja em `assembleia.votantes` é **inscrito automaticamente** (suporta o link sem
+    login). A unidade representada em **procuração** continua exigindo inscrição prévia; eleitor de
+    outro condomínio é recusado (HTTP 403).
+
+`votos_permitidos` é definido por admin/master no cadastro do morador
+(`/admin/eleitores/novo` e `.../editar`).
 
 ## Voto secreto (regra inviolável)
 
@@ -36,6 +46,10 @@ O endpoint público de votação (`/votos/{id}/votacao/`) também não expõe pr
 - **Liberar / travar votação** (`POST /assembleias/{id}/liberar-votacao/` com `{ "liberar": true|false }`)
   alterna `votacao_liberada`. Botões "Liberar votação" / "Travar votação" no painel admin
   (`/admin/assembleias/[id]`), visíveis quando a assembleia está aberta.
+- **Encerrar votação desse item** (`POST /assembleias/{id}/questoes/{questao_id}/encerrar/` com
+  `{ "encerrar": true|false }`) encerra/reabre uma questão individual. Item encerrado sai da
+  sequência de votação do morador e recusa novos votos (HTTP 409). Botão no painel admin alterna
+  para "Reabrir votação".
 - **Encerrar** finaliza a assembleia.
 
 Permite deixar as questões prontas e só liberar o voto no momento certo da reunião.

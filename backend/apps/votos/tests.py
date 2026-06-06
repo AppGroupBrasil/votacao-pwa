@@ -182,6 +182,74 @@ class VotoReportTests(APITestCase):
         )
         self.assertEqual(response.status_code, 409)
 
+    def test_voto_rejeitado_em_questao_encerrada(self):
+        self.questao.encerrada = True
+        self.questao.save(update_fields=["encerrada"])
+        response = self.client.post(
+            f"/api/votos/{self.assembleia.id}/votar/",
+            {
+                "eleitor_id": str(self.eleitor.id),
+                "questao_id": str(self.questao.id),
+                "opcao_id": str(self.opcao.id),
+                "auth_token": self.build_auth_token(),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("encerrada", response.data["error"])
+
+    def test_votos_permitidos_permite_segundo_voto(self):
+        self.eleitor.votos_permitidos = 2
+        self.eleitor.save(update_fields=["votos_permitidos"])
+        Voto.objects.create(
+            assembleia=self.assembleia,
+            eleitor=self.eleitor,
+            questao=self.questao,
+            opcao_escolhida=self.opcao,
+            metodo_auth=Voto.MetodoAuth.OTP,
+            ip_address="0.0.0.0",
+        )
+        response = self.client.post(
+            f"/api/votos/{self.assembleia.id}/votar/",
+            {
+                "eleitor_id": str(self.eleitor.id),
+                "questao_id": str(self.questao.id),
+                "opcao_id": str(self.opcao.id),
+                "auth_token": self.build_auth_token(),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            Voto.objects.filter(eleitor=self.eleitor, questao=self.questao).count(), 2
+        )
+
+    def test_voto_auto_inscreve_morador_do_condominio(self):
+        # Link sem login: morador do condomínio que não estava na lista de
+        # votantes é inscrito automaticamente ao votar (voto próprio).
+        novo = Eleitor.objects.create(
+            condominio=self.condominio,
+            nome="Sem Lista",
+            cpf_hash="d" * 64,
+            bloco="D",
+            apartamento="501",
+            perfil="proprietario",
+            email="semlista@example.com",
+            cadastro_completo=True,
+        )
+        response = self.client.post(
+            f"/api/votos/{self.assembleia.id}/votar/",
+            {
+                "eleitor_id": str(novo.id),
+                "questao_id": str(self.questao.id),
+                "opcao_id": str(self.opcao.id),
+                "auth_token": self.build_auth_token(eleitor_id=novo.id),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(self.assembleia.votantes.filter(id=novo.id).exists())
+
     def test_voto_rejeita_assembleia_fora_do_periodo(self):
         self.assembleia.data_inicio = timezone.now() + timedelta(hours=2)
         self.assembleia.data_fim = timezone.now() + timedelta(hours=4)

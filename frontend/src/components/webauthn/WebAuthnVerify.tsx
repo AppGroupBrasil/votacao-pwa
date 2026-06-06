@@ -13,7 +13,7 @@ type Status = "idle" | "authenticating" | "success" | "error" | "unsupported";
 interface WebAuthnVerifyProps {
   eleitorId: string;
   assembleiaId: string;
-  onSuccess: (token: string) => void;
+  onSuccess: (token: string, votos?: number) => void;
   onFallback?: () => void;
 }
 
@@ -44,14 +44,14 @@ export default function WebAuthnVerify({
       const assertion = await authenticateCredential(serverOptions);
 
       // 3. Send assertion to server for verification — returns a voting token
-      const { token } = await api.webauthnAuthVerify(
+      const { token, votos_permitidos } = await api.webauthnAuthVerify(
         eleitorId,
         assembleiaId,
         assertion
       );
 
       setStatus("success");
-      setTimeout(() => onSuccess(token), 1000);
+      setTimeout(() => onSuccess(token, votos_permitidos), 1000);
     } catch (err: any) {
       console.error("[WebAuthn] Auth failed:", err);
 

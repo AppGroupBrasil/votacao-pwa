@@ -73,6 +73,10 @@ class Questao(models.Model):
         blank=True, default="",
         help_text="Link externo (vídeo, documento online, etc.)",
     )
+    encerrada = models.BooleanField(
+        default=False,
+        help_text="Se True, a votação deste item foi encerrada e não aceita novos votos.",
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:

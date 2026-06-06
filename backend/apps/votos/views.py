@@ -4,7 +4,7 @@ from django.db import transaction
 from django_ratelimit.decorators import ratelimit
 
 audit = logging.getLogger("audit")
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.http import Http404
 from django.utils import timezone
 from django.core import signing
@@ -204,10 +204,16 @@ def registrar_voto(request, assembleia_id):
             )
 
         if not assembleia.votantes.filter(id=eleitor.id).exists():
-            return Response(
-                {"error": "Eleitor não está na lista de votantes desta assembleia"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            # No link sem login o morador se auto-identifica (e-mail/facial/OTP).
+            # Se for do mesmo condomínio e voto próprio, inscreve-o automaticamente
+            # na lista de votantes. A unidade representada em procuração continua
+            # exigindo inscrição prévia (gate preservado).
+            if por_procuracao or eleitor.condominio_id != assembleia.condominio_id:
+                return Response(
+                    {"error": "Eleitor não está na lista de votantes desta assembleia"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            assembleia.votantes.add(eleitor)
 
         device_id = (serializer.validated_data.get("device_id") or "").strip()
         if device_id and not por_procuracao:
@@ -231,9 +237,25 @@ def registrar_voto(request, assembleia_id):
             OpcaoVoto, id=serializer.validated_data["opcao_id"], questao=questao
         )
 
-        if Voto.objects.select_for_update().filter(eleitor=eleitor, questao=questao).exists():
+        if questao.encerrada:
             return Response(
-                {"error": "Você já votou nesta questão"},
+                {"error": "A votação deste item foi encerrada."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # Quantos votos este eleitor pode dar nesta questão (1 por unidade;
+        # mais de 1 quando possui mais de uma unidade). Procuração não consome
+        # a cota do procurador — conta para a unidade representada.
+        votos_permitidos = max(1, eleitor.votos_permitidos or 1)
+        ja_votou = (
+            Voto.objects.select_for_update()
+            .filter(eleitor=eleitor, questao=questao)
+            .exclude(status=Voto.Status.REJEITADO)
+            .count()
+        )
+        if ja_votou >= votos_permitidos:
+            return Response(
+                {"error": "Você já usou todos os seus votos nesta questão."},
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -385,6 +407,12 @@ def resultados(request, assembleia_id):
 
     data = []
     total_votantes = assembleia.votantes.count()
+    # Total de votos possíveis = soma de votos_permitidos (moradores com mais de
+    # uma unidade têm direito a mais de um voto por questão). Em assembleias
+    # normais (todos com 1) é igual à contagem de votantes.
+    total_votos_possiveis = (
+        assembleia.votantes.aggregate(s=Sum("votos_permitidos"))["s"] or 0
+    )
 
     procuracoes_pendentes = (
         Voto.objects.filter(
@@ -425,8 +453,8 @@ def resultados(request, assembleia_id):
                 "total_votos": total_votos_questao,
                 "total_votantes": total_votantes,
                 "percentual_participacao": (
-                    round(total_votos_questao / total_votantes * 100, 1)
-                    if total_votantes > 0
+                    round(total_votos_questao / total_votos_possiveis * 100, 1)
+                    if total_votos_possiveis > 0
                     else 0
                 ),
                 "opcoes": opcoes_resultado,

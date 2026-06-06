@@ -29,6 +29,35 @@ A página de votação tem duas situações antes de liberar o voto:
 
 Ver detalhes em [Regras de votação](03-regras-votacao.md).
 
+## Link sem login para o chat da reunião
+
+Além do fluxo `/acesso` (com login), há a entrada **sem login** pensada para colar no chat da
+reunião: `/votacao/{assembleia_id}` direto. Sem `eleitor_id` na URL nem em `localStorage`, a página
+mostra a tela de **identificação por e-mail**:
+
+1. O morador digita o e-mail cadastrado. `POST /otp/send-email/` resolve o eleitor pelo condomínio
+   da assembleia + e-mail e envia um código (retorna o e-mail mascarado).
+2. O morador digita o código. `POST /otp/verify-email/` valida o OTP, registra presença
+   automaticamente e devolve `eleitor_id`, `votos_permitidos` e o `auth_token` (salt `vote-auth`).
+3. A votação é liberada na sequência das questões — sem senha.
+
+Facial e digital continuam funcionando como identificação, mas **só no dispositivo do cadastro**
+(são vinculadas ao aparelho). O **e-mail/OTP é o identificador universal entre dispositivos**.
+
+## Vários votos por unidade (`votos_permitidos`)
+
+Quando o morador possui mais de uma unidade, o admin/master define `votos_permitidos` (> 1) no
+cadastro do morador. Nesse caso ele vota **N vezes na mesma questão** (uma por unidade), podendo
+escolher opções diferentes. Padrão é **1**. Procuração não consome essa cota — conta para a unidade
+representada.
+
+## Encerrar a votação de um item
+
+Admin/master podem encerrar uma questão individualmente pelo botão **"Encerrar votação desse item"**
+na página da assembleia (`POST /assembleias/{id}/questoes/{questao_id}/encerrar/`). A questão sai da
+sequência de votação e novos votos são recusados com HTTP 409. O botão alterna para
+**"Reabrir votação"**.
+
 ## Por que existe um endpoint público de votação
 
 A página `/votacao/[id]` precisa listar título e questões **sem** ser admin. O endpoint

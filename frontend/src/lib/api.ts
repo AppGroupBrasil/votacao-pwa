@@ -463,7 +463,7 @@ export const api = {
     }),
 
   webauthnAuthVerify: (eleitorId: string, assembleiaId: string, credential: any) =>
-    request<{ authenticated: boolean; method: string; eleitor_id: string; token: string }>(
+    request<{ authenticated: boolean; method: string; eleitor_id: string; votos_permitidos: number; token: string }>(
       "/webauthn/auth/verify/",
       {
         method: "POST",
@@ -473,7 +473,7 @@ export const api = {
 
   // Biometria Facial
   facialAuthVerify: (eleitorId: string, assembleiaId: string, hash: string) =>
-    request<{ authenticated: boolean; method: string; eleitor_id: string; token: string }>(
+    request<{ authenticated: boolean; method: string; eleitor_id: string; votos_permitidos: number; token: string }>(
       "/biometria/auth/verify/",
       {
         method: "POST",
@@ -489,13 +489,34 @@ export const api = {
     }),
 
   otpVerify: (eleitorId: string, assembleiaId: string, code: string) =>
-    request<{ authenticated: boolean; method: string; eleitor_id: string; token: string }>(
+    request<{ authenticated: boolean; method: string; eleitor_id: string; votos_permitidos: number; token: string }>(
       "/otp/verify/",
       {
         method: "POST",
         body: JSON.stringify({ eleitor_id: eleitorId, assembleia_id: assembleiaId, code }),
       }
     ),
+
+  otpSendEmail: (email: string, assembleiaId: string) =>
+    request<{ sent: boolean; email_masked: string }>("/otp/send-email/", {
+      method: "POST",
+      body: JSON.stringify({ email, assembleia_id: assembleiaId }),
+    }),
+
+  otpVerifyEmail: (email: string, assembleiaId: string, code: string) =>
+    request<{ authenticated: boolean; method: string; eleitor_id: string; votos_permitidos: number; token: string }>(
+      "/otp/verify-email/",
+      {
+        method: "POST",
+        body: JSON.stringify({ email, assembleia_id: assembleiaId, code }),
+      }
+    ),
+
+  encerrarQuestao: (assembleiaId: string, questaoId: string, encerrar: boolean) =>
+    request<Questao>(`/assembleias/${assembleiaId}/questoes/${questaoId}/encerrar/`, {
+      method: "POST",
+      body: JSON.stringify({ encerrar }),
+    }),
 
   // Register & Password Reset
   register: (data: {

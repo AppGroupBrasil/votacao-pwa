@@ -29,6 +29,7 @@ class EleitorSerializer(serializers.ModelSerializer):
             "cadastro_completo",
             "bloqueado",
             "inadimplente",
+            "votos_permitidos",
             "criado_em",
             "atualizado_em",
         ]
