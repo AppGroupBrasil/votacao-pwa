@@ -41,6 +41,7 @@ class VotoReportTests(APITestCase):
             data_inicio=timezone.now() - timedelta(hours=1),
             data_fim=timezone.now() + timedelta(hours=1),
             status=Assembleia.Status.ABERTA,
+            votacao_liberada=True,
         )
         self.assembleia.votantes.add(self.eleitor)
         self.questao = Questao.objects.create(
