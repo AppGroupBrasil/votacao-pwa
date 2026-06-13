@@ -174,6 +174,42 @@ def logout_view(request):
 
 
 # ── SSO da central (auth-central) ────────────────────────────────
+_jwks_client = None
+
+
+def _get_jwks_client():
+    """Cliente JWKS cacheado (PyJWKClient) p/ verificar o token RS256 da central."""
+    global _jwks_client
+    url = os.getenv("SSO_JWKS_URL")
+    if not url:
+        return None
+    if _jwks_client is None:
+        from jwt import PyJWKClient
+        _jwks_client = PyJWKClient(url)
+    return _jwks_client
+
+
+def _verificar_sso(token):
+    """Verifica o token SSO. Preferência: RS256 via JWKS da central (chave pública,
+    nada a vazar). Fallback HS256 (janela de transição / dev) se SSO_SECRET existir.
+    Retorna o payload (dict) ou None se inválido."""
+    opts = {"require": ["exp", "iss"], "verify_aud": False}
+    client = _get_jwks_client()
+    if client is not None:
+        try:
+            chave = client.get_signing_key_from_jwt(token).key
+            return jwt.decode(token, chave, algorithms=["RS256"], issuer="auth-central", options=opts)
+        except Exception:
+            pass
+    secret = os.getenv("SSO_SECRET") or os.getenv("JWT_SECRET") or ""
+    if secret:
+        try:
+            return jwt.decode(token, secret, algorithms=["HS256"], issuer="auth-central", options=opts)
+        except Exception:
+            pass
+    return None
+
+
 @ratelimit(key="ip", rate="20/m", block=True)
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
@@ -185,19 +221,11 @@ def sso_view(request):
     if not token:
         return Response({"detail": "Token ausente."}, status=status.HTTP_400_BAD_REQUEST)
 
-    secret = os.getenv("SSO_SECRET") or os.getenv("JWT_SECRET") or ""
-    if not secret:
+    if not os.getenv("SSO_JWKS_URL") and not (os.getenv("SSO_SECRET") or os.getenv("JWT_SECRET")):
         return Response({"detail": "SSO não configurado."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-    try:
-        payload = jwt.decode(
-            token,
-            secret,
-            algorithms=["HS256"],
-            issuer="auth-central",
-            options={"require": ["exp", "iss"], "verify_aud": False},
-        )
-    except Exception:
+    payload = _verificar_sso(token)
+    if payload is None:
         return Response({"detail": "Token SSO inválido ou expirado."}, status=status.HTTP_401_UNAUTHORIZED)
 
     if payload.get("aud") not in APP_SLUGS:
