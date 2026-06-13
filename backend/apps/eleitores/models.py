@@ -11,6 +11,12 @@ class Eleitor(models.Model):
     condominio = models.ForeignKey(
         Condominio, on_delete=models.CASCADE, related_name="eleitores"
     )
+    central_id = models.UUIDField(
+        unique=True,
+        blank=True,
+        null=True,
+        help_text="ID do morador na central (auth-central) — mapeia o sync de cadastro.",
+    )
     nome = models.CharField(max_length=200)
     cpf_hash = models.CharField(max_length=64, unique=True, blank=True, null=True)
     bloco = models.CharField(max_length=20, blank=True, default="")

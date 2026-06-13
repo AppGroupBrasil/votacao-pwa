@@ -195,7 +195,7 @@ def sso_view(request):
             secret,
             algorithms=["HS256"],
             issuer="auth-central",
-            options={"require": ["exp", "iss"]},
+            options={"require": ["exp", "iss"], "verify_aud": False},
         )
     except Exception:
         return Response({"detail": "Token SSO inválido ou expirado."}, status=status.HTTP_401_UNAUTHORIZED)
