@@ -5,6 +5,7 @@ from .views_auth import (
     MeView,
     login_view,
     logout_view,
+    sso_view,
     password_reset_request,
     password_reset_confirm,
     refresh_view,
@@ -18,6 +19,7 @@ from .views_auth import (
 urlpatterns = [
     path("login/", login_view, name="token-obtain"),
     path("logout/", logout_view, name="token-logout"),
+    path("sso/", sso_view, name="sso"),
     path("refresh/", refresh_view, name="token-refresh"),
     path("register/", RegisterView.as_view(), name="register"),
     path("me/", MeView.as_view(), name="me"),

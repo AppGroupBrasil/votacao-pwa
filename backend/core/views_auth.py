@@ -2,6 +2,8 @@ import logging
 import os
 import re
 
+import jwt
+
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
@@ -21,6 +23,7 @@ from rest_framework.views import APIView
 from apps.condominios.models import Condominio
 from core.authentication import (
     ACCESS_COOKIE,
+    APP_SLUGS,
     REFRESH_COOKIE,
     clear_auth_cookies,
     set_auth_cookies,
@@ -167,6 +170,75 @@ def logout_view(request):
             pass
     response = Response({"logged_out": True})
     clear_auth_cookies(response)
+    return response
+
+
+# ── SSO da central (auth-central) ────────────────────────────────
+@ratelimit(key="ip", rate="20/m", block=True)
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def sso_view(request):
+    """Consome o token SSO curto do auth-central: valida a assinatura, cria ou
+    encontra o usuário pelo e-mail (provisioning just-in-time), vincula o
+    condomínio do token e abre a sessão local (cookies HttpOnly) — sem senha."""
+    token = str(request.data.get("token", "")).strip()
+    if not token:
+        return Response({"detail": "Token ausente."}, status=status.HTTP_400_BAD_REQUEST)
+
+    secret = os.getenv("SSO_SECRET") or os.getenv("JWT_SECRET") or ""
+    if not secret:
+        return Response({"detail": "SSO não configurado."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    try:
+        payload = jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            issuer="auth-central",
+            options={"require": ["exp", "iss"]},
+        )
+    except Exception:
+        return Response({"detail": "Token SSO inválido ou expirado."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    if payload.get("aud") not in APP_SLUGS:
+        return Response({"detail": "Token não destinado a este aplicativo."}, status=status.HTTP_403_FORBIDDEN)
+
+    email = str(payload.get("email") or "").strip().lower()
+    if not email:
+        return Response({"detail": "Token sem e-mail."}, status=status.HTTP_400_BAD_REQUEST)
+    nome = payload.get("nome") or email
+    perfil = payload.get("perfil") or "gestor"
+    # gestor/funcionário gerenciam o painel; morador é eleitor (fluxo próprio, sem admin)
+    is_gestor = perfil in ("gestor", "funcionario")
+
+    user, created = User.objects.get_or_create(
+        email=email,
+        defaults={"username": email, "first_name": str(nome)[:150], "is_active": True},
+    )
+    if created:
+        user.set_unusable_password()
+    if is_gestor and not user.is_staff:
+        user.is_staff = True
+    user.save()
+
+    if is_gestor:
+        perfil_admin, _ = PerfilAdmin.objects.get_or_create(user=user, defaults={"role": "sindico"})
+        cond_id = payload.get("condominio_id")
+        if cond_id:
+            cond_nome = payload.get("condominio_nome") or "Condomínio"
+            cond, c_created = Condominio.objects.get_or_create(
+                id=cond_id,
+                defaults={"nome": cond_nome, "cnpj": f"SSO-{str(cond_id)[:8]}", "total_unidades": 0},
+            )
+            if not c_created and cond_nome and cond.nome != cond_nome:
+                cond.nome = cond_nome
+                cond.save(update_fields=["nome", "atualizado_em"])
+            perfil_admin.condominios.add(cond)
+
+    refresh = RefreshToken.for_user(user)
+    audit.info("sso_login user_id=%s email=%s perfil=%s created=%s", user.id, email, perfil, created)
+    response = Response(UserSerializer(user).data)
+    set_auth_cookies(response, str(refresh.access_token), str(refresh))
     return response
 
 
