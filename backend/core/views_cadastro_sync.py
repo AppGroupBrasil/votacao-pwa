@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import os
+import uuid
 
 from django.db import IntegrityError
 from rest_framework.authentication import BaseAuthentication
@@ -59,6 +60,11 @@ class CadastroSyncView(APIView):
         dados = body.get("dados") or {}
         if not entidade or not condominio_id:
             return Response({"error": "Evento inválido"}, status=400)
+        # condominio_id casa com Condominio.id (UUID); malformado => 400, não 500
+        try:
+            uuid.UUID(str(condominio_id))
+        except (ValueError, TypeError, AttributeError):
+            return Response({"error": "condominio_id inválido"}, status=400)
 
         if entidade == "condominio":
             self._upsert_condominio(condominio_id, dados)
