@@ -454,8 +454,7 @@ export default function HomePage() {
             <div className="flex items-baseline gap-1 mb-6">
               <span className="text-sm text-gray-500">R$</span>
               <span className="text-5xl font-bold text-primary-700">199</span>
-              <span className="text-gray-500">/mês</span>
-              <span className="text-xs text-gray-400 ml-1">por assembleia</span>
+              <span className="text-gray-500">por assembleia</span>
             </div>
 
             <ul className="space-y-3 mb-8 flex-1">
