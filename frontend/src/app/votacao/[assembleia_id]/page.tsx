@@ -125,7 +125,7 @@ export default function VotacaoPage() {
         <div className="card w-full max-w-md">
           <div className="flex items-center gap-2 justify-center mb-6">
             <Vote className="w-7 h-7 text-primary-600" />
-            <span className="font-bold text-lg">{assembleia.titulo}</span>
+            <span className="font-bold text-lg">Votação</span>
           </div>
           <IdentificacaoEmail
             assembleiaId={assembleiaId}
@@ -147,7 +147,7 @@ export default function VotacaoPage() {
         <div className="card w-full max-w-md">
           <div className="flex items-center gap-2 justify-center mb-6">
             <Vote className="w-7 h-7 text-primary-600" />
-            <span className="font-bold text-lg">{assembleia.titulo}</span>
+            <span className="font-bold text-lg">Votação</span>
           </div>
 
           {authMethod === "webauthn" && (
