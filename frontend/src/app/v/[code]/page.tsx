@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 
+import { api } from "@/lib/api";
+
 const ALPHABET =
   "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -33,9 +35,34 @@ export default function ShortVotacaoRedirect() {
   const router = useRouter();
 
   useEffect(() => {
+    let ativo = true;
     const code = String(params?.code || "");
-    const uuid = ATALHOS[code] || decodeBase62ToUuid(code);
-    router.replace(uuid ? `/votacao/${uuid}` : "/");
+
+    if (ATALHOS[code]) {
+      router.replace(`/votacao/${ATALHOS[code]}`);
+      return;
+    }
+
+    (async () => {
+      // Código curto novo (resolvido no backend).
+      try {
+        const r = await api.resolverCodigo(code);
+        if (ativo && r?.assembleia_id) {
+          router.replace(`/votacao/${r.assembleia_id}`);
+          return;
+        }
+      } catch {
+        // não é código curto — tenta os formatos antigos abaixo
+      }
+      if (!ativo) return;
+      // Compatibilidade com links base62 antigos (UUID codificado, ~22 chars).
+      const uuid = code.length >= 20 ? decodeBase62ToUuid(code) : null;
+      router.replace(uuid ? `/votacao/${uuid}` : "/");
+    })();
+
+    return () => {
+      ativo = false;
+    };
   }, [params, router]);
 
   return (

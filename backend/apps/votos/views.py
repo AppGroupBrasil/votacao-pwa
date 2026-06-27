@@ -162,9 +162,41 @@ def registrar_voto(request, assembleia_id):
         auth_eleitor_id = auth_context["eleitor_id"]
         request_eleitor_id = serializer.validated_data.get("eleitor_id")
         por_procuracao = bool(serializer.validated_data.get("por_procuracao"))
+        unidade_declarada = bool(serializer.validated_data.get("unidade_declarada"))
         procurador = None
+        decl_bloco = decl_apartamento = decl_nome = ""
+        grupo_declaracao = None
 
-        if por_procuracao:
+        if unidade_declarada:
+            # O morador declara, durante a votação, outra unidade que possui.
+            # Só permitido no modo "morador"; o voto fica pendente até a validação.
+            if (
+                assembleia.modo_multiplas_unidades
+                != Assembleia.ModoMultiplasUnidades.MORADOR
+            ):
+                return Response(
+                    {"error": "A declaração de outras unidades não está habilitada nesta assembleia."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            eleitor = get_object_or_404(Eleitor, id=auth_eleitor_id)
+            decl_bloco = (serializer.validated_data.get("decl_bloco") or "").strip()
+            decl_apartamento = (serializer.validated_data.get("decl_apartamento") or "").strip()
+            decl_nome = (serializer.validated_data.get("decl_nome") or "").strip()
+            grupo_declaracao = serializer.validated_data.get("grupo_declaracao")
+            if not decl_apartamento or not decl_nome:
+                return Response(
+                    {"error": "Informe o apartamento/unidade e o nome do proprietário."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if (
+                decl_bloco.lower() == (eleitor.bloco or "").strip().lower()
+                and decl_apartamento.lower() == (eleitor.apartamento or "").strip().lower()
+            ):
+                return Response(
+                    {"error": "Esta é a sua própria unidade — vote nela normalmente."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif por_procuracao:
             # O morador autenticado vota por outra unidade que representa.
             # Esse voto fica pendente até o síndico validar a procuração.
             if not request_eleitor_id:
@@ -216,7 +248,7 @@ def registrar_voto(request, assembleia_id):
             assembleia.votantes.add(eleitor)
 
         device_id = (serializer.validated_data.get("device_id") or "").strip()
-        if device_id and not por_procuracao:
+        if device_id and not por_procuracao and not unidade_declarada:
             conflito = (
                 Voto.objects.filter(assembleia=assembleia, device_id=device_id)
                 .exclude(eleitor=eleitor)
@@ -243,25 +275,54 @@ def registrar_voto(request, assembleia_id):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        # Quantos votos este eleitor pode dar nesta questão (1 por unidade;
-        # mais de 1 quando possui mais de uma unidade). Procuração não consome
-        # a cota do procurador — conta para a unidade representada.
-        votos_permitidos = max(1, eleitor.votos_permitidos or 1)
-        ja_votou = (
-            Voto.objects.select_for_update()
-            .filter(eleitor=eleitor, questao=questao)
-            .exclude(status=Voto.Status.REJEITADO)
-            .count()
-        )
-        if ja_votou >= votos_permitidos:
-            return Response(
-                {"error": "Você já usou todos os seus votos nesta questão."},
-                status=status.HTTP_409_CONFLICT,
+        if unidade_declarada:
+            # Unidade declarada não consome a cota própria do declarante.
+            # Garante 1 voto por unidade declarada nesta questão e impede
+            # declarar uma unidade que já votou (real ou outra declaração).
+            dup = (
+                Voto.objects.select_for_update()
+                .filter(assembleia=assembleia, questao=questao)
+                .filter(
+                    Q(
+                        unidade_declarada=True,
+                        decl_bloco__iexact=decl_bloco,
+                        decl_apartamento__iexact=decl_apartamento,
+                    )
+                    | Q(
+                        unidade_declarada=False,
+                        por_procuracao=False,
+                        eleitor__bloco__iexact=decl_bloco,
+                        eleitor__apartamento__iexact=decl_apartamento,
+                    )
+                )
+                .exclude(status=Voto.Status.REJEITADO)
+                .exists()
             )
+            if dup:
+                return Response(
+                    {"error": "Esta unidade já tem um voto nesta questão."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+        else:
+            # Quantos votos este eleitor pode dar nesta questão (1 por unidade;
+            # mais de 1 quando possui mais de uma unidade). Procuração não consome
+            # a cota do procurador — conta para a unidade representada.
+            votos_permitidos = max(1, eleitor.votos_permitidos or 1)
+            ja_votou = (
+                Voto.objects.select_for_update()
+                .filter(eleitor=eleitor, questao=questao, unidade_declarada=False)
+                .exclude(status=Voto.Status.REJEITADO)
+                .count()
+            )
+            if ja_votou >= votos_permitidos:
+                return Response(
+                    {"error": "Você já usou todos os seus votos nesta questão."},
+                    status=status.HTTP_409_CONFLICT,
+                )
 
         # Um voto por unidade: se outro morador da mesma unidade
         # (condomínio + bloco + apartamento) já votou nesta questão, bloqueia.
-        if not por_procuracao:
+        if not por_procuracao and not unidade_declarada:
             unidade_ja_votou = (
                 Voto.objects.select_for_update()
                 .filter(
@@ -293,7 +354,16 @@ def registrar_voto(request, assembleia_id):
             device_id=device_id,
             por_procuracao=por_procuracao,
             procurador=procurador,
-            status=Voto.Status.PENDENTE if por_procuracao else Voto.Status.VALIDADO,
+            unidade_declarada=unidade_declarada,
+            decl_bloco=decl_bloco,
+            decl_apartamento=decl_apartamento,
+            decl_nome=decl_nome,
+            grupo_declaracao=grupo_declaracao,
+            status=(
+                Voto.Status.PENDENTE
+                if (por_procuracao or unidade_declarada)
+                else Voto.Status.VALIDADO
+            ),
         )
         voto.save()
 
@@ -423,6 +493,15 @@ def resultados(request, assembleia_id):
         .values("eleitor")
         .distinct()
         .count()
+    ) + (
+        Voto.objects.filter(
+            assembleia=assembleia,
+            unidade_declarada=True,
+            status=Voto.Status.PENDENTE,
+        )
+        .values("grupo_declaracao")
+        .distinct()
+        .count()
     )
 
     for questao in questoes:
@@ -492,28 +571,43 @@ def unidades_assembleia(request, assembleia_id):
 def procuracoes_pendentes(request, assembleia_id):
     assembleia = get_accessible_assembleia(request, assembleia_id)
     votos = (
-        Voto.objects.filter(
-            assembleia=assembleia,
-            por_procuracao=True,
-            status=Voto.Status.PENDENTE,
-        )
+        Voto.objects.filter(assembleia=assembleia, status=Voto.Status.PENDENTE)
+        .filter(Q(por_procuracao=True) | Q(unidade_declarada=True))
         .select_related("eleitor", "procurador", "questao", "opcao_escolhida")
-        .order_by("eleitor__bloco", "eleitor__apartamento", "questao__ordem")
+        .order_by(
+            "decl_bloco", "decl_apartamento",
+            "eleitor__bloco", "eleitor__apartamento", "questao__ordem",
+        )
     )
 
     unidades = {}
     for v in votos:
-        key = str(v.eleitor_id)
-        if key not in unidades:
-            unidades[key] = {
-                "eleitor_id": key,
-                "nome": v.eleitor.nome,
-                "bloco": v.eleitor.bloco,
-                "apartamento": v.eleitor.apartamento,
-                "procurador_nome": v.procurador.nome if v.procurador else "",
-                "horario": v.timestamp,
-                "votos": [],
-            }
+        if v.unidade_declarada:
+            key = f"decl:{v.grupo_declaracao}"
+            if key not in unidades:
+                unidades[key] = {
+                    "id": str(v.grupo_declaracao or ""),
+                    "tipo": "declarada",
+                    "nome": v.decl_nome,
+                    "bloco": v.decl_bloco,
+                    "apartamento": v.decl_apartamento,
+                    "procurador_nome": v.eleitor.nome,
+                    "horario": v.timestamp,
+                    "votos": [],
+                }
+        else:
+            key = f"proc:{v.eleitor_id}"
+            if key not in unidades:
+                unidades[key] = {
+                    "id": str(v.eleitor_id),
+                    "tipo": "procuracao",
+                    "nome": v.eleitor.nome,
+                    "bloco": v.eleitor.bloco,
+                    "apartamento": v.eleitor.apartamento,
+                    "procurador_nome": v.procurador.nome if v.procurador else "",
+                    "horario": v.timestamp,
+                    "votos": [],
+                }
         unidades[key]["votos"].append(
             {
                 "questao": v.questao.titulo,
@@ -530,27 +624,39 @@ def procuracoes_pendentes(request, assembleia_id):
 def validar_procuracao(request, assembleia_id):
     assembleia = get_accessible_assembleia(request, assembleia_id)
     eleitor_id = request.data.get("eleitor_id")
+    grupo = request.data.get("grupo_declaracao")
     acao = str(request.data.get("acao", "")).strip().lower()
 
-    if not eleitor_id or acao not in {"aprovar", "rejeitar"}:
+    if (not eleitor_id and not grupo) or acao not in {"aprovar", "rejeitar"}:
         return Response(
-            {"error": "Informe eleitor_id e acao (aprovar/rejeitar)"},
+            {"error": "Informe eleitor_id ou grupo_declaracao e acao (aprovar/rejeitar)"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     novo_status = (
         Voto.Status.VALIDADO if acao == "aprovar" else Voto.Status.REJEITADO
     )
-    atualizados = Voto.objects.filter(
-        assembleia=assembleia,
-        eleitor_id=eleitor_id,
-        por_procuracao=True,
-        status=Voto.Status.PENDENTE,
-    ).update(status=novo_status)
+    if grupo:
+        qs = Voto.objects.filter(
+            assembleia=assembleia,
+            grupo_declaracao=grupo,
+            unidade_declarada=True,
+            status=Voto.Status.PENDENTE,
+        )
+        alvo = f"grupo={grupo}"
+    else:
+        qs = Voto.objects.filter(
+            assembleia=assembleia,
+            eleitor_id=eleitor_id,
+            por_procuracao=True,
+            status=Voto.Status.PENDENTE,
+        )
+        alvo = f"eleitor={eleitor_id}"
+    atualizados = qs.update(status=novo_status)
 
     audit.info(
-        "procuracao_%s assembleia=%s eleitor=%s votos=%s admin=%s",
-        acao, assembleia.id, eleitor_id, atualizados, request.user.id,
+        "procuracao_%s assembleia=%s %s votos=%s admin=%s",
+        acao, assembleia.id, alvo, atualizados, request.user.id,
     )
     from apps.assembleias.audit import registrar_log
     from apps.assembleias.models import LogAuditoria

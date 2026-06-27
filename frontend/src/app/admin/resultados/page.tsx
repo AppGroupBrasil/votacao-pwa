@@ -24,8 +24,8 @@ export default function ResultadosPage() {
       .catch(() => setPendentes([]));
   }, []);
 
-  async function validar(eleitorId: string, acao: "aprovar" | "rejeitar") {
-    await api.validarProcuracao(selected, eleitorId, acao);
+  async function validar(p: ProcuracaoPendente, acao: "aprovar" | "rejeitar") {
+    await api.validarProcuracao(selected, { tipo: p.tipo, id: p.id }, acao);
     carregarPendentes(selected);
     api.getResultados(selected).then(setResultados);
   }
@@ -183,7 +183,7 @@ export default function ResultadosPage() {
           <div className="space-y-2">
             {pendentes.map((p) => (
               <div
-                key={p.eleitor_id}
+                key={`${p.tipo}:${p.id}`}
                 className="flex items-center justify-between gap-3 rounded-lg bg-white border border-amber-200 px-4 py-3"
               >
                 <div className="min-w-0">
@@ -192,7 +192,9 @@ export default function ResultadosPage() {
                     {p.apartamento} — {p.nome}
                   </p>
                   <p className="text-xs text-gray-500 truncate">
-                    {p.procurador_nome
+                    {p.tipo === "declarada"
+                      ? `Declarada por: ${p.procurador_nome} · `
+                      : p.procurador_nome
                       ? `Procurador: ${p.procurador_nome} · `
                       : ""}
                     {p.votos.length} voto{p.votos.length !== 1 ? "s" : ""}
@@ -200,13 +202,13 @@ export default function ResultadosPage() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
-                    onClick={() => validar(p.eleitor_id, "aprovar")}
+                    onClick={() => validar(p, "aprovar")}
                     className="inline-flex items-center gap-1 rounded-lg bg-green-600 text-white px-3 py-1.5 text-sm hover:bg-green-700"
                   >
                     <Check className="w-4 h-4" /> Aprovar
                   </button>
                   <button
-                    onClick={() => validar(p.eleitor_id, "rejeitar")}
+                    onClick={() => validar(p, "rejeitar")}
                     className="inline-flex items-center gap-1 rounded-lg border border-red-300 text-red-600 px-3 py-1.5 text-sm hover:bg-red-50"
                   >
                     <X className="w-4 h-4" /> Rejeitar

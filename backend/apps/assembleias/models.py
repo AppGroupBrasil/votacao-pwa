@@ -1,9 +1,17 @@
+import secrets
 import uuid
 
 from django.db import models
 
 from apps.condominios.models import Condominio
 from apps.eleitores.models import Eleitor
+
+# Alfabeto sem caracteres ambíguos (0/O, 1/I/L) para o código curto do link.
+CODIGO_CURTO_ALFABETO = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+
+
+def gerar_codigo_curto(tamanho: int = 3) -> str:
+    return "".join(secrets.choice(CODIGO_CURTO_ALFABETO) for _ in range(tamanho))
 
 
 class Assembleia(models.Model):
@@ -12,7 +20,19 @@ class Assembleia(models.Model):
         ABERTA = "aberta", "Aberta"
         ENCERRADA = "encerrada", "Encerrada"
 
+    class ModoMultiplasUnidades(models.TextChoices):
+        SINDICO = "sindico", "Síndico define antecipadamente"
+        MORADOR = "morador", "Morador declara durante a votação"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    codigo_curto = models.CharField(
+        max_length=8,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Código curto do link compartilhável: appvotacao.com.br/vote/<codigo>.",
+    )
     condominio = models.ForeignKey(
         Condominio, on_delete=models.CASCADE, related_name="assembleias"
     )
@@ -41,6 +61,16 @@ class Assembleia(models.Model):
         default=False,
         help_text="Se False, a assembleia está aberta para presença mas os votos ficam travados até a liberação.",
     )
+    modo_multiplas_unidades = models.CharField(
+        max_length=10,
+        choices=ModoMultiplasUnidades.choices,
+        default=ModoMultiplasUnidades.SINDICO,
+        help_text=(
+            "Como votam donos de mais de uma unidade. 'sindico': a administração "
+            "define a cota antecipadamente (votos_permitidos). 'morador': o próprio "
+            "morador declara suas outras unidades durante a votação, com validação posterior."
+        ),
+    )
     votantes = models.ManyToManyField(Eleitor, blank=True, related_name="assembleias")
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
@@ -48,6 +78,15 @@ class Assembleia(models.Model):
     class Meta:
         ordering = ["-data_inicio"]
         verbose_name_plural = "assembleias"
+
+    def save(self, *args, **kwargs):
+        if not self.codigo_curto:
+            for _ in range(20):
+                codigo = gerar_codigo_curto()
+                if not Assembleia.objects.filter(codigo_curto=codigo).exists():
+                    self.codigo_curto = codigo
+                    break
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.titulo

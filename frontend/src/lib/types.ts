@@ -90,6 +90,7 @@ export interface LogAuditoria {
 
 export interface Assembleia {
   id: string;
+  codigo_curto?: string | null;
   condominio: string;
   condominio_nome: string;
   titulo: string;
@@ -98,6 +99,7 @@ export interface Assembleia {
   data_fim: string;
   status: "rascunho" | "aberta" | "encerrada";
   votacao_liberada?: boolean;
+  modo_multiplas_unidades?: "sindico" | "morador";
   quorum_minimo: number;
   primeira_chamada_50_mais_1: boolean;
   quorum_segunda_chamada: number;
@@ -152,6 +154,11 @@ export interface VotoPayload {
   auth_token: string;
   device_id?: string;
   por_procuracao?: boolean;
+  unidade_declarada?: boolean;
+  decl_bloco?: string;
+  decl_apartamento?: string;
+  decl_nome?: string;
+  grupo_declaracao?: string;
 }
 
 export interface VotoResponse {
@@ -184,7 +191,8 @@ export interface UnidadeVotante {
 }
 
 export interface ProcuracaoPendente {
-  eleitor_id: string;
+  id: string;
+  tipo: "procuracao" | "declarada";
   nome: string;
   bloco: string;
   apartamento: string;

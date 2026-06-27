@@ -150,6 +150,7 @@ class AssembleiaSerializer(serializers.ModelSerializer):
         model = Assembleia
         fields = [
             "id",
+            "codigo_curto",
             "condominio",
             "condominio_nome",
             "titulo",
@@ -158,6 +159,7 @@ class AssembleiaSerializer(serializers.ModelSerializer):
             "data_fim",
             "status",
             "votacao_liberada",
+            "modo_multiplas_unidades",
             "quorum_minimo",
             "primeira_chamada_50_mais_1",
             "quorum_segunda_chamada",
@@ -170,7 +172,7 @@ class AssembleiaSerializer(serializers.ModelSerializer):
             "criado_em",
             "atualizado_em",
         ]
-        read_only_fields = ["id", "criado_em", "atualizado_em"]
+        read_only_fields = ["id", "codigo_curto", "criado_em", "atualizado_em"]
 
     def get_total_votantes(self, obj):
         return self._base_eleitores(obj)

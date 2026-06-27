@@ -26,6 +26,11 @@ class VotoCreateSerializer(serializers.Serializer):
     auth_token = serializers.CharField()
     device_id = serializers.CharField(required=False, allow_blank=True, max_length=64)
     por_procuracao = serializers.BooleanField(required=False, default=False)
+    unidade_declarada = serializers.BooleanField(required=False, default=False)
+    decl_bloco = serializers.CharField(required=False, allow_blank=True, max_length=20)
+    decl_apartamento = serializers.CharField(required=False, allow_blank=True, max_length=20)
+    decl_nome = serializers.CharField(required=False, allow_blank=True, max_length=200)
+    grupo_declaracao = serializers.UUIDField(required=False, allow_null=True)
 
 
 class ResultadoQuestaoSerializer(serializers.Serializer):

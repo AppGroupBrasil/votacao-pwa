@@ -269,6 +269,9 @@ export const api = {
   getAssembleiaPublic: (id: string) =>
     request<Assembleia>(`/votos/${id}/votacao/`),
 
+  resolverCodigo: (codigo: string) =>
+    request<{ assembleia_id: string }>(`/assembleias/resolver/${codigo}/`),
+
   createAssembleia: (data: Partial<Assembleia>) =>
     request<Assembleia>("/assembleias/", {
       method: "POST",
@@ -423,12 +426,19 @@ export const api = {
 
   validarProcuracao: (
     assembleiaId: string,
-    eleitorId: string,
+    alvo: { tipo: "procuracao" | "declarada"; id: string },
     acao: "aprovar" | "rejeitar"
   ) =>
     request<{ status: string; votos_atualizados: number }>(
       `/votos/${assembleiaId}/procuracoes/validar/`,
-      { method: "POST", body: JSON.stringify({ eleitor_id: eleitorId, acao }) }
+      {
+        method: "POST",
+        body: JSON.stringify(
+          alvo.tipo === "declarada"
+            ? { grupo_declaracao: alvo.id, acao }
+            : { eleitor_id: alvo.id, acao }
+        ),
+      }
     ),
 
   getRelatorioVotos: (assembleiaId: string) =>

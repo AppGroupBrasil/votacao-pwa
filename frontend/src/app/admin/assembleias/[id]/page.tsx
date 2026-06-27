@@ -58,6 +58,7 @@ export default function AssembleiaDetailPage() {
     primeira_chamada_50_mais_1: true,
     quorum_segunda_chamada: 33,
     segunda_chamada_qualquer_numero: false,
+    modo_multiplas_unidades: "sindico" as "sindico" | "morador",
   });
 
   // Question form
@@ -109,6 +110,8 @@ export default function AssembleiaDetailPage() {
       primeira_chamada_50_mais_1: assembleia.primeira_chamada_50_mais_1,
       quorum_segunda_chamada: assembleia.quorum_segunda_chamada,
       segunda_chamada_qualquer_numero: assembleia.segunda_chamada_qualquer_numero,
+      modo_multiplas_unidades:
+        assembleia.modo_multiplas_unidades || "sindico",
     });
     api.getCondominios().then((data) => setCondominios(data.results || data));
     setEditing(true);
@@ -335,9 +338,16 @@ export default function AssembleiaDetailPage() {
     setQuestaoForm({ ...questaoForm, opcoes });
   }
 
+  function votingLink() {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "";
+    return assembleia?.codigo_curto
+      ? `${origin}/vote/${assembleia.codigo_curto}`
+      : `${origin}/votacao/${id}`;
+  }
+
   function copyVotingLink() {
-    const url = `${window.location.origin}/votacao/${id}`;
-    navigator.clipboard.writeText(url);
+    navigator.clipboard.writeText(votingLink());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -585,6 +595,34 @@ export default function AssembleiaDetailPage() {
                 />
               )}
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Donos de mais de uma unidade
+            </label>
+            <select
+              value={editForm.modo_multiplas_unidades}
+              onChange={(e) =>
+                setEditForm({
+                  ...editForm,
+                  modo_multiplas_unidades: e.target.value as
+                    | "sindico"
+                    | "morador",
+                })
+              }
+              className="input-field"
+            >
+              <option value="sindico">
+                Síndico define antecipadamente (cota por unidade)
+              </option>
+              <option value="morador">
+                Morador declara as outras unidades durante a votação
+              </option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              No modo &quot;morador&quot;, cada unidade declarada vota
+              separadamente e fica pendente até a sua validação.
+            </p>
           </div>
           <div className="flex items-center gap-3 pt-2">
             <button
@@ -1122,9 +1160,7 @@ export default function AssembleiaDetailPage() {
           </p>
           <div className="flex items-center gap-2">
             <code className="text-sm bg-white px-3 py-1.5 rounded border border-green-200 flex-1 truncate">
-              {typeof window !== "undefined"
-                ? `${window.location.origin}/votacao/${id}`
-                : `/votacao/${id}`}
+              {votingLink()}
             </code>
             <button
               onClick={copyVotingLink}

@@ -22,6 +22,7 @@ export default function NovaAssembleiaPage() {
     primeira_chamada_50_mais_1: true,
     quorum_segunda_chamada: 33,
     segunda_chamada_qualquer_numero: false,
+    modo_multiplas_unidades: "sindico" as "sindico" | "morador",
   });
 
   useEffect(() => {
@@ -199,6 +200,35 @@ export default function NovaAssembleiaPage() {
               />
             )}
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Donos de mais de uma unidade
+          </label>
+          <select
+            value={form.modo_multiplas_unidades}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                modo_multiplas_unidades: e.target.value as
+                  | "sindico"
+                  | "morador",
+              })
+            }
+            className="input-field"
+          >
+            <option value="sindico">
+              Síndico define antecipadamente (cota por unidade)
+            </option>
+            <option value="morador">
+              Morador declara as outras unidades durante a votação
+            </option>
+          </select>
+          <p className="mt-1 text-xs text-gray-500">
+            No modo &quot;morador&quot;, cada unidade declarada vota
+            separadamente e fica pendente até a sua validação.
+          </p>
         </div>
 
         <div className="flex gap-3 pt-2">

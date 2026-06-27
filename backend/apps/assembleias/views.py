@@ -34,6 +34,19 @@ def assembleias_abertas(request):
     return Response(list(qs))
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def resolver_codigo(request, codigo):
+    """Endpoint público: resolve o código curto do link (/v/<codigo>) para o id da assembleia."""
+    try:
+        assembleia = Assembleia.objects.only("id").get(codigo_curto=codigo.upper())
+    except Assembleia.DoesNotExist:
+        return Response(
+            {"error": "Código não encontrado."}, status=status.HTTP_404_NOT_FOUND
+        )
+    return Response({"assembleia_id": str(assembleia.id)})
+
+
 class AssembleiaViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminWithRole]
     search_fields = ["titulo"]

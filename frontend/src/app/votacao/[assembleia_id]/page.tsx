@@ -42,11 +42,46 @@ export default function VotacaoPage() {
   const [procConcluida, setProcConcluida] = useState(false);
   const [procFeitas, setProcFeitas] = useState<string[]>([]);
 
+  // Modo "morador declara": o próprio morador informa outra unidade que possui,
+  // depois do seu voto. Cada unidade declarada vota separadamente e fica
+  // pendente até a administração validar.
+  const [ehDeclaracao, setEhDeclaracao] = useState(false);
+  const [declOpen, setDeclOpen] = useState(false);
+  const [temOutra, setTemOutra] = useState(false);
+  const [declForm, setDeclForm] = useState({ bloco: "", apartamento: "", nome: "" });
+  const [declUnidade, setDeclUnidade] = useState<{
+    bloco: string;
+    apartamento: string;
+    nome: string;
+  } | null>(null);
+  const [grupoDecl, setGrupoDecl] = useState("");
+  const [declConcluida, setDeclConcluida] = useState(false);
+
   function abrirProcuracao() {
     setPickerOpen(true);
     if (unidades.length === 0) {
       api.getUnidades(assembleiaId).then(setUnidades).catch(() => {});
     }
+  }
+
+  function abrirDeclaracao() {
+    setDeclOpen(true);
+    setTemOutra(false);
+    setDeclForm({ bloco: "", apartamento: "", nome: "" });
+  }
+
+  function iniciarVotoDeclaracao(e: React.FormEvent) {
+    e.preventDefault();
+    if (!declForm.apartamento.trim() || !declForm.nome.trim()) return;
+    setDeclUnidade({ ...declForm });
+    setGrupoDecl(crypto.randomUUID());
+    setEhDeclaracao(true);
+    setDeclOpen(false);
+    setDeclConcluida(false);
+    setDone(false);
+    setRespondidas([]);
+    setSelectedOpcao(null);
+    setVotosNestaQuestao(0);
   }
 
   function iniciarVotoProcuracao(u: UnidadeVotante) {
@@ -189,7 +224,7 @@ export default function VotacaoPage() {
   const indiceAtual = questoes.length - pendentes.length;
   // Em voto por procuração cada unidade tem direito a 1 voto; a cota de
   // múltiplas unidades (votos_permitidos) vale só para o voto próprio.
-  const cotaQuestao = ehProcuracao ? 1 : votosPermitidos;
+  const cotaQuestao = ehProcuracao || ehDeclaracao ? 1 : votosPermitidos;
 
   // Seletor de unidade para voto por procuração
   if (pickerOpen) {
@@ -276,6 +311,129 @@ export default function VotacaoPage() {
     );
   }
 
+  // Formulário: morador declara outra unidade (modo "morador")
+  if (declOpen) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
+        <div className="card w-full max-w-md">
+          <div className="flex items-center gap-2 mb-1">
+            <Users className="w-6 h-6 text-primary-600" />
+            <h1 className="text-lg font-bold">Você tem mais de uma unidade?</h1>
+          </div>
+          <p className="text-sm text-gray-500 mb-4">
+            Informe os dados da outra unidade que você possui. O voto ficará
+            pendente até a administração validar.
+          </p>
+          <label className="flex items-center gap-2 mb-4">
+            <input
+              type="checkbox"
+              checked={temOutra}
+              onChange={(e) => setTemOutra(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <span className="text-sm text-gray-700">
+              Sim, tenho outra unidade para declarar
+            </span>
+          </label>
+          {temOutra && (
+            <form onSubmit={iniciarVotoDeclaracao} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Bloco
+                </label>
+                <input
+                  type="text"
+                  value={declForm.bloco}
+                  onChange={(e) =>
+                    setDeclForm({ ...declForm, bloco: e.target.value })
+                  }
+                  className="input-field"
+                  maxLength={20}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Apartamento / unidade
+                </label>
+                <input
+                  type="text"
+                  value={declForm.apartamento}
+                  onChange={(e) =>
+                    setDeclForm({ ...declForm, apartamento: e.target.value })
+                  }
+                  className="input-field"
+                  maxLength={20}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nome do proprietário
+                </label>
+                <input
+                  type="text"
+                  value={declForm.nome}
+                  onChange={(e) =>
+                    setDeclForm({ ...declForm, nome: e.target.value })
+                  }
+                  className="input-field"
+                  maxLength={200}
+                  required
+                />
+              </div>
+              <button type="submit" className="btn-primary w-full">
+                Votar por esta unidade
+              </button>
+            </form>
+          )}
+          <button
+            onClick={() => setDeclOpen(false)}
+            className="btn-secondary w-full mt-4 flex items-center justify-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" /> Voltar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Conclusão de uma unidade declarada (pendente de validação)
+  if (declConcluida) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-white px-4">
+        <div className="card w-full max-w-md text-center">
+          <Clock className="w-16 h-16 text-amber-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Unidade declarada enviada</h1>
+          <p className="text-gray-600 mb-1">
+            Unidade {declUnidade?.bloco ? `${declUnidade.bloco} / ` : ""}
+            {declUnidade?.apartamento} — {declUnidade?.nome}
+          </p>
+          <p className="text-gray-600 mb-6">
+            Aguardando validação da administração. O voto só será contabilizado
+            após a aprovação.
+          </p>
+          <button
+            onClick={abrirDeclaracao}
+            className="btn-primary w-full mb-2 flex items-center justify-center gap-2"
+          >
+            <Users className="w-4 h-4" /> Declarar outra unidade
+          </button>
+          <button
+            onClick={() => {
+              setDeclConcluida(false);
+              setEhDeclaracao(false);
+              setDeclUnidade(null);
+              setDone(true);
+            }}
+            className="btn-secondary w-full"
+          >
+            Concluir
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!done && assembleia.votacao_liberada === false) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
@@ -351,17 +509,31 @@ export default function VotacaoPage() {
             )}
           </button>
 
-          <div className="mt-6 pt-4 border-t text-left">
-            <p className="text-xs text-gray-500 mb-2">
-              Possui procuração ou mais de uma unidade?
-            </p>
-            <button
-              onClick={abrirProcuracao}
-              className="btn-primary w-full flex items-center justify-center gap-2"
-            >
-              <Users className="w-4 h-4" /> Voto por procuração / outra unidade
-            </button>
-          </div>
+          {assembleia.modo_multiplas_unidades === "morador" ? (
+            <div className="mt-6 pt-4 border-t text-left">
+              <p className="text-xs text-gray-500 mb-2">
+                Você tem mais de uma unidade?
+              </p>
+              <button
+                onClick={abrirDeclaracao}
+                className="btn-primary w-full flex items-center justify-center gap-2"
+              >
+                <Users className="w-4 h-4" /> Declarar outra unidade
+              </button>
+            </div>
+          ) : (
+            <div className="mt-6 pt-4 border-t text-left">
+              <p className="text-xs text-gray-500 mb-2">
+                Possui procuração ou mais de uma unidade?
+              </p>
+              <button
+                onClick={abrirProcuracao}
+                className="btn-primary w-full flex items-center justify-center gap-2"
+              >
+                <Users className="w-4 h-4" /> Voto por procuração / outra unidade
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -379,9 +551,18 @@ export default function VotacaoPage() {
         auth_token: authToken,
         device_id: getDeviceId(),
         por_procuracao: ehProcuracao,
+        unidade_declarada: ehDeclaracao,
+        ...(ehDeclaracao && declUnidade
+          ? {
+              decl_bloco: declUnidade.bloco,
+              decl_apartamento: declUnidade.apartamento,
+              decl_nome: declUnidade.nome,
+              grupo_declaracao: grupoDecl,
+            }
+          : {}),
       });
 
-      if (!ehProcuracao) {
+      if (!ehProcuracao && !ehDeclaracao) {
         setComprovantes((prev) => [
           ...prev,
           { questao: questao.titulo, hash: result.hash_voto },
@@ -405,6 +586,8 @@ export default function VotacaoPage() {
         if (ehProcuracao) {
           if (unidadeProc) setProcFeitas((p) => [...p, unidadeProc.id]);
           setProcConcluida(true);
+        } else if (ehDeclaracao) {
+          setDeclConcluida(true);
         } else {
           setDone(true);
         }
@@ -469,6 +652,13 @@ export default function VotacaoPage() {
             <Users className="w-4 h-4 shrink-0" />
             Voto por procuração — {unidadeProc.bloco ? `${unidadeProc.bloco} / ` : ""}
             {unidadeProc.apartamento} (pendente de validação)
+          </div>
+        )}
+        {ehDeclaracao && declUnidade && (
+          <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800 flex items-center gap-2">
+            <Users className="w-4 h-4 shrink-0" />
+            Unidade declarada — {declUnidade.bloco ? `${declUnidade.bloco} / ` : ""}
+            {declUnidade.apartamento} (pendente de validação)
           </div>
         )}
         <div className="flex items-center gap-2 mb-6">

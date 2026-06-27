@@ -51,6 +51,19 @@ class Voto(models.Model):
         blank=True,
         related_name="votos_como_procurador",
     )
+    # Unidade adicional declarada pelo próprio morador durante a votação
+    # (modo_multiplas_unidades = "morador"). Fica pendente até a administração
+    # validar. eleitor = o morador declarante; os dados da unidade vêm digitados.
+    unidade_declarada = models.BooleanField(default=False)
+    decl_bloco = models.CharField(max_length=20, blank=True, default="")
+    decl_apartamento = models.CharField(max_length=20, blank=True, default="")
+    decl_nome = models.CharField(max_length=200, blank=True, default="")
+    grupo_declaracao = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Agrupa os votos de uma mesma unidade declarada (para validar em lote).",
+    )
     hash_voto = models.CharField(max_length=64, unique=True)
 
     class Meta:
