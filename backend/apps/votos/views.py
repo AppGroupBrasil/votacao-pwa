@@ -112,7 +112,7 @@ def resolve_vote_auth_token(auth_token, assembleia_id):
     }
 
 
-@ratelimit(key="ip", rate="30/m", block=True)
+@ratelimit(key="ip", rate="120/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def registrar_voto(request, assembleia_id):
@@ -381,7 +381,7 @@ def registrar_voto(request, assembleia_id):
     )
 
 
-@ratelimit(key="ip", rate="60/m", block=True)
+@ratelimit(key="ip", rate="120/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def registrar_presenca(request, assembleia_id):
@@ -460,6 +460,7 @@ def votacao_publica(request, assembleia_id):
             "descricao": assembleia.descricao,
             "status": assembleia.status,
             "votacao_liberada": assembleia.votacao_liberada,
+            "modo_multiplas_unidades": assembleia.modo_multiplas_unidades,
             "questoes": QuestaoSerializer(
                 assembleia.questoes.order_by("ordem"), many=True
             ).data,
@@ -544,7 +545,7 @@ def resultados(request, assembleia_id):
     return Response(data)
 
 
-@ratelimit(key="ip", rate="30/m", block=True)
+@ratelimit(key="ip", rate="120/m", block=True)
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def unidades_assembleia(request, assembleia_id):

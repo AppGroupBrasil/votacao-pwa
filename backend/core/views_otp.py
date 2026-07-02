@@ -71,7 +71,7 @@ def _resolver_eleitor_por_email(assembleia_id, email):
     return eleitor, None
 
 
-@ratelimit(key="ip", rate="5/m", block=True)
+@ratelimit(key="ip", rate="30/m", block=True)
 @ratelimit(key=_ratekey_eleitor, rate="3/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -115,7 +115,7 @@ def otp_send(request):
     })
 
 
-@ratelimit(key="ip", rate="10/m", block=True)
+@ratelimit(key="ip", rate="60/m", block=True)
 @ratelimit(key=_ratekey_eleitor, rate="5/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -184,7 +184,7 @@ def otp_verify(request):
     })
 
 
-@ratelimit(key="ip", rate="5/m", block=True)
+@ratelimit(key="ip", rate="30/m", block=True)
 @ratelimit(key=_ratekey_email, rate="3/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -220,7 +220,7 @@ def otp_send_email(request):
     })
 
 
-@ratelimit(key="ip", rate="10/m", block=True)
+@ratelimit(key="ip", rate="60/m", block=True)
 @ratelimit(key=_ratekey_email, rate="5/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
