@@ -2,11 +2,20 @@ import uuid
 
 from django.db import models
 
+from apps.assembleias.models import Assembleia, gerar_codigo_curto
 from apps.condominios.models import Condominio
 
 
 class Enquete(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    codigo_curto = models.CharField(
+        max_length=8,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Código curto do link compartilhável: appvotacao.com.br/v/<codigo>.",
+    )
     condominio = models.ForeignKey(
         Condominio,
         on_delete=models.CASCADE,
@@ -26,6 +35,18 @@ class Enquete(models.Model):
         ordering = ["-criado_em"]
         verbose_name = "Enquete"
         verbose_name_plural = "Enquetes"
+
+    def save(self, *args, **kwargs):
+        if not self.codigo_curto:
+            for _ in range(20):
+                codigo = gerar_codigo_curto()
+                if (
+                    not Enquete.objects.filter(codigo_curto=codigo).exists()
+                    and not Assembleia.objects.filter(codigo_curto=codigo).exists()
+                ):
+                    self.codigo_curto = codigo
+                    break
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.titulo

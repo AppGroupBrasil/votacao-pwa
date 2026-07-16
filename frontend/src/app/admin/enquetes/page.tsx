@@ -129,15 +129,17 @@ export default function EnquetesPage() {
     }
   }
 
-  function linkPublico(id: string) {
+  function linkPublico(e: Enquete) {
     if (typeof window === "undefined") return "";
-    return `${window.location.origin}/enquete/${id}`;
+    return e.codigo_curto
+      ? `${window.location.origin}/v/${e.codigo_curto}`
+      : `${window.location.origin}/enquete/${e.id}`;
   }
 
-  async function copiarLink(id: string) {
+  async function copiarLink(e: Enquete) {
     try {
-      await navigator.clipboard.writeText(linkPublico(id));
-      setCopiado(id);
+      await navigator.clipboard.writeText(linkPublico(e));
+      setCopiado(e.id);
       setTimeout(() => setCopiado(""), 2000);
     } catch {
       /* ignore */
@@ -225,7 +227,7 @@ export default function EnquetesPage() {
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
-                onClick={() => copiarLink(e.id)}
+                onClick={() => copiarLink(e)}
                 className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
               >
                 {copiado === e.id ? (
@@ -251,7 +253,7 @@ export default function EnquetesPage() {
                 <Trash2 className="w-4 h-4" /> Excluir
               </button>
               <span className="text-xs text-gray-400 truncate">
-                {linkPublico(e.id)}
+                {linkPublico(e)}
               </span>
             </div>
           </div>

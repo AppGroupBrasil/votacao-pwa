@@ -272,6 +272,9 @@ export const api = {
   resolverCodigo: (codigo: string) =>
     request<{ assembleia_id: string }>(`/assembleias/resolver/${codigo}/`),
 
+  resolverCodigoEnquete: (codigo: string) =>
+    request<{ enquete_id: string }>(`/enquetes/resolver/${codigo}/`),
+
   createAssembleia: (data: Partial<Assembleia>) =>
     request<Assembleia>("/assembleias/", {
       method: "POST",

@@ -52,6 +52,17 @@ export default function ShortVotacaoRedirect() {
           return;
         }
       } catch {
+        // não é código de assembleia — tenta enquete abaixo
+      }
+      if (!ativo) return;
+      // Código curto de enquete (votação simples).
+      try {
+        const r = await api.resolverCodigoEnquete(code);
+        if (ativo && r?.enquete_id) {
+          router.replace(`/enquete/${r.enquete_id}`);
+          return;
+        }
+      } catch {
         // não é código curto — tenta os formatos antigos abaixo
       }
       if (!ativo) return;

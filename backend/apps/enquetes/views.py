@@ -30,6 +30,19 @@ def get_client_ip(request):
     return request.META.get("REMOTE_ADDR")
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def resolver_codigo_enquete(request, codigo):
+    """Endpoint público: resolve o código curto do link (/v/<codigo>) para o id da enquete."""
+    try:
+        enquete = Enquete.objects.only("id").get(codigo_curto=codigo.upper())
+    except Enquete.DoesNotExist:
+        return Response(
+            {"error": "Código não encontrado."}, status=status.HTTP_404_NOT_FOUND
+        )
+    return Response({"enquete_id": str(enquete.id)})
+
+
 class EnqueteViewSet(viewsets.ModelViewSet):
     serializer_class = EnqueteSerializer
     permission_classes = [IsAdminWithRole]

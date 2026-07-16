@@ -22,6 +22,7 @@ class EnqueteSerializer(serializers.ModelSerializer):
         model = Enquete
         fields = [
             "id",
+            "codigo_curto",
             "condominio",
             "titulo",
             "ativa",
@@ -31,7 +32,7 @@ class EnqueteSerializer(serializers.ModelSerializer):
             "opcoes_texto",
             "total_votos",
         ]
-        read_only_fields = ["id", "criado_em"]
+        read_only_fields = ["id", "codigo_curto", "criado_em"]
 
     def get_total_votos(self, obj):
         return obj.votos.count()

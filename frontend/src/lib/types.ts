@@ -234,6 +234,7 @@ export interface EnqueteOpcaoItem {
 
 export interface Enquete {
   id: string;
+  codigo_curto?: string | null;
   condominio: string | null;
   titulo: string;
   ativa: boolean;

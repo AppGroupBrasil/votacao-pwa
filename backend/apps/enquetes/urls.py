@@ -7,6 +7,7 @@ from .views import (
     enquete_publica,
     lista_presenca_publica,
     registrar_presenca_manual,
+    resolver_codigo_enquete,
     resultado_enquete,
     votar_enquete,
 )
@@ -25,6 +26,11 @@ urlpatterns = [
         "listas-presenca/<uuid:lista_id>/registrar/",
         registrar_presenca_manual,
         name="lista-presenca-registrar",
+    ),
+    path(
+        "resolver/<str:codigo>/",
+        resolver_codigo_enquete,
+        name="enquete-resolver-codigo",
     ),
     path("<uuid:enquete_id>/publica/", enquete_publica, name="enquete-publica"),
     path("<uuid:enquete_id>/votar/", votar_enquete, name="enquete-votar"),
