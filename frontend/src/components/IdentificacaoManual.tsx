@@ -36,6 +36,15 @@ export default function IdentificacaoManual({
 
   useEffect(() => () => pararCamera(), [pararCamera]);
 
+  // O <video> só é montado depois que camAtiva vira true, então a conexão do
+  // stream precisa acontecer aqui (no re-render), não dentro de abrirCamera.
+  useEffect(() => {
+    if (camAtiva && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [camAtiva]);
+
   async function abrirCamera() {
     setCamErro("");
     try {
@@ -45,10 +54,6 @@ export default function IdentificacaoManual({
       });
       streamRef.current = stream;
       setCamAtiva(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
     } catch {
       setCamErro("Não foi possível acessar a câmera. Verifique a permissão.");
     }
@@ -57,9 +62,14 @@ export default function IdentificacaoManual({
   function capturarSelfie() {
     const video = videoRef.current;
     if (!video) return;
+    if (!video.videoWidth) {
+      setCamErro("Aguarde a imagem da câmera aparecer e tente de novo.");
+      return;
+    }
+    setCamErro("");
     const canvas = document.createElement("canvas");
-    const w = video.videoWidth || 480;
-    const h = video.videoHeight || 640;
+    const w = video.videoWidth;
+    const h = video.videoHeight;
     const max = 640;
     const escala = Math.min(1, max / Math.max(w, h));
     canvas.width = Math.round(w * escala);
@@ -183,6 +193,7 @@ export default function IdentificacaoManual({
           <div className="text-center">
             <video
               ref={videoRef}
+              autoPlay
               playsInline
               muted
               className="mx-auto rounded-lg max-h-60 bg-black"
@@ -193,6 +204,7 @@ export default function IdentificacaoManual({
             >
               <Camera className="w-4 h-4" /> Capturar
             </button>
+            {camErro && <p className="mt-2 text-sm text-red-600">{camErro}</p>}
           </div>
         ) : (
           <div className="text-center">
