@@ -31,6 +31,47 @@ export default function AutocadastroPage() {
     email: "",
   });
 
+  const [modo, setModo] = useState<"novo" | "existente">("novo");
+  const [otpEmail, setOtpEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpEnviado, setOtpEnviado] = useState("");
+  const [otpErro, setOtpErro] = useState("");
+  const [otpLoading, setOtpLoading] = useState(false);
+
+  async function handleSolicitarCodigo(e: React.FormEvent) {
+    e.preventDefault();
+    setOtpErro("");
+    setOtpLoading(true);
+    try {
+      const res = await api.autocadastroJaCadastradoSolicitar(token, otpEmail);
+      setOtpEnviado(res.email_masked);
+    } catch (err: any) {
+      setOtpErro(
+        err?.response?.data?.error ||
+          "Não foi possível enviar o código. Tente novamente."
+      );
+    } finally {
+      setOtpLoading(false);
+    }
+  }
+
+  async function handleConfirmarCodigo(e: React.FormEvent) {
+    e.preventDefault();
+    setOtpErro("");
+    setOtpLoading(true);
+    try {
+      const res = await api.autocadastroJaCadastradoConfirmar(
+        token,
+        otpEmail,
+        otpCode
+      );
+      router.push(`/cadastro/${res.token}`);
+    } catch (err: any) {
+      setOtpErro(err?.response?.data?.error || "Código inválido ou expirado.");
+      setOtpLoading(false);
+    }
+  }
+
   useEffect(() => {
     api
       .getAutocadastro(token)
@@ -102,8 +143,106 @@ export default function AutocadastroPage() {
           <span className="font-bold text-lg">Votação Online</span>
         </div>
         <h1 className="text-xl font-bold text-center">Autocadastro</h1>
-        <p className="text-sm text-gray-500 text-center mb-6">{condominioNome}</p>
+        <p className="text-sm text-gray-500 text-center mb-4">{condominioNome}</p>
 
+        <div className="grid grid-cols-2 gap-2 mb-6">
+          <button
+            type="button"
+            onClick={() => setModo("novo")}
+            className={`py-2 px-3 rounded-lg text-sm font-medium border-2 transition-colors ${
+              modo === "novo"
+                ? "border-primary-600 bg-primary-50 text-primary-700"
+                : "border-gray-200 text-gray-500"
+            }`}
+          >
+            Sou novo aqui
+          </button>
+          <button
+            type="button"
+            onClick={() => setModo("existente")}
+            className={`py-2 px-3 rounded-lg text-sm font-medium border-2 transition-colors ${
+              modo === "existente"
+                ? "border-primary-600 bg-primary-50 text-primary-700"
+                : "border-gray-200 text-gray-500"
+            }`}
+          >
+            Já sou cadastrado
+          </button>
+        </div>
+
+        {modo === "existente" ? (
+          <form
+            onSubmit={otpEnviado ? handleConfirmarCodigo : handleSolicitarCodigo}
+            className="space-y-4"
+          >
+            <p className="text-sm text-gray-500 text-center">
+              Informe o e-mail cadastrado pela administração. Você recebe um
+              código e cadastra sua biometria facial.
+            </p>
+            {otpErro && (
+              <div className="bg-red-50 text-red-700 text-sm rounded-lg p-3">
+                {otpErro}
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                E-mail
+              </label>
+              <input
+                type="email"
+                value={otpEmail}
+                onChange={(e) => setOtpEmail(e.target.value)}
+                className="input-field"
+                disabled={!!otpEnviado}
+                required
+              />
+            </div>
+            {otpEnviado && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Código recebido por e-mail
+                </label>
+                <input
+                  type="text"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value)}
+                  className="input-field"
+                  placeholder="6 dígitos"
+                  inputMode="numeric"
+                  maxLength={6}
+                  required
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Código enviado para {otpEnviado}. Vale por 10 minutos.
+                </p>
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={otpLoading}
+              className="btn-primary w-full"
+            >
+              {otpLoading
+                ? "Aguarde..."
+                : otpEnviado
+                ? "Confirmar e cadastrar biometria"
+                : "Enviar código"}
+            </button>
+            {otpEnviado && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOtpEnviado("");
+                  setOtpCode("");
+                  setOtpErro("");
+                }}
+                className="text-sm text-primary-600 w-full text-center"
+              >
+                Usar outro e-mail ou reenviar código
+              </button>
+            )}
+          </form>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -183,6 +322,7 @@ export default function AutocadastroPage() {
             Na próxima etapa você cadastra sua biometria para votar com segurança.
           </p>
         </form>
+        )}
       </div>
     </div>
   );

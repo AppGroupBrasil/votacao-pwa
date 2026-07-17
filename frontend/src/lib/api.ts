@@ -181,6 +181,18 @@ export const api = {
       { method: "POST", body: JSON.stringify(data) }
     ),
 
+  autocadastroJaCadastradoSolicitar: (token: string, email: string) =>
+    request<{ sent: boolean; email_masked: string }>(
+      `/eleitores/autocadastro/${token}/ja-cadastrado/solicitar/`,
+      { method: "POST", body: JSON.stringify({ email }) }
+    ),
+
+  autocadastroJaCadastradoConfirmar: (token: string, email: string, code: string) =>
+    request<{ token: string }>(
+      `/eleitores/autocadastro/${token}/ja-cadastrado/confirmar/`,
+      { method: "POST", body: JSON.stringify({ email, code }) }
+    ),
+
   // Eleitores
   getEleitores: async () => {
     const all: Eleitor[] = [];

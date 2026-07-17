@@ -2,6 +2,7 @@ import secrets
 from datetime import timedelta
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.mail import send_mail
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -11,6 +12,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.condominios.models import Condominio
+from core.otp import gerar_otp, validar_otp
 from core.permissions import IsAdminWithRole, get_user_condominios
 
 from .models import Eleitor
@@ -158,6 +160,102 @@ class EleitorViewSet(viewsets.ModelViewSet):
             {"message": "Cadastro iniciado", "token": convite_token},
             status=status.HTTP_201_CREATED,
         )
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="autocadastro/(?P<token>[^/.]+)/ja-cadastrado/solicitar",
+        permission_classes=[AllowAny],
+    )
+    def ja_cadastrado_solicitar(self, request, token=None):
+        """Morador já importado pela administração: envia código OTP ao e-mail
+        cadastrado para ele completar o cadastro (biometria) na própria ficha,
+        sem criar duplicata."""
+        condominio = get_object_or_404(Condominio, autocadastro_token=token)
+        if not condominio.autocadastro_ativo:
+            return Response(
+                {"error": "O autocadastro deste condomínio não está liberado."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        email = str(request.data.get("email") or "").strip().lower()
+        if not email:
+            return Response(
+                {"error": "Informe o e-mail."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        eleitor = (
+            Eleitor.objects.filter(condominio=condominio, email__iexact=email)
+            .order_by("criado_em")
+            .first()
+        )
+        if not eleitor:
+            return Response(
+                {"error": "E-mail não encontrado. Use o formulário de novo cadastro."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        sent_key = f"autocad_sent:{eleitor.id}"
+        enviados = cache.get(sent_key, 0)
+        if enviados >= 3:
+            return Response(
+                {"error": "Muitos envios. Aguarde alguns minutos e tente de novo."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        cache.set(sent_key, enviados + 1, 600)
+        code = gerar_otp(f"autocad:{eleitor.id}")
+        send_mail(
+            subject="Código para completar seu cadastro - Votação Online",
+            message=(
+                f"Olá, {eleitor.nome}.\n\n"
+                f"Seu código para completar o cadastro é: {code}\n\n"
+                "Válido por 10 minutos. Se você não solicitou, ignore esta mensagem."
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[eleitor.email],
+            fail_silently=False,
+        )
+        parts = eleitor.email.split("@")
+        masked = parts[0][0] + "***@" + parts[1] if len(parts) == 2 else "***"
+        return Response({"sent": True, "email_masked": masked})
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="autocadastro/(?P<token>[^/.]+)/ja-cadastrado/confirmar",
+        permission_classes=[AllowAny],
+    )
+    def ja_cadastrado_confirmar(self, request, token=None):
+        """Valida o código OTP e emite o token de convite da ficha existente,
+        levando o morador direto ao cadastro de biometria."""
+        condominio = get_object_or_404(Condominio, autocadastro_token=token)
+        if not condominio.autocadastro_ativo:
+            return Response(
+                {"error": "O autocadastro deste condomínio não está liberado."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        email = str(request.data.get("email") or "").strip().lower()
+        code = str(request.data.get("code") or "").strip()
+        eleitor = (
+            Eleitor.objects.filter(condominio=condominio, email__iexact=email)
+            .order_by("criado_em")
+            .first()
+        )
+        if eleitor:
+            att_key = f"autocad_att:{eleitor.id}"
+            tentativas = cache.get(att_key, 0)
+            if tentativas >= 5:
+                return Response(
+                    {"error": "Muitas tentativas. Solicite um novo código."},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
+            cache.set(att_key, tentativas + 1, 600)
+        if not eleitor or not code or not validar_otp(f"autocad:{eleitor.id}", code):
+            return Response(
+                {"error": "Código inválido ou expirado."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        eleitor.convite_token = secrets.token_urlsafe(48)
+        eleitor.convite_expira_em = timezone.now() + timedelta(days=7)
+        eleitor.save(update_fields=["convite_token", "convite_expira_em"])
+        return Response({"token": eleitor.convite_token})
 
     @action(
         detail=False,
