@@ -164,6 +164,7 @@ export default function VotacaoPage() {
           </div>
           <IdentificacaoEmail
             assembleiaId={assembleiaId}
+            exigirConfirmacao={assembleia.exigir_confirmacao_email !== false}
             onSuccess={(token, id, votos) => {
               setEleitorId(id);
               setVotosPermitidos(Math.max(1, votos || 1));

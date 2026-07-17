@@ -220,6 +220,62 @@ def otp_send_email(request):
     })
 
 
+@ratelimit(key="ip", rate="30/m", block=True)
+@ratelimit(key=_ratekey_email, rate="10/m", block=True)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def acesso_direto_email(request):
+    """
+    Acesso sem código: emite token de votação direto pelo e-mail cadastrado.
+    Só funciona se a assembleia estiver com exigir_confirmacao_email=False
+    (chave definida pela administração).
+    Body: { "email": "...", "assembleia_id": "uuid" }
+    """
+    assembleia_id = request.data.get("assembleia_id", "")
+    eleitor, erro = _resolver_eleitor_por_email(
+        assembleia_id, request.data.get("email")
+    )
+    if erro:
+        return erro
+
+    assembleia = get_object_or_404(Assembleia, id=assembleia_id)
+    if assembleia.exigir_confirmacao_email:
+        return Response(
+            {"error": "Esta assembleia exige confirmação por código de e-mail."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    vote_token = signing.dumps(
+        {
+            "eleitor_id": str(eleitor.id),
+            "assembleia_id": assembleia_id,
+            "method": "email",
+        },
+        salt="vote-auth",
+    )
+
+    Presenca.objects.get_or_create(
+        assembleia_id=assembleia_id,
+        eleitor=eleitor,
+        defaults={
+            "nome": eleitor.nome,
+            "bloco": eleitor.bloco,
+            "apartamento": eleitor.apartamento,
+            "perfil": eleitor.perfil,
+            "metodo_auth": "email",
+            **presenca_request_defaults(request),
+        },
+    )
+
+    return Response({
+        "authenticated": True,
+        "method": "email",
+        "eleitor_id": str(eleitor.id),
+        "votos_permitidos": max(1, eleitor.votos_permitidos or 1),
+        "token": vote_token,
+    })
+
+
 @ratelimit(key="ip", rate="60/m", block=True)
 @ratelimit(key=_ratekey_email, rate="5/m", block=True)
 @api_view(["POST"])

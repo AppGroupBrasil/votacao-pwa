@@ -521,6 +521,15 @@ export const api = {
       body: JSON.stringify({ email, assembleia_id: assembleiaId }),
     }),
 
+  otpAcessoDireto: (email: string, assembleiaId: string) =>
+    request<{ authenticated: boolean; method: string; eleitor_id: string; votos_permitidos: number; token: string }>(
+      "/otp/acesso-direto/",
+      {
+        method: "POST",
+        body: JSON.stringify({ email, assembleia_id: assembleiaId }),
+      }
+    ),
+
   otpVerifyEmail: (email: string, assembleiaId: string, code: string) =>
     request<{ authenticated: boolean; method: string; eleitor_id: string; votos_permitidos: number; token: string }>(
       "/otp/verify-email/",

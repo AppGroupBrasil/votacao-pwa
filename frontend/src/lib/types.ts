@@ -104,6 +104,7 @@ export interface Assembleia {
   primeira_chamada_50_mais_1: boolean;
   quorum_segunda_chamada: number;
   segunda_chamada_qualquer_numero: boolean;
+  exigir_confirmacao_email?: boolean;
   total_votantes: number;
   total_presentes: number;
   quorum: Quorum;

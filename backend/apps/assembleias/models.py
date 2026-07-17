@@ -57,6 +57,13 @@ class Assembleia(models.Model):
         default=True,
         help_text="Se True, 2ª chamada aceita qualquer número dos presentes",
     )
+    exigir_confirmacao_email = models.BooleanField(
+        default=True,
+        help_text=(
+            "Se True, votar exige código de confirmação enviado por e-mail; "
+            "se False, o eleitor vota imediatamente após informar o e-mail."
+        ),
+    )
     votacao_liberada = models.BooleanField(
         default=False,
         help_text="Se False, a assembleia está aberta para presença mas os votos ficam travados até a liberação.",

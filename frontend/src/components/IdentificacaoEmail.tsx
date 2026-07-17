@@ -8,11 +8,15 @@ type Status = "email" | "sending" | "awaiting-code" | "verifying" | "success";
 
 interface IdentificacaoEmailProps {
   assembleiaId: string;
+  // Se false, o eleitor entra direto pelo e-mail, sem código de confirmação
+  // (chave "exigir_confirmacao_email" da assembleia).
+  exigirConfirmacao?: boolean;
   onSuccess: (token: string, eleitorId: string, votosPermitidos: number) => void;
 }
 
 export default function IdentificacaoEmail({
   assembleiaId,
+  exigirConfirmacao = true,
   onSuccess,
 }: IdentificacaoEmailProps) {
   const [status, setStatus] = useState<Status>("email");
@@ -33,6 +37,22 @@ export default function IdentificacaoEmail({
     }
     setError("");
     setStatus("sending");
+
+    if (!exigirConfirmacao) {
+      try {
+        const result = await api.otpAcessoDireto(email.trim(), assembleiaId);
+        setStatus("success");
+        setTimeout(
+          () => onSuccess(result.token, result.eleitor_id, result.votos_permitidos || 1),
+          800
+        );
+      } catch (err: any) {
+        setError(err?.response?.data?.error || "E-mail não encontrado.");
+        setStatus("email");
+      }
+      return;
+    }
+
     try {
       const result = await api.otpSendEmail(email.trim(), assembleiaId);
       setEmailMasked(result.email_masked);
@@ -105,8 +125,9 @@ export default function IdentificacaoEmail({
         <Mail className="w-12 h-12 text-primary-600 mx-auto" />
         <h3 className="font-semibold text-lg">Identifique-se</h3>
         <p className="text-sm text-gray-500">
-          Digite o e-mail cadastrado. Enviaremos um código de 6 dígitos para
-          confirmar sua identidade — sem precisar de login.
+          {exigirConfirmacao
+            ? "Digite o e-mail cadastrado. Enviaremos um código de 6 dígitos para confirmar sua identidade — sem precisar de login."
+            : "Digite o e-mail cadastrado para entrar e votar imediatamente — sem código, sem login."}
         </p>
 
         {error && (
@@ -130,11 +151,13 @@ export default function IdentificacaoEmail({
         >
           {status === "sending" ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Enviando...
+              <Loader2 className="w-4 h-4 animate-spin" />{" "}
+              {exigirConfirmacao ? "Enviando..." : "Entrando..."}
             </>
           ) : (
             <>
-              <Mail className="w-4 h-4" /> Enviar Código
+              <Mail className="w-4 h-4" />{" "}
+              {exigirConfirmacao ? "Enviar Código" : "Entrar e Votar"}
             </>
           )}
         </button>

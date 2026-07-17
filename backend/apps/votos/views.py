@@ -461,6 +461,7 @@ def votacao_publica(request, assembleia_id):
             "status": assembleia.status,
             "votacao_liberada": assembleia.votacao_liberada,
             "modo_multiplas_unidades": assembleia.modo_multiplas_unidades,
+            "exigir_confirmacao_email": assembleia.exigir_confirmacao_email,
             "questoes": QuestaoSerializer(
                 assembleia.questoes.order_by("ordem"), many=True
             ).data,

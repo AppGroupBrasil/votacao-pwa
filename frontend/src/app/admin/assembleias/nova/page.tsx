@@ -51,6 +51,7 @@ export default function NovaAssembleiaPage() {
     primeira_chamada_50_mais_1: true,
     quorum_segunda_chamada: 33,
     segunda_chamada_qualquer_numero: true,
+    exigir_confirmacao_email: true,
     modo_multiplas_unidades: "sindico" as "sindico" | "morador",
   });
 
@@ -129,6 +130,7 @@ export default function NovaAssembleiaPage() {
         primeira_chamada_50_mais_1: avancadas.primeira_chamada_50_mais_1,
         quorum_segunda_chamada: avancadas.quorum_segunda_chamada,
         segunda_chamada_qualquer_numero: avancadas.segunda_chamada_qualquer_numero,
+        exigir_confirmacao_email: avancadas.exigir_confirmacao_email,
         modo_multiplas_unidades: avancadas.modo_multiplas_unidades,
       });
       assembleiaId = assembleia.id;
@@ -561,6 +563,31 @@ export default function NovaAssembleiaPage() {
                       Qualquer número de votantes
                     </p>
                   </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Confirmação por e-mail para votar
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={avancadas.exigir_confirmacao_email}
+                      onChange={(e) =>
+                        setAvancadas({
+                          ...avancadas,
+                          exigir_confirmacao_email: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-gray-600">
+                      Exigir código de confirmação enviado por e-mail
+                    </span>
+                  </label>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Desmarcado: o morador informa o e-mail cadastrado e vota
+                    imediatamente, sem código.
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
