@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search, CheckCircle, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -15,18 +15,31 @@ export default function ComprovantePage() {
   } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!hash.trim()) return;
+  async function verificar(valor: string) {
+    if (!valor.trim()) return;
     setLoading(true);
     try {
-      const data = await api.verificarVoto(hash.trim());
+      const data = await api.verificarVoto(valor.trim());
       setResult(data);
     } catch {
       setResult({ encontrado: false });
     } finally {
       setLoading(false);
     }
+  }
+
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("hash");
+    if (fromUrl) {
+      setHash(fromUrl);
+      verificar(fromUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    verificar(hash);
   }
 
   return (

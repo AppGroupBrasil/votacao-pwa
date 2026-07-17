@@ -510,15 +510,38 @@ export default function VotacaoPage() {
               >
                 <p className="font-medium text-gray-700 mb-1">{c.questao}</p>
                 <code className="text-gray-500">{c.hash}</code>
+                <a
+                  href={`/votacao/comprovante?hash=${c.hash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block mt-2 text-primary-600 underline"
+                >
+                  Verificar este comprovante
+                </a>
               </div>
             ))}
+            <p className="text-xs text-gray-500">
+              Guarde este código: a qualquer momento você pode confirmar seu
+              voto em{" "}
+              <a
+                href="/votacao/comprovante"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary-600 underline"
+              >
+                appvotacao.com.br/votacao/comprovante
+              </a>
+            </p>
           </div>
 
           <button
             onClick={() => {
               const text = comprovantes
-                .map((c) => `${c.questao}: ${c.hash}`)
-                .join("\n");
+                .map(
+                  (c) =>
+                    `${c.questao}: ${c.hash}\nVerificar: ${window.location.origin}/votacao/comprovante?hash=${c.hash}`
+                )
+                .join("\n\n");
               navigator.clipboard.writeText(text);
               setCopied(true);
               setTimeout(() => setCopied(false), 2000);
