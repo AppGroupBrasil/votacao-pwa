@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.http import HttpResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -91,7 +92,12 @@ class AssembleiaViewSet(viewsets.ModelViewSet):
                 {"error": "Não é possível excluir uma assembleia com votação aberta. Encerre primeiro."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        return super().destroy(request, *args, **kwargs)
+        # Os votos usam PROTECT (contra exclusão acidental de questão/opção);
+        # na exclusão intencional da assembleia eles saem primeiro.
+        with transaction.atomic():
+            assembleia.votos.all().delete()
+            assembleia.votantes_manuais.all().delete()
+            return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"], url_path="abrir")
     def abrir(self, request, pk=None):
