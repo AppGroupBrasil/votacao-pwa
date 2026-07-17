@@ -8,6 +8,7 @@ import WebAuthnVerify from "@/components/webauthn/WebAuthnVerify";
 import FaceVerify from "@/components/FaceVerify";
 import OtpVerify from "@/components/OtpVerify";
 import IdentificacaoEmail from "@/components/IdentificacaoEmail";
+import IdentificacaoManual from "@/components/IdentificacaoManual";
 import type { Assembleia, UnidadeVotante } from "@/lib/types";
 
 export default function VotacaoPage() {
@@ -16,6 +17,10 @@ export default function VotacaoPage() {
 
   const [assembleia, setAssembleia] = useState<Assembleia | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
+  // Votação manual (sem cadastro, com selfie)
+  const [manualMode, setManualMode] = useState(false);
+  const [manualId, setManualId] = useState("");
+  const [votoPendente, setVotoPendente] = useState(false);
   const [authMethod, setAuthMethod] = useState<"webauthn" | "facial" | "otp">("webauthn");
   // Questões cuja cota de votos já foi cumprida (por id). Rastrear por id em vez
   // de índice mantém a sequência correta mesmo que a administração encerre um
@@ -130,10 +135,10 @@ export default function VotacaoPage() {
   // Lista de presença: registra a presença somente após autenticação
   // (webauthn/desbloqueio, facial ou token por e-mail/OTP).
   useEffect(() => {
-    if (authToken) {
+    if (authToken && !manualId) {
       api.registrarPresenca(assembleiaId, authToken).catch(() => {});
     }
-  }, [assembleiaId, authToken]);
+  }, [assembleiaId, authToken, manualId]);
 
   if (error) {
     return (
@@ -162,15 +167,28 @@ export default function VotacaoPage() {
             <Vote className="w-7 h-7 text-primary-600" />
             <span className="font-bold text-lg">Votação</span>
           </div>
-          <IdentificacaoEmail
-            assembleiaId={assembleiaId}
-            exigirConfirmacao={assembleia.exigir_confirmacao_email !== false}
-            onSuccess={(token, id, votos) => {
-              setEleitorId(id);
-              setVotosPermitidos(Math.max(1, votos || 1));
-              setAuthToken(token);
-            }}
-          />
+          {manualMode ? (
+            <IdentificacaoManual
+              assembleiaId={assembleiaId}
+              onSuccess={(token, id) => {
+                setManualId(id);
+                setVotosPermitidos(1);
+                setAuthToken(token);
+              }}
+              onBack={() => setManualMode(false)}
+            />
+          ) : (
+            <IdentificacaoEmail
+              assembleiaId={assembleiaId}
+              exigirConfirmacao={assembleia.exigir_confirmacao_email !== false}
+              onSuccess={(token, id, votos) => {
+                setEleitorId(id);
+                setVotosPermitidos(Math.max(1, votos || 1));
+                setAuthToken(token);
+              }}
+              onManual={() => setManualMode(true)}
+            />
+          )}
         </div>
       </div>
     );
@@ -473,6 +491,14 @@ export default function VotacaoPage() {
             Seus votos foram registrados com sucesso.
           </p>
 
+          {votoPendente && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3 mb-4 text-left">
+              Sua unidade já possuía voto registrado, por isso seu voto ficou
+              aguardando a validação do síndico. Ele será contabilizado após a
+              conferência.
+            </div>
+          )}
+
           <div className="text-left space-y-3">
             <h3 className="font-medium text-sm text-gray-700 flex items-center gap-1">
               <Shield className="w-4 h-4" /> Comprovantes de Verificação
@@ -510,7 +536,7 @@ export default function VotacaoPage() {
             )}
           </button>
 
-          {assembleia.modo_multiplas_unidades === "morador" ? (
+          {manualId ? null : assembleia.modo_multiplas_unidades === "morador" ? (
             <div className="mt-6 pt-4 border-t text-left">
               <p className="text-xs text-gray-500 mb-2">
                 Você tem mais de uma unidade?
@@ -546,14 +572,19 @@ export default function VotacaoPage() {
 
     try {
       const result = await api.votar(assembleiaId, {
-        eleitor_id: ehProcuracao && unidadeProc ? unidadeProc.id : eleitorId,
+        ...(manualId
+          ? {}
+          : {
+              eleitor_id:
+                ehProcuracao && unidadeProc ? unidadeProc.id : eleitorId,
+            }),
         questao_id: questao.id,
         opcao_id: selectedOpcao,
         auth_token: authToken,
         device_id: getDeviceId(),
-        por_procuracao: ehProcuracao,
-        unidade_declarada: ehDeclaracao,
-        ...(ehDeclaracao && declUnidade
+        por_procuracao: manualId ? false : ehProcuracao,
+        unidade_declarada: manualId ? false : ehDeclaracao,
+        ...(ehDeclaracao && declUnidade && !manualId
           ? {
               decl_bloco: declUnidade.bloco,
               decl_apartamento: declUnidade.apartamento,
@@ -562,6 +593,8 @@ export default function VotacaoPage() {
             }
           : {}),
       });
+
+      if (manualId && result.status === "pendente") setVotoPendente(true);
 
       if (!ehProcuracao && !ehDeclaracao) {
         setComprovantes((prev) => [

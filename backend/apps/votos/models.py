@@ -7,11 +7,39 @@ from apps.assembleias.models import Assembleia, OpcaoVoto, Questao
 from apps.eleitores.models import Eleitor
 
 
+class VotanteManual(models.Model):
+    """Morador sem cadastro (ou cujo e-mail não bate) que entra pela votação
+    manual: informa nome/unidade e tira uma selfie de comprovação. O voto vale
+    imediatamente; o síndico pode revisar/invalidar pela selfie depois."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    assembleia = models.ForeignKey(
+        Assembleia, on_delete=models.CASCADE, related_name="votantes_manuais"
+    )
+    nome = models.CharField(max_length=200)
+    bloco = models.CharField(max_length=20, blank=True, default="")
+    apartamento = models.CharField(max_length=20)
+    selfie = models.TextField()
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True, default="")
+    device_info = models.CharField(max_length=255, blank=True, default="")
+    device_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["criado_em"]
+        verbose_name_plural = "votantes manuais"
+
+    def __str__(self):
+        return f"{self.nome} - {self.apartamento} (manual)"
+
+
 class Voto(models.Model):
     class MetodoAuth(models.TextChoices):
         FACIAL = "facial", "Biometria Facial"
         WEBAUTHN = "webauthn", "WebAuthn"
         OTP = "otp", "OTP"
+        MANUAL = "manual", "Manual com selfie"
 
     class Status(models.TextChoices):
         VALIDADO = "validado", "Validado"
@@ -23,7 +51,19 @@ class Voto(models.Model):
         Assembleia, on_delete=models.PROTECT, related_name="votos"
     )
     eleitor = models.ForeignKey(
-        Eleitor, on_delete=models.PROTECT, related_name="votos"
+        Eleitor,
+        on_delete=models.PROTECT,
+        related_name="votos",
+        null=True,
+        blank=True,
+        help_text="Vazio quando o voto é manual (votante_manual preenchido)",
+    )
+    votante_manual = models.ForeignKey(
+        VotanteManual,
+        on_delete=models.PROTECT,
+        related_name="votos",
+        null=True,
+        blank=True,
     )
     questao = models.ForeignKey(
         Questao, on_delete=models.PROTECT, related_name="votos"
@@ -80,7 +120,7 @@ class Voto(models.Model):
     def save(self, *args, **kwargs):
         if not self.hash_voto:
             salt = uuid.uuid4().hex
-            payload = f"{self.eleitor_id}:{self.questao_id}:{self.opcao_escolhida_id}:{salt}"
+            payload = f"{self.eleitor_id or self.votante_manual_id}:{self.questao_id}:{self.opcao_escolhida_id}:{salt}"
             self.hash_voto = hashlib.sha256(payload.encode()).hexdigest()
         super().save(*args, **kwargs)
 

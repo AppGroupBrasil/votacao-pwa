@@ -19,7 +19,7 @@ from apps.assembleias.models import Assembleia, OpcaoVoto, Presenca, Questao
 from apps.eleitores.models import Eleitor
 from core.permissions import IsAdminWithRole, get_user_condominios
 
-from .models import Voto
+from .models import VotanteManual, Voto
 from .serializers import RelatorioVotoSerializer, VotoCreateSerializer
 
 
@@ -96,6 +96,17 @@ def resolve_vote_auth_token(auth_token, assembleia_id):
     token_eleitor_id = str(payload.get("eleitor_id", ""))
     token_method = str(payload.get("method", "")).strip().lower()
 
+    if token_method == "manual":
+        token_manual_id = str(payload.get("manual_id", ""))
+        if not token_manual_id or not token_assembleia_id:
+            raise ValueError("Token de autenticação incompleto.")
+        if token_assembleia_id != str(assembleia_id):
+            raise ValueError("Token de autenticação não pertence a esta assembleia.")
+        return {
+            "manual_id": token_manual_id,
+            "metodo_auth": "manual",
+        }
+
     if not token_eleitor_id or not token_assembleia_id or not token_method:
         raise ValueError("Token de autenticação incompleto.")
 
@@ -158,6 +169,9 @@ def registrar_voto(request, assembleia_id):
                 {"error": str(exc)},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        if auth_context.get("manual_id"):
+            return _registrar_voto_manual(request, assembleia, serializer, auth_context)
 
         auth_eleitor_id = auth_context["eleitor_id"]
         request_eleitor_id = serializer.validated_data.get("eleitor_id")
@@ -294,6 +308,11 @@ def registrar_voto(request, assembleia_id):
                         eleitor__bloco__iexact=decl_bloco,
                         eleitor__apartamento__iexact=decl_apartamento,
                     )
+                    | Q(
+                        votante_manual__isnull=False,
+                        votante_manual__bloco__iexact=decl_bloco,
+                        votante_manual__apartamento__iexact=decl_apartamento,
+                    )
                 )
                 .exclude(status=Voto.Status.REJEITADO)
                 .exists()
@@ -319,6 +338,19 @@ def registrar_voto(request, assembleia_id):
                     {"error": "Você já usou todos os seus votos nesta questão."},
                     status=status.HTTP_409_CONFLICT,
                 )
+
+        # Cadastro tem prioridade sobre voto manual: se a unidade do eleitor já
+        # tinha voto manual contabilizado nesta questão, ele volta para revisão
+        # do síndico (pendente) e o voto do eleitor cadastrado entra normalmente.
+        if not por_procuracao and not unidade_declarada:
+            Voto.objects.filter(
+                assembleia=assembleia,
+                questao=questao,
+                votante_manual__isnull=False,
+                votante_manual__bloco__iexact=(eleitor.bloco or "").strip(),
+                votante_manual__apartamento__iexact=(eleitor.apartamento or "").strip(),
+                status=Voto.Status.VALIDADO,
+            ).update(status=Voto.Status.PENDENTE)
 
         # Um voto por unidade: se outro morador da mesma unidade
         # (condomínio + bloco + apartamento) já votou nesta questão, bloqueia.
@@ -381,6 +413,288 @@ def registrar_voto(request, assembleia_id):
     )
 
 
+def _registrar_voto_manual(request, assembleia, serializer, auth_context):
+    """Voto do votante manual (sem cadastro, identificado por selfie).
+    Conta imediatamente; entra pendente só quando há conflito de unidade
+    (a unidade já votou por outro caminho) ou de dispositivo."""
+    if serializer.validated_data.get("por_procuracao") or serializer.validated_data.get(
+        "unidade_declarada"
+    ):
+        return Response(
+            {"error": "O voto manual vale apenas para a própria unidade."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    votante = get_object_or_404(
+        VotanteManual, id=auth_context["manual_id"], assembleia=assembleia
+    )
+    questao = get_object_or_404(
+        Questao, id=serializer.validated_data["questao_id"], assembleia=assembleia
+    )
+    opcao = get_object_or_404(
+        OpcaoVoto, id=serializer.validated_data["opcao_id"], questao=questao
+    )
+
+    if questao.encerrada:
+        return Response(
+            {"error": "A votação deste item foi encerrada."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    ja_votou = (
+        Voto.objects.select_for_update()
+        .filter(votante_manual=votante, questao=questao)
+        .exclude(status=Voto.Status.REJEITADO)
+        .exists()
+    )
+    if ja_votou:
+        return Response(
+            {"error": "Você já votou nesta questão."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    bloco = (votante.bloco or "").strip()
+    apartamento = (votante.apartamento or "").strip()
+    conflito_unidade = (
+        Voto.objects.select_for_update()
+        .filter(assembleia=assembleia, questao=questao)
+        .filter(
+            Q(
+                votante_manual__isnull=False,
+                votante_manual__bloco__iexact=bloco,
+                votante_manual__apartamento__iexact=apartamento,
+            )
+            | Q(
+                eleitor__isnull=False,
+                unidade_declarada=False,
+                eleitor__bloco__iexact=bloco,
+                eleitor__apartamento__iexact=apartamento,
+            )
+            | Q(
+                unidade_declarada=True,
+                decl_bloco__iexact=bloco,
+                decl_apartamento__iexact=apartamento,
+            )
+        )
+        .exclude(votante_manual=votante)
+        .exclude(status=Voto.Status.REJEITADO)
+        .exists()
+    )
+
+    device_id = (serializer.validated_data.get("device_id") or "").strip()
+    conflito_device = bool(device_id) and (
+        Voto.objects.filter(assembleia=assembleia, device_id=device_id)
+        .exclude(votante_manual=votante)
+        .exclude(status=Voto.Status.REJEITADO)
+        .exists()
+    )
+
+    voto = Voto(
+        assembleia=assembleia,
+        eleitor=None,
+        votante_manual=votante,
+        questao=questao,
+        opcao_escolhida=opcao,
+        metodo_auth=Voto.MetodoAuth.MANUAL,
+        ip_address=get_client_ip(request),
+        user_agent=get_client_user_agent(request),
+        device_info=infer_device_info(get_client_user_agent(request)),
+        device_id=device_id,
+        status=(
+            Voto.Status.PENDENTE
+            if (conflito_unidade or conflito_device)
+            else Voto.Status.VALIDADO
+        ),
+    )
+    voto.save()
+
+    audit.info(
+        "voto_manual_registrado assembleia=%s questao=%s votante=%s status=%s hash=%s",
+        assembleia.id, questao.id, votante.id, voto.status, voto.hash_voto,
+    )
+    return Response(
+        {
+            "message": "Voto registrado com sucesso",
+            "hash_voto": voto.hash_voto,
+            "timestamp": voto.timestamp,
+            "status": voto.status,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@ratelimit(key="ip", rate="10/m", block=True)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def acesso_manual(request, assembleia_id):
+    """Entrada pela votação manual: morador sem cadastro (ou que não lembra o
+    e-mail) informa nome/unidade e uma selfie de comprovação. Registra a
+    presença e emite o token de voto."""
+    assembleia = get_object_or_404(Assembleia, id=assembleia_id)
+
+    if assembleia.status != Assembleia.Status.ABERTA:
+        return Response(
+            {"error": "Esta assembleia não está aberta para votação"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    nome = str(request.data.get("nome", "")).strip()
+    bloco = str(request.data.get("bloco", "")).strip()
+    apartamento = str(request.data.get("apartamento", "")).strip()
+    selfie = str(request.data.get("selfie", ""))
+    device_id = str(request.data.get("device_id", "")).strip()[:64]
+
+    if not nome or not apartamento:
+        return Response(
+            {"error": "Informe seu nome e apartamento/unidade."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not selfie.startswith("data:image/"):
+        return Response(
+            {"error": "A selfie é obrigatória na votação manual."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if len(selfie) > 3_500_000:
+        return Response(
+            {"error": "Selfie muito grande. Tente novamente."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user_agent = get_client_user_agent(request)
+    votante = VotanteManual.objects.create(
+        assembleia=assembleia,
+        nome=nome,
+        bloco=bloco,
+        apartamento=apartamento,
+        selfie=selfie,
+        ip_address=get_client_ip(request),
+        user_agent=user_agent,
+        device_info=infer_device_info(user_agent),
+        device_id=device_id,
+    )
+    Presenca.objects.create(
+        assembleia=assembleia,
+        eleitor=None,
+        nome=nome,
+        bloco=bloco,
+        apartamento=apartamento,
+        metodo_auth="manual",
+        ip_address=get_client_ip(request),
+        user_agent=user_agent,
+        device_info=infer_device_info(user_agent),
+    )
+
+    token = signing.dumps(
+        {
+            "manual_id": str(votante.id),
+            "assembleia_id": str(assembleia.id),
+            "method": "manual",
+        },
+        salt="vote-auth",
+    )
+
+    audit.info(
+        "acesso_manual assembleia=%s votante=%s unidade=%s/%s",
+        assembleia.id, votante.id, bloco, apartamento,
+    )
+    return Response(
+        {
+            "authenticated": True,
+            "method": "manual",
+            "votante_manual_id": str(votante.id),
+            "token": token,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminWithRole])
+def votos_manuais(request, assembleia_id):
+    """Painel do síndico: votantes manuais com selfie e situação dos votos,
+    para conferência e invalidação a qualquer momento antes do encerramento."""
+    assembleia = get_accessible_assembleia(request, assembleia_id)
+    votantes = (
+        VotanteManual.objects.filter(assembleia=assembleia)
+        .prefetch_related("votos__questao")
+        .order_by("criado_em")
+    )
+
+    data = []
+    for votante in votantes:
+        votos = list(votante.votos.all())
+        statuses = {v.status for v in votos}
+        if Voto.Status.PENDENTE in statuses:
+            situacao = "pendente"
+        elif votos and statuses == {Voto.Status.REJEITADO}:
+            situacao = "rejeitado"
+        elif votos:
+            situacao = "validado"
+        else:
+            situacao = "sem_votos"
+        data.append(
+            {
+                "id": str(votante.id),
+                "nome": votante.nome,
+                "bloco": votante.bloco,
+                "apartamento": votante.apartamento,
+                "selfie": votante.selfie,
+                "horario": votante.criado_em,
+                "device_info": votante.device_info,
+                "situacao": situacao,
+                "total_votos": len(votos),
+                "votos": [
+                    {"questao": v.questao.titulo, "status": v.status} for v in votos
+                ],
+            }
+        )
+    return Response({"total": len(data), "votantes": data})
+
+
+@api_view(["POST"])
+@permission_classes([IsAdminWithRole])
+def validar_voto_manual(request, assembleia_id):
+    assembleia = get_accessible_assembleia(request, assembleia_id)
+    votante_id = request.data.get("votante_manual_id")
+    acao = str(request.data.get("acao", "")).strip().lower()
+
+    if not votante_id or acao not in {"aprovar", "rejeitar"}:
+        return Response(
+            {"error": "Informe votante_manual_id e acao (aprovar/rejeitar)"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    votante = get_object_or_404(VotanteManual, id=votante_id, assembleia=assembleia)
+    if acao == "aprovar":
+        qs = Voto.objects.filter(
+            assembleia=assembleia,
+            votante_manual=votante,
+            status=Voto.Status.PENDENTE,
+        )
+        novo_status = Voto.Status.VALIDADO
+    else:
+        qs = Voto.objects.filter(
+            assembleia=assembleia, votante_manual=votante
+        ).exclude(status=Voto.Status.REJEITADO)
+        novo_status = Voto.Status.REJEITADO
+    atualizados = qs.update(status=novo_status)
+
+    audit.info(
+        "voto_manual_%s assembleia=%s votante=%s votos=%s admin=%s",
+        acao, assembleia.id, votante.id, atualizados, request.user.id,
+    )
+    from apps.assembleias.audit import registrar_log
+    from apps.assembleias.models import LogAuditoria
+    registrar_log(
+        request, assembleia,
+        LogAuditoria.Acao.VALIDAR_PROCURACAO if acao == "aprovar"
+        else LogAuditoria.Acao.REJEITAR_PROCURACAO,
+        f"Voto manual de {votante.nome} ({votante.bloco}/{votante.apartamento}): "
+        f"{atualizados} voto(s) {'aprovado(s)' if acao == 'aprovar' else 'invalidado(s)'}.",
+    )
+    return Response({"status": novo_status, "votos_atualizados": atualizados})
+
+
 @ratelimit(key="ip", rate="120/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -403,6 +717,13 @@ def registrar_presenca(request, assembleia_id):
         auth_context = resolve_vote_auth_token(auth_token, assembleia.id)
     except ValueError as exc:
         return Response({"error": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+    if auth_context.get("manual_id"):
+        # Presença do votante manual já foi criada no acesso-manual.
+        return Response(
+            {"registrado": True, "novo": False, "horario_entrada": timezone.now()},
+            status=status.HTTP_200_OK,
+        )
 
     eleitor = get_object_or_404(Eleitor, id=auth_context["eleitor_id"])
 
@@ -502,6 +823,15 @@ def resultados(request, assembleia_id):
             status=Voto.Status.PENDENTE,
         )
         .values("grupo_declaracao")
+        .distinct()
+        .count()
+    ) + (
+        Voto.objects.filter(
+            assembleia=assembleia,
+            votante_manual__isnull=False,
+            status=Voto.Status.PENDENTE,
+        )
+        .values("votante_manual")
         .distinct()
         .count()
     )
@@ -677,7 +1007,7 @@ def relatorio_detalhado(request, assembleia_id):
     assembleia = get_accessible_assembleia(request, assembleia_id)
     votos = (
         Voto.objects.filter(assembleia=assembleia)
-        .select_related("eleitor", "questao", "opcao_escolhida")
+        .select_related("eleitor", "votante_manual", "questao", "opcao_escolhida")
         .order_by("-timestamp")
     )
 

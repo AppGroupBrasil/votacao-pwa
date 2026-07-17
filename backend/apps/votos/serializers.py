@@ -48,10 +48,10 @@ class ComprovanteSerializer(serializers.Serializer):
 
 
 class RelatorioVotoSerializer(serializers.ModelSerializer):
-    eleitor_nome = serializers.CharField(source="eleitor.nome", read_only=True)
-    bloco = serializers.CharField(source="eleitor.bloco", read_only=True)
-    apartamento = serializers.CharField(source="eleitor.apartamento", read_only=True)
-    perfil = serializers.CharField(source="eleitor.perfil", read_only=True)
+    eleitor_nome = serializers.SerializerMethodField()
+    bloco = serializers.SerializerMethodField()
+    apartamento = serializers.SerializerMethodField()
+    perfil = serializers.SerializerMethodField()
     por_procuracao = serializers.SerializerMethodField()
     questao_titulo = serializers.CharField(source="questao.titulo", read_only=True)
     opcao_texto = serializers.CharField(source="opcao_escolhida.texto", read_only=True)
@@ -73,5 +73,25 @@ class RelatorioVotoSerializer(serializers.ModelSerializer):
             "hash_voto",
         ]
 
+    def get_eleitor_nome(self, obj):
+        if obj.eleitor:
+            return obj.eleitor.nome
+        return obj.votante_manual.nome if obj.votante_manual else ""
+
+    def get_bloco(self, obj):
+        if obj.eleitor:
+            return obj.eleitor.bloco
+        return obj.votante_manual.bloco if obj.votante_manual else ""
+
+    def get_apartamento(self, obj):
+        if obj.eleitor:
+            return obj.eleitor.apartamento
+        return obj.votante_manual.apartamento if obj.votante_manual else ""
+
+    def get_perfil(self, obj):
+        return obj.eleitor.perfil if obj.eleitor else "proprietario"
+
     def get_por_procuracao(self, obj):
+        if not obj.eleitor:
+            return False
         return obj.por_procuracao or obj.eleitor.perfil == "procurador"

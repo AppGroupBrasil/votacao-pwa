@@ -12,12 +12,15 @@ interface IdentificacaoEmailProps {
   // (chave "exigir_confirmacao_email" da assembleia).
   exigirConfirmacao?: boolean;
   onSuccess: (token: string, eleitorId: string, votosPermitidos: number) => void;
+  // Se definido, mostra a opção de votação manual (sem cadastro, com selfie).
+  onManual?: () => void;
 }
 
 export default function IdentificacaoEmail({
   assembleiaId,
   exigirConfirmacao = true,
   onSuccess,
+  onManual,
 }: IdentificacaoEmailProps) {
   const [status, setStatus] = useState<Status>("email");
   const [email, setEmail] = useState("");
@@ -161,6 +164,27 @@ export default function IdentificacaoEmail({
             </>
           )}
         </button>
+
+        {onManual && (
+          <div className="border-t border-gray-100 pt-4 text-left space-y-2">
+            <p className="text-sm font-medium text-gray-700">
+              Não tem cadastro ou não lembra o e-mail?
+            </p>
+            <p className="text-xs text-gray-500">
+              Use a votação manual: você fará uma selfie para comprovar que é
+              você quem está votando. Se não concordar com essa opção, entre em
+              contato com a administradora ou o suporte do sistema para se
+              cadastrar com seu e-mail.
+            </p>
+            <button
+              onClick={onManual}
+              disabled={status === "sending"}
+              className="btn-secondary w-full"
+            >
+              Usar votação manual
+            </button>
+          </div>
+        )}
       </div>
     );
   }

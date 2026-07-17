@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Download, Clock, Check, X } from "lucide-react";
+import { Download, Clock, Check, X, Camera } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
   AssembleiaListItem,
   Resultado,
   ProcuracaoPendente,
+  VotanteManualAdmin,
 } from "@/lib/types";
 
 export default function ResultadosPage() {
@@ -17,15 +18,31 @@ export default function ResultadosPage() {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  const [manuais, setManuais] = useState<VotanteManualAdmin[]>([]);
+  const [selfieAberta, setSelfieAberta] = useState<string>("");
+
   const carregarPendentes = useCallback((id: string) => {
     api
       .getProcuracoesPendentes(id)
       .then((d) => setPendentes(d.unidades))
       .catch(() => setPendentes([]));
+    api
+      .getVotosManuais(id)
+      .then((d) => setManuais(d.votantes))
+      .catch(() => setManuais([]));
   }, []);
 
   async function validar(p: ProcuracaoPendente, acao: "aprovar" | "rejeitar") {
     await api.validarProcuracao(selected, { tipo: p.tipo, id: p.id }, acao);
+    carregarPendentes(selected);
+    api.getResultados(selected).then(setResultados);
+  }
+
+  async function validarManual(
+    votante: VotanteManualAdmin,
+    acao: "aprovar" | "rejeitar"
+  ) {
+    await api.validarVotoManual(selected, votante.id, acao);
     carregarPendentes(selected);
     api.getResultados(selected).then(setResultados);
   }
@@ -217,6 +234,100 @@ export default function ResultadosPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {selected && manuais.length > 0 && (
+        <div className="card mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Camera className="w-5 h-5 text-primary-600" />
+            <h3 className="font-semibold">
+              Votos manuais com selfie ({manuais.length})
+            </h3>
+          </div>
+          <p className="text-sm text-gray-500 mb-4">
+            Moradores sem cadastro que votaram pela via manual. O voto vale
+            imediatamente; confira a selfie e invalide se não reconhecer a
+            pessoa. Votos pendentes (unidade já tinha votado) só entram na
+            totalização após sua aprovação.
+          </p>
+          <div className="space-y-2">
+            {manuais.map((v) => (
+              <div
+                key={v.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-4 py-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={v.selfie}
+                    alt={`Selfie de ${v.nome}`}
+                    onClick={() => setSelfieAberta(v.selfie)}
+                    className="w-12 h-12 rounded-lg object-cover shrink-0 cursor-pointer"
+                  />
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">
+                      {v.bloco ? `${v.bloco} / ` : ""}
+                      {v.apartamento} — {v.nome}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {new Date(v.horario).toLocaleString("pt-BR")} ·{" "}
+                      {v.total_votos} voto{v.total_votos !== 1 ? "s" : ""} ·{" "}
+                      <span
+                        className={
+                          v.situacao === "pendente"
+                            ? "text-amber-600 font-medium"
+                            : v.situacao === "rejeitado"
+                            ? "text-red-600 font-medium"
+                            : "text-green-600 font-medium"
+                        }
+                      >
+                        {v.situacao === "pendente"
+                          ? "aguardando validação"
+                          : v.situacao === "rejeitado"
+                          ? "invalidado"
+                          : v.situacao === "sem_votos"
+                          ? "sem votos"
+                          : "contabilizado"}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {v.situacao === "pendente" && (
+                    <button
+                      onClick={() => validarManual(v, "aprovar")}
+                      className="inline-flex items-center gap-1 rounded-lg bg-green-600 text-white px-3 py-1.5 text-sm hover:bg-green-700"
+                    >
+                      <Check className="w-4 h-4" /> Aprovar
+                    </button>
+                  )}
+                  {v.situacao !== "rejeitado" && v.total_votos > 0 && (
+                    <button
+                      onClick={() => validarManual(v, "rejeitar")}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-300 text-red-600 px-3 py-1.5 text-sm hover:bg-red-50"
+                    >
+                      <X className="w-4 h-4" /> Invalidar
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {selfieAberta && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setSelfieAberta("")}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={selfieAberta}
+            alt="Selfie ampliada"
+            className="max-h-[80vh] max-w-full rounded-lg"
+          />
         </div>
       )}
 

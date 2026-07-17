@@ -149,7 +149,7 @@ export interface Ata {
 
 // === Votos ===
 export interface VotoPayload {
-  eleitor_id: string;
+  eleitor_id?: string;
   questao_id: string;
   opcao_id: string;
   auth_token: string;
@@ -166,6 +166,20 @@ export interface VotoResponse {
   message: string;
   hash_voto: string;
   timestamp: string;
+  status?: string;
+}
+
+export interface VotanteManualAdmin {
+  id: string;
+  nome: string;
+  bloco: string;
+  apartamento: string;
+  selfie: string;
+  horario: string;
+  device_info: string;
+  situacao: "pendente" | "validado" | "rejeitado" | "sem_votos";
+  total_votos: number;
+  votos: { questao: string; status: string }[];
 }
 
 export interface OpcaoResultado {

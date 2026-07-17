@@ -426,6 +426,45 @@ export const api = {
       `/votos/${assembleiaId}/unidades/`
     ),
 
+  acessoManualVotacao: (
+    assembleiaId: string,
+    data: {
+      nome: string;
+      bloco?: string;
+      apartamento: string;
+      selfie: string;
+      device_id?: string;
+    }
+  ) =>
+    request<{
+      authenticated: boolean;
+      method: string;
+      votante_manual_id: string;
+      token: string;
+    }>(`/votos/${assembleiaId}/acesso-manual/`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getVotosManuais: (assembleiaId: string) =>
+    request<{
+      total: number;
+      votantes: import("./types").VotanteManualAdmin[];
+    }>(`/votos/${assembleiaId}/votos-manuais/`),
+
+  validarVotoManual: (
+    assembleiaId: string,
+    votanteManualId: string,
+    acao: "aprovar" | "rejeitar"
+  ) =>
+    request<{ status: string; votos_atualizados: number }>(
+      `/votos/${assembleiaId}/votos-manuais/validar/`,
+      {
+        method: "POST",
+        body: JSON.stringify({ votante_manual_id: votanteManualId, acao }),
+      }
+    ),
+
   getProcuracoesPendentes: (assembleiaId: string) =>
     request<{
       total_unidades: number;
