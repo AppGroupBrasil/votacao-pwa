@@ -54,7 +54,7 @@ class Assembleia(models.Model):
         default=50, help_text="Percentual mínimo 2ª chamada"
     )
     segunda_chamada_qualquer_numero = models.BooleanField(
-        default=False,
+        default=True,
         help_text="Se True, 2ª chamada aceita qualquer número dos presentes",
     )
     votacao_liberada = models.BooleanField(

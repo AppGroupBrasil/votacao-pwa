@@ -50,7 +50,7 @@ export default function NovaAssembleiaPage() {
     quorum_minimo: 50,
     primeira_chamada_50_mais_1: true,
     quorum_segunda_chamada: 33,
-    segunda_chamada_qualquer_numero: false,
+    segunda_chamada_qualquer_numero: true,
     modo_multiplas_unidades: "sindico" as "sindico" | "morador",
   });
 
@@ -557,37 +557,9 @@ export default function NovaAssembleiaPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Quórum Mínimo — 2ª Chamada
                     </label>
-                    <label className="flex items-center gap-2 mb-2">
-                      <input
-                        type="checkbox"
-                        checked={avancadas.segunda_chamada_qualquer_numero}
-                        onChange={(e) =>
-                          setAvancadas({
-                            ...avancadas,
-                            segunda_chamada_qualquer_numero: e.target.checked,
-                          })
-                        }
-                        className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                      />
-                      <span className="text-sm text-gray-600">
-                        Qualquer número dos presentes
-                      </span>
-                    </label>
-                    {!avancadas.segunda_chamada_qualquer_numero && (
-                      <input
-                        type="number"
-                        value={avancadas.quorum_segunda_chamada}
-                        onChange={(e) =>
-                          setAvancadas({
-                            ...avancadas,
-                            quorum_segunda_chamada: parseInt(e.target.value) || 0,
-                          })
-                        }
-                        className="input-field w-32"
-                        min={0}
-                        max={100}
-                      />
-                    )}
+                    <p className="text-sm text-gray-600">
+                      Qualquer número de votantes
+                    </p>
                   </div>
                 </div>
                 <div>

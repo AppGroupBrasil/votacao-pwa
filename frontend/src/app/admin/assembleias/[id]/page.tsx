@@ -57,7 +57,7 @@ export default function AssembleiaDetailPage() {
     quorum_minimo: 50,
     primeira_chamada_50_mais_1: true,
     quorum_segunda_chamada: 33,
-    segunda_chamada_qualquer_numero: false,
+    segunda_chamada_qualquer_numero: true,
     modo_multiplas_unidades: "sindico" as "sindico" | "morador",
   });
 
@@ -109,7 +109,7 @@ export default function AssembleiaDetailPage() {
       quorum_minimo: assembleia.quorum_minimo,
       primeira_chamada_50_mais_1: assembleia.primeira_chamada_50_mais_1,
       quorum_segunda_chamada: assembleia.quorum_segunda_chamada,
-      segunda_chamada_qualquer_numero: assembleia.segunda_chamada_qualquer_numero,
+      segunda_chamada_qualquer_numero: true,
       modo_multiplas_unidades:
         assembleia.modo_multiplas_unidades || "sindico",
     });
@@ -574,26 +574,7 @@ export default function AssembleiaDetailPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Quórum Mínimo — 2ª Chamada</label>
-              <label className="flex items-center gap-2 mb-2">
-                <input
-                  type="checkbox"
-                  checked={editForm.segunda_chamada_qualquer_numero}
-                  onChange={(e) => setEditForm({ ...editForm, segunda_chamada_qualquer_numero: e.target.checked })}
-                  className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span className="text-sm text-gray-600">Qualquer número dos presentes</span>
-              </label>
-              {!editForm.segunda_chamada_qualquer_numero && (
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={editForm.quorum_segunda_chamada}
-                  onChange={(e) => setEditForm({ ...editForm, quorum_segunda_chamada: Number(e.target.value) })}
-                  className="input-field w-32"
-                  required
-                />
-              )}
+              <p className="text-sm text-gray-600">Qualquer número de votantes</p>
             </div>
           </div>
           <div>
@@ -675,9 +656,7 @@ export default function AssembleiaDetailPage() {
         </div>
         <div className="card text-center py-3">
           <p className="text-lg font-bold text-orange-600">
-            {assembleia.segunda_chamada_qualquer_numero
-              ? "Qualquer nº"
-              : `${assembleia.quorum_segunda_chamada}% + 1`}
+            Qualquer nº
           </p>
           <p className="text-xs text-gray-500">Quórum 2ª Chamada</p>
         </div>
