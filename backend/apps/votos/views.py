@@ -293,9 +293,11 @@ def registrar_voto(request, assembleia_id):
             # Unidade declarada não consome a cota própria do declarante.
             # Garante 1 voto por unidade declarada nesta questão e impede
             # declarar uma unidade que já votou (real ou outra declaração).
+            # Sem select_for_update: o lock da Assembleia no início da transação
+            # já serializa os votos, e FOR UPDATE não funciona nos LEFT JOINs
+            # dos FKs anuláveis (eleitor/votante_manual).
             dup = (
-                Voto.objects.select_for_update()
-                .filter(assembleia=assembleia, questao=questao)
+                Voto.objects.filter(assembleia=assembleia, questao=questao)
                 .filter(
                     Q(
                         unidade_declarada=True,
@@ -356,8 +358,7 @@ def registrar_voto(request, assembleia_id):
         # (condomínio + bloco + apartamento) já votou nesta questão, bloqueia.
         if not por_procuracao and not unidade_declarada:
             unidade_ja_votou = (
-                Voto.objects.select_for_update()
-                .filter(
+                Voto.objects.filter(
                     assembleia=assembleia,
                     questao=questao,
                     eleitor__condominio=eleitor.condominio_id,
@@ -456,8 +457,7 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
     bloco = (votante.bloco or "").strip()
     apartamento = (votante.apartamento or "").strip()
     conflito_unidade = (
-        Voto.objects.select_for_update()
-        .filter(assembleia=assembleia, questao=questao)
+        Voto.objects.filter(assembleia=assembleia, questao=questao)
         .filter(
             Q(
                 votante_manual__isnull=False,
