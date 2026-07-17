@@ -43,6 +43,7 @@ class Enquete(models.Model):
                 if (
                     not Enquete.objects.filter(codigo_curto=codigo).exists()
                     and not Assembleia.objects.filter(codigo_curto=codigo).exists()
+                    and not ListaPresenca.objects.filter(codigo_curto=codigo).exists()
                 ):
                     self.codigo_curto = codigo
                     break
@@ -69,6 +70,14 @@ class EnqueteOpcao(models.Model):
 
 class ListaPresenca(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    codigo_curto = models.CharField(
+        max_length=8,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Código curto do link compartilhável: appvotacao.com.br/v/<codigo>.",
+    )
     condominio = models.ForeignKey(
         Condominio,
         on_delete=models.CASCADE,
@@ -84,6 +93,19 @@ class ListaPresenca(models.Model):
         ordering = ["-criado_em"]
         verbose_name = "Lista de presença manual"
         verbose_name_plural = "Listas de presença manual"
+
+    def save(self, *args, **kwargs):
+        if not self.codigo_curto:
+            for _ in range(20):
+                codigo = gerar_codigo_curto()
+                if (
+                    not ListaPresenca.objects.filter(codigo_curto=codigo).exists()
+                    and not Enquete.objects.filter(codigo_curto=codigo).exists()
+                    and not Assembleia.objects.filter(codigo_curto=codigo).exists()
+                ):
+                    self.codigo_curto = codigo
+                    break
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.titulo

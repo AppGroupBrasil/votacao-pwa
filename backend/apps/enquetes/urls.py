@@ -8,6 +8,7 @@ from .views import (
     lista_presenca_publica,
     registrar_presenca_manual,
     resolver_codigo_enquete,
+    resolver_codigo_lista,
     resultado_enquete,
     votar_enquete,
 )
@@ -17,6 +18,11 @@ router.register("listas-presenca", ListaPresencaViewSet, basename="lista-presenc
 router.register("", EnqueteViewSet, basename="enquete")
 
 urlpatterns = [
+    path(
+        "listas-presenca/resolver/<str:codigo>/",
+        resolver_codigo_lista,
+        name="lista-presenca-resolver-codigo",
+    ),
     path(
         "listas-presenca/<uuid:lista_id>/publica/",
         lista_presenca_publica,

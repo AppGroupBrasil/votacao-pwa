@@ -63,6 +63,17 @@ export default function ShortVotacaoRedirect() {
           return;
         }
       } catch {
+        // não é código de enquete — tenta lista de presença abaixo
+      }
+      if (!ativo) return;
+      // Código curto de lista de presença manual.
+      try {
+        const r = await api.resolverCodigoLista(code);
+        if (ativo && r?.lista_id) {
+          router.replace(`/presenca-manual/${r.lista_id}`);
+          return;
+        }
+      } catch {
         // não é código curto — tenta os formatos antigos abaixo
       }
       if (!ativo) return;

@@ -270,6 +270,7 @@ export interface ControleVotacao {
 
 export interface ListaPresenca {
   id: string;
+  codigo_curto: string | null;
   condominio: string | null;
   titulo: string;
   ativa: boolean;

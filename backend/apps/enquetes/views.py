@@ -43,6 +43,19 @@ def resolver_codigo_enquete(request, codigo):
     return Response({"enquete_id": str(enquete.id)})
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def resolver_codigo_lista(request, codigo):
+    """Endpoint público: resolve o código curto (/v/<codigo>) para o id da lista de presença."""
+    try:
+        lista = ListaPresenca.objects.only("id").get(codigo_curto=codigo.upper())
+    except ListaPresenca.DoesNotExist:
+        return Response(
+            {"error": "Código não encontrado."}, status=status.HTTP_404_NOT_FOUND
+        )
+    return Response({"lista_id": str(lista.id)})
+
+
 class EnqueteViewSet(viewsets.ModelViewSet):
     serializer_class = EnqueteSerializer
     permission_classes = [IsAdminWithRole]

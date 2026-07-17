@@ -93,13 +93,14 @@ class ListaPresencaSerializer(serializers.ModelSerializer):
         model = ListaPresenca
         fields = [
             "id",
+            "codigo_curto",
             "condominio",
             "titulo",
             "ativa",
             "criado_em",
             "total_registros",
         ]
-        read_only_fields = ["id", "criado_em"]
+        read_only_fields = ["id", "codigo_curto", "criado_em"]
 
     def get_total_registros(self, obj):
         return obj.registros.count()

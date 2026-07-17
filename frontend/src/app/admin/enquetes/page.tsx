@@ -68,15 +68,18 @@ export default function EnquetesPage() {
     }
   }
 
-  function linkListaPublico(id: string) {
+  function linkListaPublico(lista: ListaPresenca) {
     if (typeof window === "undefined") return "";
-    return `${window.location.origin}/presenca-manual/${id}`;
+    if (lista.codigo_curto) {
+      return `${window.location.origin}/v/${lista.codigo_curto}`;
+    }
+    return `${window.location.origin}/presenca-manual/${lista.id}`;
   }
 
-  async function copiarLinkLista(id: string) {
+  async function copiarLinkLista(lista: ListaPresenca) {
     try {
-      await navigator.clipboard.writeText(linkListaPublico(id));
-      setCopiado(`lista-${id}`);
+      await navigator.clipboard.writeText(linkListaPublico(lista));
+      setCopiado(`lista-${lista.id}`);
       setTimeout(() => setCopiado(""), 2000);
     } catch {
       /* ignore */
@@ -317,7 +320,7 @@ export default function EnquetesPage() {
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
-                onClick={() => copiarLinkLista(l.id)}
+                onClick={() => copiarLinkLista(l)}
                 className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
               >
                 {copiado === `lista-${l.id}` ? (
@@ -343,7 +346,7 @@ export default function EnquetesPage() {
                 <Trash2 className="w-4 h-4" /> Excluir
               </button>
               <span className="text-xs text-gray-400 truncate">
-                {linkListaPublico(l.id)}
+                {linkListaPublico(l)}
               </span>
             </div>
           </div>
