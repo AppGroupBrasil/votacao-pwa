@@ -215,8 +215,10 @@ def _resultado_payload(enquete):
             item["votantes"] = votantes_por_opcao.get(o.id, [])
         itens.append(item)
 
+    # Vencedor só é divulgado após o encerramento, para o parcial não
+    # sugerir um resultado que ainda pode mudar.
     vencedor = None
-    if total:
+    if total and not enquete.ativa:
         top = max(itens, key=lambda i: i["votos"])
         if top["votos"] > 0:
             vencedor = top

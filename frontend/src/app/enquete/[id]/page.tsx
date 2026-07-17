@@ -17,6 +17,7 @@ export default function EnquetePublicaPage() {
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
   const [jaVotou, setJaVotou] = useState(false);
+  const [opcaoVotada, setOpcaoVotada] = useState("");
   const [nome, setNome] = useState("");
   const [bloco, setBloco] = useState("");
   const [apartamento, setApartamento] = useState("");
@@ -25,6 +26,7 @@ export default function EnquetePublicaPage() {
     if (!id) return;
     if (typeof window !== "undefined" && localStorage.getItem(`enquete_${id}`)) {
       setJaVotou(true);
+      setOpcaoVotada(localStorage.getItem(`enquete_${id}_opcao`) || "");
     }
     api
       .getEnquetePublica(id)
@@ -65,8 +67,14 @@ export default function EnquetePublicaPage() {
             }
           : undefined
       );
-      if (typeof window !== "undefined")
+      const textoOpcao =
+        enquete?.opcoes.find((o) => o.id === selecionada)?.texto || "";
+      if (typeof window !== "undefined") {
         localStorage.setItem(`enquete_${id}`, "1");
+        if (textoOpcao)
+          localStorage.setItem(`enquete_${id}_opcao`, textoOpcao);
+      }
+      setOpcaoVotada(textoOpcao);
       setResultado(r);
       setJaVotou(true);
     } catch (e: any) {
@@ -107,7 +115,9 @@ export default function EnquetePublicaPage() {
           <h1 className="text-xl font-bold mb-1">{enquete?.titulo}</h1>
           <p className="text-sm text-gray-500 mb-5">
             {jaVotou || resultado
-              ? "Resultado da votação"
+              ? resultado && !resultado.ativa
+                ? "Resultado final da votação"
+                : "Votação em andamento"
               : enquete?.voto_aberto
               ? "Votação aberta — identifique-se e escolha uma opção."
               : "Votação anônima — escolha uma opção."}
@@ -181,6 +191,14 @@ export default function EnquetePublicaPage() {
             </>
           )}
 
+          {jaVotou && opcaoVotada && (
+            <div className="mb-4 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 flex items-center gap-2">
+              <Check className="w-4 h-4 shrink-0" />
+              <span>
+                Voto contabilizado para: <strong>{opcaoVotada}</strong>
+              </span>
+            </div>
+          )}
           {resultado && (
             <Resultados resultado={resultado} />
           )}
@@ -255,6 +273,12 @@ function Resultados({ resultado }: { resultado: EnqueteResultado }) {
           );
         })}
       </div>
+      {resultado.ativa && (
+        <p className="mt-5 text-xs text-gray-400 text-center">
+          Resultado parcial — o vencedor será divulgado quando a votação for
+          encerrada.
+        </p>
+      )}
       {resultado.vencedor && total > 0 && (
         <div className="mt-5 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
           <Trophy className="w-4 h-4" />
