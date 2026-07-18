@@ -1,5 +1,6 @@
 from django.db import IntegrityError
 from django.db.models import Count
+from django.shortcuts import get_object_or_404
 from django_ratelimit.decorators import ratelimit
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -120,6 +121,17 @@ class ListaPresencaViewSet(viewsets.ModelViewSet):
         lista = self.get_object()
         qs = lista.registros.all()
         return Response(PresencaManualSerializer(qs, many=True).data)
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path="registros/(?P<registro_id>[^/.]+)",
+    )
+    def excluir_registro(self, request, pk=None, registro_id=None):
+        lista = self.get_object()
+        registro = get_object_or_404(lista.registros, id=registro_id)
+        registro.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(["GET"])

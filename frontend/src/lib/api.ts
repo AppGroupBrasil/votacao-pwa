@@ -710,6 +710,12 @@ export const api = {
       `/enquetes/listas-presenca/${id}/registros/`
     ),
 
+  deleteRegistroPresenca: (listaId: string, registroId: string) =>
+    request<void>(
+      `/enquetes/listas-presenca/${listaId}/registros/${registroId}/`,
+      { method: "DELETE" }
+    ),
+
   getListaPresencaPublica: (id: string) =>
     request<{ id: string; titulo: string; ativa: boolean }>(
       `/enquetes/listas-presenca/${id}/publica/`

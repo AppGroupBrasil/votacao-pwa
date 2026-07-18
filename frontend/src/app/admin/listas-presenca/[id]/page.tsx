@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Users } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import type { PresencaManualRegistro } from "@/lib/types";
 
@@ -20,6 +20,16 @@ export default function RegistrosPresencaPage() {
       .then(setRegistros)
       .finally(() => setLoading(false));
   }, [id]);
+
+  async function excluirRegistro(r: PresencaManualRegistro) {
+    if (!confirm(`Excluir a presença de "${r.nome}"? A selfie e a assinatura serão apagadas.`)) return;
+    try {
+      await api.deleteRegistroPresenca(id, r.id);
+      setRegistros((prev) => prev.filter((x) => x.id !== r.id));
+    } catch {
+      alert("Não foi possível excluir. Tente novamente.");
+    }
+  }
 
   return (
     <div>
@@ -76,6 +86,13 @@ export default function RegistrosPresencaPage() {
                   className="h-16 w-28 object-contain shrink-0 border border-gray-200 rounded bg-white"
                 />
               )}
+              <button
+                onClick={() => excluirRegistro(r)}
+                title="Excluir este registro"
+                className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 shrink-0"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
             </div>
           ))}
         </div>
