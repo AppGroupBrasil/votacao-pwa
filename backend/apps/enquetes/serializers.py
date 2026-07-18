@@ -96,6 +96,7 @@ class ListaPresencaSerializer(serializers.ModelSerializer):
             "codigo_curto",
             "condominio",
             "titulo",
+            "descricao",
             "ativa",
             "criado_em",
             "total_registros",

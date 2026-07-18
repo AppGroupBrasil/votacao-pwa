@@ -693,9 +693,14 @@ export const api = {
       body: JSON.stringify({ titulo, condominio: condominio ?? null }),
     }),
 
+  getListaPresenca: (id: string) =>
+    request<import("./types").ListaPresenca>(
+      `/enquetes/listas-presenca/${id}/`
+    ),
+
   updateListaPresenca: (
     id: string,
-    data: Partial<{ titulo: string; ativa: boolean }>
+    data: Partial<{ titulo: string; descricao: string; ativa: boolean }>
   ) =>
     request<import("./types").ListaPresenca>(
       `/enquetes/listas-presenca/${id}/`,

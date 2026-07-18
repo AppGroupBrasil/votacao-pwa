@@ -62,7 +62,7 @@ export default function ListaPresencaPage() {
         p.assinatura_facial || "",
         p.ip_address || "",
         p.device_info || "",
-        new Date(p.horario_entrada).toLocaleString("pt-BR"),
+        new Date(p.horario_entrada).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
       ]),
     ];
     const csv = linhas
@@ -194,7 +194,7 @@ export default function ListaPresencaPage() {
                     {p.device_info || "—"}
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    {new Date(p.horario_entrada).toLocaleString("pt-BR")}
+                    {new Date(p.horario_entrada).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                   </td>
                 </tr>
               ))}

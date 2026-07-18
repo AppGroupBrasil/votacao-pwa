@@ -86,6 +86,11 @@ class ListaPresenca(models.Model):
         blank=True,
     )
     titulo = models.CharField(max_length=255)
+    descricao = models.TextField(
+        blank=True,
+        default="",
+        help_text="Cabeçalho da lista impressa: data, horários, tipo da assembleia.",
+    )
     ativa = models.BooleanField(default=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 

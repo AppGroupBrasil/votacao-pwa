@@ -288,6 +288,7 @@ export interface ListaPresenca {
   codigo_curto: string | null;
   condominio: string | null;
   titulo: string;
+  descricao: string;
   ativa: boolean;
   criado_em: string;
   total_registros: number;
