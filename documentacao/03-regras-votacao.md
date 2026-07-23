@@ -17,8 +17,9 @@ exige `auth_token` válido.
 7. **Item encerrado** — se a questão tem `encerrada == true`, recusa o voto (HTTP 409,
    "A votação deste item foi encerrada").
 8. **Cota de votos na questão** — o eleitor pode votar até `votos_permitidos` vezes na mesma
-   questão (default 1; > 1 quando possui mais de uma unidade). Ao exceder, HTTP 409. Procuração
-   **não** consome a cota do procurador.
+   questão (default 1; > 1 quando possui mais de uma unidade **no modo síndico**). Ao exceder, HTTP
+   409. Procuração e voto de **unidade declarada** **não** consomem a cota; cada um vale 1 por
+   questão.
 9. **Um voto por unidade** — barra outra pessoa da mesma unidade (mesmo condomínio + bloco +
    apartamento). Comparação **case-insensitive e sem espaços** (`iexact` + `.strip()`); exclui o
    próprio eleitor (permite os votos múltiplos da cota acima).
@@ -63,3 +64,38 @@ chamada (quórum reduzido ou qualquer número). Exibido no painel admin e usado 
 
 Um morador pode votar por outra unidade que representa (`por_procuracao`). Esse voto fica
 **pendente** até o síndico validar a procuração (`/assembleias/.../procuracoes/validar/`).
+
+## Donos de mais de uma unidade — dois modos
+
+O síndico escolhe **antes** da votação, em `modo_multiplas_unidades` na assembleia (campo writable
+no serializer; selecionável em `/admin/assembleias/nova` e na edição):
+
+- **`sindico`** (default) — o síndico define antecipadamente quem tem mais de uma unidade via
+  `Eleitor.votos_permitidos`. O morador vota N vezes na mesma questão com um único login (regra 8).
+  Comportamento legado, inalterado.
+- **`morador`** — o morador **declara** as outras unidades **depois** do 1º voto. Um botão "Você tem
+  mais de uma unidade?" libera o "sim" (não há "não" — é o padrão por regra). Ao declarar, informa
+  **bloco**, **apartamento/unidade** e **nome do proprietário**, e vota uma a uma (pode votar
+  diferente por unidade, como na procuração).
+
+### Voto de unidade declarada (modo `morador`)
+
+Reaproveita a infraestrutura da procuração. São **Votos reais** com:
+
+- `unidade_declarada = true`, `eleitor` = o próprio declarante, campos `decl_bloco` /
+  `decl_apartamento` / `decl_nome` preenchidos, e `grupo_declaracao` (UUID gerado no frontend, um por
+  unidade declarada — agrupa os votos daquela unidade nas várias questões).
+- `status = PENDENTE` — **não entram na totalização** até o síndico validar
+  (`/assembleias/.../procuracoes/validar/` agora aceita `grupo_declaracao`). A apuração só conta
+  `VALIDADO`.
+
+Validações específicas no `registrar_voto` (branch `if unidade_declarada:`, antes da procuração):
+
+- só é aceito se `assembleia.modo_multiplas_unidades == "morador"`;
+- `decl_apartamento` e `decl_nome` são obrigatórios;
+- o morador **não pode declarar a própria unidade**;
+- **duplicidade por unidade**: recusa (409) se já houver voto declarado **ou** voto real (mesmo
+  condomínio + bloco + apartamento, `iexact`) na mesma questão — exceto se o anterior foi `REJEITADO`.
+
+A checagem "um voto por unidade" (regra 9) e o conflito de dispositivo (regra 10) são **pulados**
+para votos declarados, já que o aparelho e o eleitor são os do declarante.

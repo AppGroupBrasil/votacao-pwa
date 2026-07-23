@@ -54,6 +54,7 @@ urlpatterns = [
     path("api/eleitor/", include("core.urls_eleitor_auth")),
     path("api/webauthn/", include("core.urls_webauthn")),
     path("api/biometria/", include("core.urls_biometria")),
+    path("api/selfie/", include("core.urls_selfie")),
     path("api/otp/", include("core.urls_otp")),
     path("api/condominios/", include("apps.condominios.urls")),
     path("api/eleitores/", include("apps.eleitores.urls")),

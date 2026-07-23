@@ -51,6 +51,19 @@ export interface Questao {
   opcoes: OpcaoVoto[];
 }
 
+// Dados de captura de identidade enviados junto da presença (LGPD, geo,
+// assinatura desenhada, selfie e marca do aparelho). Todos opcionais.
+export interface CapturaIdentidade {
+  marca_aparelho?: string;
+  assinatura?: string;
+  selfie?: string;
+  modo_participacao?: "presencial" | "online";
+  geo_lat?: number | null;
+  geo_lng?: number | null;
+  consentimento_lgpd?: boolean;
+  declaracao_veracidade?: boolean;
+}
+
 export interface Presenca {
   id: string;
   eleitor: string | null;
@@ -64,6 +77,15 @@ export interface Presenca {
   device_info: string;
   user_agent: string;
   inadimplente: boolean;
+  marca_aparelho: string;
+  selfie: string;
+  assinatura: string;
+  modo_participacao: "presencial" | "online";
+  geo_lat: number | null;
+  geo_lng: number | null;
+  consentimento_lgpd: boolean;
+  consentimento_em: string | null;
+  declaracao_veracidade: boolean;
   horario_entrada: string;
 }
 

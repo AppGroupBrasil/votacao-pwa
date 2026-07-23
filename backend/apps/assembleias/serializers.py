@@ -45,6 +45,9 @@ class PresencaSerializer(serializers.ModelSerializer):
             "id", "eleitor", "nome", "bloco", "apartamento",
             "perfil", "metodo_auth", "assinatura_facial",
             "ip_address", "device_info", "user_agent", "inadimplente",
+            "marca_aparelho", "selfie", "assinatura", "modo_participacao",
+            "geo_lat", "geo_lng", "consentimento_lgpd", "consentimento_em",
+            "declaracao_veracidade",
             "horario_entrada",
         ]
         read_only_fields = fields

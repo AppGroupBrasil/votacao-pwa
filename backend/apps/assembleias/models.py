@@ -244,6 +244,34 @@ class Presenca(models.Model):
         max_length=255, blank=True, default="",
         help_text="Aparelho/navegador que registrou a presença",
     )
+    marca_aparelho = models.CharField(
+        max_length=120, blank=True, default="",
+        help_text="Marca/modelo do aparelho informado pelo navegador",
+    )
+    selfie = models.TextField(
+        blank=True, default="",
+        help_text="Foto (base64) capturada na identificação, quando houver",
+    )
+    assinatura = models.TextField(
+        blank=True, default="",
+        help_text="Assinatura desenhada (base64), quando houver",
+    )
+    modo_participacao = models.CharField(
+        max_length=12,
+        choices=[("presencial", "Presencial"), ("online", "Online")],
+        default="presencial",
+    )
+    geo_lat = models.FloatField(null=True, blank=True)
+    geo_lng = models.FloatField(null=True, blank=True)
+    consentimento_lgpd = models.BooleanField(
+        default=False,
+        help_text="Aceite LGPD para captura de biometria/selfie/assinatura",
+    )
+    consentimento_em = models.DateTimeField(null=True, blank=True)
+    declaracao_veracidade = models.BooleanField(
+        default=False,
+        help_text="Declarou veracidade das informações (voto anulável se falso)",
+    )
     inadimplente = models.BooleanField(
         default=False,
         help_text="Marcado pelo gestor na lista de presença; realça a linha.",

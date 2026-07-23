@@ -24,6 +24,7 @@ const perfilLabel: Record<string, string> = {
 const metodoLabel: Record<string, string> = {
   acesso: "Acesso ao sistema",
   facial: "Reconhecimento facial",
+  selfie: "Selfie",
   webauthn: "Biometria do dispositivo",
   otp: "Código (OTP)",
   manual: "Marcado pelo síndico",
@@ -193,6 +194,7 @@ export default function ListaPresencaPage() {
                 <th className="px-4 py-3 font-medium">Registro facial</th>
                 <th className="px-4 py-3 font-medium">IP</th>
                 <th className="px-4 py-3 font-medium">Aparelho</th>
+                <th className="px-4 py-3 font-medium">Captura</th>
                 <th className="px-4 py-3 font-medium">Entrada</th>
               </tr>
             </thead>
@@ -242,6 +244,39 @@ export default function ListaPresencaPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs">
                     {p.device_info || "—"}
+                    {p.marca_aparelho ? (
+                      <div className="text-gray-400">{p.marca_aparelho}</div>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      {p.selfie ? (
+                        <a href={p.selfie} target="_blank" rel="noopener noreferrer" title="Ver selfie">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.selfie} alt="selfie" className="h-9 w-9 rounded object-cover border" />
+                        </a>
+                      ) : null}
+                      {p.assinatura ? (
+                        <a href={p.assinatura} target="_blank" rel="noopener noreferrer" title="Ver assinatura">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.assinatura} alt="assinatura" className="h-9 w-16 rounded object-contain border bg-white" />
+                        </a>
+                      ) : null}
+                      {p.geo_lat != null && p.geo_lng != null ? (
+                        <a
+                          href={`https://www.google.com/maps?q=${p.geo_lat},${p.geo_lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary-600 underline"
+                          title="Localização registrada"
+                        >
+                          GPS
+                        </a>
+                      ) : null}
+                      {!p.selfie && !p.assinatura && p.geo_lat == null ? (
+                        <span className="text-gray-300">—</span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-gray-600">
                     {new Date(p.horario_entrada).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}

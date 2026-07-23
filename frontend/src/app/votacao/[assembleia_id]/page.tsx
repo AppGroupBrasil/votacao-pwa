@@ -6,10 +6,12 @@ import { Vote, CheckCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, 
 import { api, getDeviceId } from "@/lib/api";
 import WebAuthnVerify from "@/components/webauthn/WebAuthnVerify";
 import FaceVerify from "@/components/FaceVerify";
+import SelfieVerify from "@/components/SelfieVerify";
 import OtpVerify from "@/components/OtpVerify";
 import IdentificacaoEmail from "@/components/IdentificacaoEmail";
 import IdentificacaoManual from "@/components/IdentificacaoManual";
-import type { Assembleia, UnidadeVotante } from "@/lib/types";
+import ConsentimentoGate from "@/components/ConsentimentoGate";
+import type { Assembleia, UnidadeVotante, CapturaIdentidade } from "@/lib/types";
 
 export default function VotacaoPage() {
   const params = useParams();
@@ -21,7 +23,10 @@ export default function VotacaoPage() {
   const [manualMode, setManualMode] = useState(false);
   const [manualId, setManualId] = useState("");
   const [votoPendente, setVotoPendente] = useState(false);
-  const [authMethod, setAuthMethod] = useState<"webauthn" | "facial" | "otp">("webauthn");
+  const [authMethod, setAuthMethod] = useState<"facial" | "selfie" | "webauthn" | "otp">("facial");
+  // Consentimento LGPD + assinatura + geo/marca capturados na tela inicial,
+  // enviados junto da presença após a autenticação.
+  const [captura, setCaptura] = useState<CapturaIdentidade | null>(null);
   // Questões cuja cota de votos já foi cumprida (por id). Rastrear por id em vez
   // de índice mantém a sequência correta mesmo que a administração encerre um
   // item ao vivo (o que reordena a lista filtrada).
@@ -136,9 +141,9 @@ export default function VotacaoPage() {
   // (webauthn/desbloqueio, facial ou token por e-mail/OTP).
   useEffect(() => {
     if (authToken && !manualId) {
-      api.registrarPresenca(assembleiaId, authToken).catch(() => {});
+      api.registrarPresenca(assembleiaId, authToken, captura || undefined).catch(() => {});
     }
-  }, [assembleiaId, authToken, manualId]);
+  }, [assembleiaId, authToken, manualId, captura]);
 
   if (error) {
     return (
@@ -194,7 +199,23 @@ export default function VotacaoPage() {
     );
   }
 
-  // Auth gate — verify identity before voting
+  // Tela inicial: consentimento LGPD + assinatura antes de autenticar.
+  if (!authToken && eleitorId && !captura) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
+        <div className="card w-full max-w-md">
+          <div className="flex items-center gap-2 justify-center mb-6">
+            <Vote className="w-7 h-7 text-primary-600" />
+            <span className="font-bold text-lg">Votação</span>
+          </div>
+          <ConsentimentoGate onConcluir={setCaptura} />
+        </div>
+      </div>
+    );
+  }
+
+  // Escada de identidade: facial → selfie → WebAuthn → OTP (cada um recua para
+  // o próximo se o morador recusar ou não puder usar).
   if (!authToken && eleitorId) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
@@ -204,17 +225,26 @@ export default function VotacaoPage() {
             <span className="font-bold text-lg">Votação</span>
           </div>
 
-          {authMethod === "webauthn" && (
-            <WebAuthnVerify
+          {authMethod === "facial" && (
+            <FaceVerify
               eleitorId={eleitorId}
               assembleiaId={assembleiaId}
               onSuccess={(token, votos) => { setVotosPermitidos(Math.max(1, votos || 1)); setAuthToken(token); }}
-              onFallback={() => setAuthMethod("facial")}
+              onFallback={() => setAuthMethod("selfie")}
             />
           )}
 
-          {authMethod === "facial" && (
-            <FaceVerify
+          {authMethod === "selfie" && (
+            <SelfieVerify
+              eleitorId={eleitorId}
+              assembleiaId={assembleiaId}
+              onSuccess={(token, votos) => { setVotosPermitidos(Math.max(1, votos || 1)); setAuthToken(token); }}
+              onFallback={() => setAuthMethod("webauthn")}
+            />
+          )}
+
+          {authMethod === "webauthn" && (
+            <WebAuthnVerify
               eleitorId={eleitorId}
               assembleiaId={assembleiaId}
               onSuccess={(token, votos) => { setVotosPermitidos(Math.max(1, votos || 1)); setAuthToken(token); }}

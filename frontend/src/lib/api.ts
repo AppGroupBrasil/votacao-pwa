@@ -428,10 +428,17 @@ export const api = {
   },
 
   // Votos
-  registrarPresenca: (assembleiaId: string, authToken: string) =>
+  registrarPresenca: (
+    assembleiaId: string,
+    authToken: string,
+    captura?: import("./types").CapturaIdentidade
+  ) =>
     request<{ registrado: boolean; novo: boolean; horario_entrada: string }>(
       `/votos/${assembleiaId}/presenca/`,
-      { method: "POST", body: JSON.stringify({ auth_token: authToken }) }
+      {
+        method: "POST",
+        body: JSON.stringify({ auth_token: authToken, ...(captura || {}) }),
+      }
     ),
 
   votar: (assembleiaId: string, data: VotoPayload) =>
@@ -557,6 +564,16 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify({ eleitor_id: eleitorId, assembleia_id: assembleiaId, hash }),
+      }
+    ),
+
+  // Selfie (degrau da escada: sem conferência, conta na hora; foto para auditoria)
+  selfieAuthVerify: (eleitorId: string, assembleiaId: string, selfie: string) =>
+    request<{ authenticated: boolean; method: string; eleitor_id: string; votos_permitidos: number; token: string }>(
+      "/selfie/auth/verify/",
+      {
+        method: "POST",
+        body: JSON.stringify({ eleitor_id: eleitorId, assembleia_id: assembleiaId, selfie }),
       }
     ),
 

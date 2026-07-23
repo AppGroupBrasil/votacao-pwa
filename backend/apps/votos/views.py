@@ -80,6 +80,58 @@ def get_accessible_assembleia(request, assembleia_id):
     return assembleia
 
 
+def _parse_capture_fields(data):
+    """Campos de captura de identidade (LGPD/geo/assinatura/marca) enviados pelo
+    cliente. Só entram os presentes; selfie/assinatura têm teto de tamanho para
+    não estourar o corpo da requisição."""
+    out = {}
+    marca = str(data.get("marca_aparelho", "")).strip()[:120]
+    if marca:
+        out["marca_aparelho"] = marca
+    assinatura = str(data.get("assinatura", ""))
+    if assinatura.startswith("data:image/") and len(assinatura) <= 1_500_000:
+        out["assinatura"] = assinatura
+    selfie = str(data.get("selfie", ""))
+    if selfie.startswith("data:image/") and len(selfie) <= 3_500_000:
+        out["selfie"] = selfie
+    modo = str(data.get("modo_participacao", "")).strip().lower()
+    if modo in ("presencial", "online"):
+        out["modo_participacao"] = modo
+    for campo in ("geo_lat", "geo_lng"):
+        val = data.get(campo)
+        if val not in (None, ""):
+            try:
+                out[campo] = float(val)
+            except (TypeError, ValueError):
+                pass
+    if "consentimento_lgpd" in data:
+        consentiu = bool(data.get("consentimento_lgpd"))
+        out["consentimento_lgpd"] = consentiu
+        if consentiu:
+            out["consentimento_em"] = timezone.now()
+    if "declaracao_veracidade" in data:
+        out["declaracao_veracidade"] = bool(data.get("declaracao_veracidade"))
+    return out
+
+
+def _capture_from_presenca(presenca):
+    """Copia os campos de captura da presença do eleitor para o voto, mantendo
+    a mesma linha de auditoria (método, selfie, assinatura, IP, geo, etc.)."""
+    if not presenca:
+        return {}
+    return {
+        "selfie": presenca.selfie or "",
+        "assinatura": presenca.assinatura or "",
+        "marca_aparelho": presenca.marca_aparelho or "",
+        "modo_participacao": presenca.modo_participacao or "presencial",
+        "geo_lat": presenca.geo_lat,
+        "geo_lng": presenca.geo_lng,
+        "consentimento_lgpd": presenca.consentimento_lgpd,
+        "consentimento_em": presenca.consentimento_em,
+        "declaracao_veracidade": presenca.declaracao_veracidade,
+    }
+
+
 def resolve_vote_auth_token(auth_token, assembleia_id):
     try:
         payload = signing.loads(
@@ -375,6 +427,9 @@ def registrar_voto(request, assembleia_id):
                     status=status.HTTP_409_CONFLICT,
                 )
 
+        presenca_eleitor = Presenca.objects.filter(
+            assembleia=assembleia, eleitor=eleitor
+        ).first()
         voto = Voto(
             assembleia=assembleia,
             eleitor=eleitor,
@@ -385,6 +440,7 @@ def registrar_voto(request, assembleia_id):
             user_agent=get_client_user_agent(request),
             device_info=infer_device_info(get_client_user_agent(request)),
             device_id=device_id,
+            **_capture_from_presenca(presenca_eleitor),
             por_procuracao=por_procuracao,
             procurador=procurador,
             unidade_declarada=unidade_declarada,
@@ -750,6 +806,12 @@ def registrar_presenca(request, assembleia_id):
             "metodo_auth": auth_context["metodo_auth"],
         },
     )
+
+    capture = _parse_capture_fields(request.data)
+    if capture:
+        for campo, valor in capture.items():
+            setattr(presenca, campo, valor)
+        presenca.save(update_fields=list(capture.keys()))
 
     return Response(
         {

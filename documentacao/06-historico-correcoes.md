@@ -88,6 +88,37 @@ mantidos.
 **Testes adicionados** (gate de deploy): voto rejeitado em questão encerrada (409), segundo voto
 permitido com `votos_permitidos = 2` (201), auto-inscrição do morador do condomínio.
 
+## 8. Link curto `/vote` e modo de declaração de unidade pelo morador — commit `96a4961`
+
+Duas entregas no mesmo deploy.
+
+**Link curto mais simples.** O link de votação passou de `/v/` + 4 chars para
+`appvotacao.com.br/vote/` + **3 caracteres** (`gerar_codigo_curto(tamanho=3)`, alfabeto sem
+ambíguos `23456789ABCDEFGHJKMNPQRSTUVWXYZ`). Novo `codigo_curto` no `Assembleia`
+(migração `assembleias/0014`) e endpoint público `GET /assembleias/resolver/{codigo}/` (resolve via
+`.upper()`, case-insensitive). Nova página `/vote/[code]`; `/v/[code]` mantido como **alias** (com
+fallback base62 para códigos longos legados). O `FloatingVotarButton` foi removido.
+
+**Segundo modelo de voto para donos de várias unidades.** Campo `modo_multiplas_unidades`
+(`sindico`/`morador`, default `sindico`, migração `assembleias/0015`), escolhido pelo síndico
+**antes** da votação em `/admin/assembleias/nova` e na edição.
+
+- Modo `sindico` = comportamento legado (`votos_permitidos`).
+- Modo `morador` = o morador **declara** as unidades extras **depois** do 1º voto (bloco,
+  apartamento e nome do proprietário) e vota uma a uma. Os votos declarados são Votos reais com
+  `unidade_declarada=true`, `grupo_declaracao` (UUID por unidade) e campos `decl_*`
+  (migração `votos/0007`), **PENDENTE** até o síndico validar.
+
+**Reuso do fluxo de procuração.** A tela `/admin/resultados` lista procurações **e** unidades
+declaradas juntas; `procuracoes/validar/` passou a aceitar `{grupo_declaracao}` além de
+`{eleitor_id}`. A apuração só conta `VALIDADO`, então o declarado fica fora da totalização até a
+aprovação. Para o declarado, as regras "um voto por unidade" e "conflito de dispositivo" são puladas
+(aparelho/eleitor são do declarante); há checagem própria de duplicidade por unidade (409).
+
+**Check-up de deploy:** `manage.py check`, `makemigrations --check` (sem pendências), 25 testes OK em
+sqlite; frontend `tsc`, lint e build limpos. Migração `0015` na verdade só altera `help_text` de
+`codigo_curto` (no-op no banco) — segura para produção.
+
 ## Lições
 
 - Toda rota usada pelo morador precisa ser pública e **não** vazar identidade/voto.

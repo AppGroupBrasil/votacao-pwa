@@ -37,6 +37,7 @@ class VotanteManual(models.Model):
 class Voto(models.Model):
     class MetodoAuth(models.TextChoices):
         FACIAL = "facial", "Biometria Facial"
+        SELFIE = "selfie", "Selfie"
         WEBAUTHN = "webauthn", "WebAuthn"
         OTP = "otp", "OTP"
         MANUAL = "manual", "Manual com selfie"
@@ -77,6 +78,19 @@ class Voto(models.Model):
     user_agent = models.TextField(blank=True, default="")
     device_info = models.CharField(max_length=255, blank=True, default="")
     device_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    marca_aparelho = models.CharField(max_length=120, blank=True, default="")
+    selfie = models.TextField(blank=True, default="")
+    assinatura = models.TextField(blank=True, default="")
+    modo_participacao = models.CharField(
+        max_length=12,
+        choices=[("presencial", "Presencial"), ("online", "Online")],
+        default="presencial",
+    )
+    geo_lat = models.FloatField(null=True, blank=True)
+    geo_lng = models.FloatField(null=True, blank=True)
+    consentimento_lgpd = models.BooleanField(default=False)
+    consentimento_em = models.DateTimeField(null=True, blank=True)
+    declaracao_veracidade = models.BooleanField(default=False)
     status = models.CharField(
         max_length=10,
         choices=Status.choices,

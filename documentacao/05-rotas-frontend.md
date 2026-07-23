@@ -6,8 +6,9 @@
 |---|---|
 | `/acesso` | **Porta de entrada do morador** (login → biometria → presença → votação). Link a compartilhar. |
 | `/votar` | Atalho → redireciona para `/acesso`. |
-| `/v/[code]` | Atalho curto. `/v/1` redireciona para `/acesso`. |
-| `/votacao/[assembleia_id]` | Tela de votação. Carrega questões via endpoint público; identifica o morador; vota. Sequência mostra só questões não encerradas e acompanha as já respondidas por id (resiliente a encerramento ao vivo). Morador com `votos_permitidos > 1` vota N vezes no mesmo item. |
+| `/vote/[code]` | **Link curto atual** (`appvotacao.com.br/vote/K7Q`). Resolve o `code` em `/api/assembleias/resolver/{code}/` e leva à votação; cai em `/acesso` se não resolver. |
+| `/v/[code]` | Alias antigo do link curto (compatibilidade). Mesma lógica do `/vote/[code]`, com fallback base62 para códigos longos legados. |
+| `/votacao/[assembleia_id]` | Tela de votação. Carrega questões via endpoint público; identifica o morador; vota. Sequência mostra só questões não encerradas e acompanha as já respondidas por id (resiliente a encerramento ao vivo). No modo síndico, morador com `votos_permitidos > 1` vota N vezes no mesmo item; no modo morador, declara unidades extras após o 1º voto (uma a uma, pendentes até validação). |
 | `/votacao/comprovante` | Conferência de comprovante (hash) sem expor a opção. |
 | `/enquete/[id]` | Enquete simples/anônima. |
 | `/presenca-manual/[id]` | Registro de presença manual (selfie + assinatura). |

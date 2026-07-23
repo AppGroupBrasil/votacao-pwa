@@ -10,8 +10,8 @@ Prefixo: `/api/`. Admin = exige JWT + `IsAdminWithRole`. Público = `AllowAny`.
 | POST | `/votos/{id}/votar/` | Público* | Registra um voto. Exige `auth_token`. Aplica todas as regras de bloqueio. |
 | POST | `/votos/{id}/presenca/` | Público* | Registra presença após biometria. Exige `auth_token`. |
 | GET  | `/votos/{id}/unidades/` | Público* | Unidades votantes (para voto por procuração). |
-| GET  | `/votos/{id}/procuracoes/` | Admin | Procurações pendentes. |
-| POST | `/votos/{id}/procuracoes/validar/` | Admin | Valida/recusa procuração. |
+| GET  | `/votos/{id}/procuracoes/` | Admin | Pendentes: procurações **e** unidades declaradas. Cada item tem `id`, `tipo` (`procuracao`/`declarada`), `nome`, `bloco`, `apartamento`, `procurador_nome`, `votos`. |
+| POST | `/votos/{id}/procuracoes/validar/` | Admin | Valida/recusa. Corpo `{acao}` + `{eleitor_id}` (procuração) **ou** `{grupo_declaracao}` (unidade declarada). |
 | GET  | `/votos/{id}/resultados/` | Admin | Apuração por questão. |
 | GET  | `/votos/{id}/relatorio/` | Admin | Relatório detalhado (auditoria). |
 | GET  | `/votos/verificar/?hash=...` | Público | Confere comprovante sem revelar eleitor/opção. |
@@ -36,6 +36,7 @@ As respostas de verificação facial/WebAuthn/OTP também devolvem `votos_permit
 | GET/POST | `/assembleias/` | Admin | Lista / cria assembleias. |
 | GET/PUT/DELETE | `/assembleias/{id}/` | Admin | Detalhe administrativo (inclui presenças/identidades). |
 | GET | `/assembleias/abertas/` | Público | Assembleias abertas (id + título). |
+| GET | `/assembleias/resolver/{codigo}/` | Público | Resolve o **link curto**. Recebe o `codigo_curto` (3 chars, case-insensitive via `.upper()`), devolve `{assembleia_id}` ou 404. Usado por `/vote/[code]` e `/v/[code]`. |
 | POST | `/assembleias/{id}/abrir/` | Admin | Abre (status=aberta, votacao_liberada=false). |
 | POST | `/assembleias/{id}/liberar-votacao/` | Admin | `{liberar:true/false}` — libera/trava o voto. |
 | POST | `/assembleias/{id}/encerrar/` | Admin | Encerra a assembleia. |
@@ -47,8 +48,18 @@ As respostas de verificação facial/WebAuthn/OTP também devolvem `votos_permit
 Login, troca de senha, cadastro de biometria e registro de presença do morador (sessão própria,
 salt `eleitor-session`). Dirigem a página `/acesso`.
 
-## Campo importante
+## Campos importantes
 
 `votacao_liberada` (BooleanField, default `false`) no modelo `Assembleia`
 (migração `0012_assembleia_votacao_liberada`). Exposto nos serializers de assembleia e no
 endpoint público de votação.
+
+`codigo_curto` (CharField, gerado por `gerar_codigo_curto(tamanho=3)` com alfabeto sem caracteres
+ambíguos `23456789ABCDEFGHJKMNPQRSTUVWXYZ`) — o link curto `appvotacao.com.br/vote/<codigo>`.
+Migração `assembleias/0014`. Read-only no serializer.
+
+`modo_multiplas_unidades` (CharField, choices `sindico`/`morador`, default `sindico`) — escolhe como
+donos de várias unidades votam. Migração `assembleias/0015`. **Writable** no serializer.
+
+`Voto`: `unidade_declarada` (bool), `decl_bloco` / `decl_apartamento` / `decl_nome` e
+`grupo_declaracao` (UUID, db_index) suportam o voto de unidade declarada (migração `votos/0007`).
