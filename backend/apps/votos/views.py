@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from django.db import transaction
 from django_ratelimit.decorators import ratelimit
@@ -821,6 +822,33 @@ def registrar_presenca(request, assembleia_id):
         },
         status=status.HTTP_200_OK,
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminWithRole])
+def presencas_captura(request, assembleia_id):
+    """Fotos (selfie/assinatura em base64) das presenças, servidas à parte da
+    listagem para não pesar o polling de 15s da tela de presença. Retorna só as
+    presenças que têm alguma foto; ?ids=a,b,c limita ao que o cliente ainda não
+    baixou (na 1ª carga vêm todas; depois só as que chegaram)."""
+    assembleia = get_accessible_assembleia(request, assembleia_id)
+    qs = Presenca.objects.filter(assembleia=assembleia).exclude(
+        selfie="", assinatura=""
+    )
+    ids_param = (request.query_params.get("ids") or "").strip()
+    if ids_param:
+        ids = []
+        for i in ids_param.split(","):
+            try:
+                ids.append(uuid.UUID(i))
+            except ValueError:
+                continue  # ignora id malformado em vez de derrubar em 500
+        qs = qs.filter(id__in=ids)
+    capturas = [
+        {"id": str(p.id), "selfie": p.selfie, "assinatura": p.assinatura}
+        for p in qs.only("id", "selfie", "assinatura")
+    ]
+    return Response({"capturas": capturas})
 
 
 @api_view(["GET"])

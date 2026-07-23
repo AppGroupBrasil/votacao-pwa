@@ -78,8 +78,8 @@ export interface Presenca {
   user_agent: string;
   inadimplente: boolean;
   marca_aparelho: string;
-  selfie: string;
-  assinatura: string;
+  // selfie/assinatura NÃO vêm na listagem (payload pesado); buscar sob demanda
+  // via api.getPresencasCaptura → PresencaCaptura.
   modo_participacao: "presencial" | "online";
   geo_lat: number | null;
   geo_lng: number | null;

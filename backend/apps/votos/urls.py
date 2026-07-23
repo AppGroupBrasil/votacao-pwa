@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     acesso_manual,
     procuracoes_pendentes,
+    presencas_captura,
     registrar_presenca,
     registrar_voto,
     relatorio_detalhado,
@@ -18,6 +19,7 @@ from .views import (
 urlpatterns = [
     path("<uuid:assembleia_id>/votar/", registrar_voto, name="registrar-voto"),
     path("<uuid:assembleia_id>/presenca/", registrar_presenca, name="registrar-presenca"),
+    path("<uuid:assembleia_id>/presencas-captura/", presencas_captura, name="presencas-captura"),
     path("<uuid:assembleia_id>/votacao/", votacao_publica, name="votacao-publica"),
     path("<uuid:assembleia_id>/unidades/", unidades_assembleia, name="unidades-assembleia"),
     path("<uuid:assembleia_id>/procuracoes/", procuracoes_pendentes, name="procuracoes-pendentes"),

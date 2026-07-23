@@ -41,11 +41,15 @@ class AtaSerializer(serializers.ModelSerializer):
 class PresencaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Presenca
+        # selfie/assinatura (base64, até ~MB cada) NÃO entram aqui: este
+        # serializer é aninhado na AssembleiaSerializer, que a tela de presença
+        # repuxa a cada 15s. As fotos vêm à parte, sob demanda, em
+        # /votos/<id>/presencas-captura/ (view presencas_captura).
         fields = [
             "id", "eleitor", "nome", "bloco", "apartamento",
             "perfil", "metodo_auth", "assinatura_facial",
             "ip_address", "device_info", "user_agent", "inadimplente",
-            "marca_aparelho", "selfie", "assinatura", "modo_participacao",
+            "marca_aparelho", "modo_participacao",
             "geo_lat", "geo_lng", "consentimento_lgpd", "consentimento_em",
             "declaracao_veracidade",
             "horario_entrada",

@@ -441,6 +441,14 @@ export const api = {
       }
     ),
 
+  // Fotos (selfie/assinatura) das presenças, à parte da listagem para não pesar
+  // o polling. ids limita ao que ainda não foi baixado.
+  getPresencasCaptura: (assembleiaId: string, ids?: string[]) =>
+    request<{ capturas: { id: string; selfie: string; assinatura: string }[] }>(
+      `/votos/${assembleiaId}/presencas-captura/` +
+        (ids && ids.length ? `?ids=${ids.join(",")}` : "")
+    ),
+
   votar: (assembleiaId: string, data: VotoPayload) =>
     request<VotoResponse>(`/votos/${assembleiaId}/votar/`, {
       method: "POST",

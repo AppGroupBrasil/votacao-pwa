@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -36,9 +36,43 @@ export default function ListaPresencaPage() {
   const [assembleia, setAssembleia] = useState<Assembleia | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  // Fotos (selfie/assinatura) vêm à parte da listagem, sob demanda. capturaMap
+  // guarda o que já foi baixado; pedidosRef marca ids já consultados (com ou sem
+  // foto) para o polling de 15s não rebaixar tudo a cada volta.
+  const [capturaMap, setCapturaMap] = useState<
+    Record<string, { selfie: string; assinatura: string }>
+  >({});
+  const pedidosRef = useRef<Set<string>>(new Set());
 
-  function carregar() {
-    return api.getAssembleia(assembleiaId).then(setAssembleia);
+  async function carregar() {
+    const a = await api.getAssembleia(assembleiaId);
+    setAssembleia(a);
+    const eraVazio = pedidosRef.current.size === 0;
+    const novos = (a.presencas || [])
+      .map((p) => p.id)
+      .filter((id) => !pedidosRef.current.has(id));
+    if (novos.length) {
+      try {
+        const { capturas } = await api.getPresencasCaptura(
+          assembleiaId,
+          eraVazio ? undefined : novos
+        );
+        // marca só após sucesso: se o fetch falhar, os ids ficam por baixar e
+        // são tentados de novo na próxima volta do polling.
+        novos.forEach((id) => pedidosRef.current.add(id));
+        if (capturas.length) {
+          setCapturaMap((prev) => {
+            const next = { ...prev };
+            for (const c of capturas) {
+              next[c.id] = { selfie: c.selfie, assinatura: c.assinatura };
+            }
+            return next;
+          });
+        }
+      } catch {
+        /* sem fotos nesta volta; ids seguem por baixar, reingressam na próxima */
+      }
+    }
   }
 
   useEffect(() => {
@@ -250,16 +284,16 @@ export default function ListaPresencaPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      {p.selfie ? (
-                        <a href={p.selfie} target="_blank" rel="noopener noreferrer" title="Ver selfie">
+                      {capturaMap[p.id]?.selfie ? (
+                        <a href={capturaMap[p.id].selfie} target="_blank" rel="noopener noreferrer" title="Ver selfie">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={p.selfie} alt="selfie" className="h-9 w-9 rounded object-cover border" />
+                          <img src={capturaMap[p.id].selfie} alt="selfie" className="h-9 w-9 rounded object-cover border" />
                         </a>
                       ) : null}
-                      {p.assinatura ? (
-                        <a href={p.assinatura} target="_blank" rel="noopener noreferrer" title="Ver assinatura">
+                      {capturaMap[p.id]?.assinatura ? (
+                        <a href={capturaMap[p.id].assinatura} target="_blank" rel="noopener noreferrer" title="Ver assinatura">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={p.assinatura} alt="assinatura" className="h-9 w-16 rounded object-contain border bg-white" />
+                          <img src={capturaMap[p.id].assinatura} alt="assinatura" className="h-9 w-16 rounded object-contain border bg-white" />
                         </a>
                       ) : null}
                       {p.geo_lat != null && p.geo_lng != null ? (
@@ -273,7 +307,7 @@ export default function ListaPresencaPage() {
                           GPS
                         </a>
                       ) : null}
-                      {!p.selfie && !p.assinatura && p.geo_lat == null ? (
+                      {!capturaMap[p.id]?.selfie && !capturaMap[p.id]?.assinatura && p.geo_lat == null ? (
                         <span className="text-gray-300">—</span>
                       ) : null}
                     </div>
