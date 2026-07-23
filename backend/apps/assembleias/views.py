@@ -230,6 +230,24 @@ class AssembleiaViewSet(viewsets.ModelViewSet):
             PresencaSerializer(presenca).data, status=status.HTTP_201_CREATED
         )
 
+    @action(detail=True, methods=["post"], url_path="marcar-inadimplente")
+    def marcar_inadimplente(self, request, pk=None):
+        """Gestor marca/desmarca uma presença como inadimplente (realce na lista)."""
+        assembleia = self.get_object()
+        presenca_id = request.data.get("presenca_id")
+        try:
+            presenca = Presenca.objects.get(id=presenca_id, assembleia=assembleia)
+        except Presenca.DoesNotExist:
+            return Response(
+                {"error": "Presença não encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        presenca.inadimplente = bool(
+            request.data.get("inadimplente", not presenca.inadimplente)
+        )
+        presenca.save(update_fields=["inadimplente"])
+        return Response(PresencaSerializer(presenca).data)
+
     def _get_ata(self, assembleia):
         ata, _ = Ata.objects.get_or_create(assembleia=assembleia)
         return ata

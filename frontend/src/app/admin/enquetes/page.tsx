@@ -165,7 +165,7 @@ export default function EnquetesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">Votação Simples</h1>
+            <h1 className="text-2xl font-bold">Enquete rápida</h1>
             <ComoFunciona tutorial="enquete" />
           </div>
           <p className="text-sm text-gray-500">

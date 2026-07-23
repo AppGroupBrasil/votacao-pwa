@@ -330,6 +330,16 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  marcarPresencaInadimplente: (
+    assembleiaId: string,
+    presencaId: string,
+    inadimplente: boolean
+  ) =>
+    request<Presenca>(`/assembleias/${assembleiaId}/marcar-inadimplente/`, {
+      method: "POST",
+      body: JSON.stringify({ presenca_id: presencaId, inadimplente }),
+    }),
+
   // Ata / Resumo
   getAta: (assembleiaId: string) =>
     request<Ata>(`/assembleias/${assembleiaId}/ata/`),

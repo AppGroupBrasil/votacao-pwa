@@ -244,6 +244,10 @@ class Presenca(models.Model):
         max_length=255, blank=True, default="",
         help_text="Aparelho/navegador que registrou a presença",
     )
+    inadimplente = models.BooleanField(
+        default=False,
+        help_text="Marcado pelo gestor na lista de presença; realça a linha.",
+    )
     horario_entrada = models.DateTimeField(auto_now_add=True)
 
     class Meta:

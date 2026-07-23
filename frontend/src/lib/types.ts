@@ -63,6 +63,7 @@ export interface Presenca {
   ip_address: string | null;
   device_info: string;
   user_agent: string;
+  inadimplente: boolean;
   horario_entrada: string;
 }
 

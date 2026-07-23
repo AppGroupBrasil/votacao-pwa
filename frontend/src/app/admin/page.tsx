@@ -4,14 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  FolderPlus,
   Vote,
-  ListChecks,
+  Building2,
   UserCheck,
   BarChart3,
-  FileText,
   Shield,
   ChevronRight,
+  ListChecks,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
@@ -25,51 +24,60 @@ type Quadrado = {
   destaque?: boolean;
 };
 
-const quadrados: Quadrado[] = [
+const modos: Quadrado[] = [
   {
-    href: "/admin/cadastro",
-    titulo: "Cadastro",
-    descricao: "Condomínio, moradores e assembleias. Comece por aqui.",
-    icon: FolderPlus,
-    cor: "from-amber-500 to-orange-600",
-  },
-  {
-    href: "/admin/assembleias",
-    titulo: "Votação Online",
-    descricao: "Assembleias com voto identificado e seguro.",
+    href: "/admin/assembleias/nova-simples",
+    titulo: "Votação Simples",
+    descricao:
+      "Crie a assembleia na hora: nome do condomínio, tipo e as questões. Gera o link e o comprovante.",
     icon: Vote,
     cor: "from-primary-600 to-primary-800",
     destaque: true,
   },
   {
-    href: "/admin/enquetes",
-    titulo: "Votação Simples",
-    descricao: "Enquete anônima por link. Rápida e sem cadastro.",
-    icon: ListChecks,
-    cor: "from-teal-500 to-emerald-600",
+    href: "/admin/cadastro",
+    titulo: "Votação Completa",
+    descricao:
+      "Cadastro completo de condomínio e moradores, no formato tradicional.",
+    icon: Building2,
+    cor: "from-slate-600 to-slate-800",
   },
+];
+
+const ferramentas: Quadrado[] = [
   {
     href: "/admin/presenca",
-    titulo: "Lista de Presença",
+    titulo: "Lista de presença",
     descricao: "Quem entrou na assembleia, em tempo real.",
     icon: UserCheck,
     cor: "from-indigo-500 to-blue-600",
   },
   {
-    href: "/admin/resultados",
-    titulo: "Relatórios e Resultados",
-    descricao: "Resultados consolidados e lista de votantes.",
+    href: "/admin/assembleias",
+    titulo: "Resultados e relatórios",
+    descricao: "Acompanhe a votação, veja o resultado e gere o relatório.",
     icon: BarChart3,
     cor: "from-purple-500 to-fuchsia-600",
   },
-  {
-    href: "/admin/ata",
-    titulo: "Resumo e Ata",
-    descricao: "Transcrição, resumo e geração da ata da assembleia.",
-    icon: FileText,
-    cor: "from-slate-600 to-slate-800",
-  },
 ];
+
+function Card({ q }: { q: Quadrado }) {
+  return (
+    <Link
+      href={q.href}
+      className={`group relative overflow-hidden rounded-2xl bg-gradient-to-br ${q.cor} p-6 text-white shadow-sm transition hover:shadow-lg hover:-translate-y-0.5 ${
+        q.destaque ? "ring-2 ring-primary-300" : ""
+      }`}
+    >
+      <div className="flex items-start justify-between">
+        <q.icon className="w-9 h-9 opacity-90" />
+        <ChevronRight className="w-5 h-5 opacity-0 group-hover:opacity-90 transition" />
+      </div>
+      <h2 className="mt-4 text-xl font-bold">{q.titulo}</h2>
+      <p className="mt-1 text-sm text-white/85">{q.descricao}</p>
+    </Link>
+  );
+}
 
 export default function PainelPage() {
   const router = useRouter();
@@ -90,37 +98,34 @@ export default function PainelPage() {
         <p className="text-gray-500">O que você quer fazer hoje?</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {quadrados.map((q) => (
-          <Link
-            key={q.href}
-            href={q.href}
-            className={`group relative overflow-hidden rounded-2xl bg-gradient-to-br ${q.cor} p-6 text-white shadow-sm transition hover:shadow-lg hover:-translate-y-0.5 ${
-              q.destaque ? "sm:col-span-2 lg:col-span-1 ring-2 ring-primary-300" : ""
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <q.icon className="w-9 h-9 opacity-90" />
-              <ChevronRight className="w-5 h-5 opacity-0 group-hover:opacity-90 transition" />
-            </div>
-            <h2 className="mt-4 text-xl font-bold">{q.titulo}</h2>
-            <p className="mt-1 text-sm text-white/85">{q.descricao}</p>
-          </Link>
+      {/* Dois caminhos no topo */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {modos.map((q) => (
+          <Card key={q.href} q={q} />
         ))}
+      </div>
 
+      {/* Ferramentas compartilhadas */}
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {ferramentas.map((q) => (
+          <Card key={q.href} q={q} />
+        ))}
+      </div>
+
+      {/* Acessos discretos — vivos, fora do painel principal */}
+      <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm border-t border-gray-100 pt-5">
+        <Link
+          href="/admin/enquetes"
+          className="text-gray-400 hover:text-gray-600 inline-flex items-center gap-1.5 transition-colors"
+        >
+          <ListChecks className="w-4 h-4" /> Enquete rápida
+        </Link>
         {user.is_superuser && (
           <Link
             href="/admin/master"
-            className="group relative overflow-hidden rounded-2xl border-2 border-dashed border-gray-300 bg-white p-6 text-gray-700 transition hover:border-gray-400 hover:shadow-sm"
+            className="text-gray-400 hover:text-gray-600 inline-flex items-center gap-1.5 transition-colors"
           >
-            <div className="flex items-start justify-between">
-              <Shield className="w-9 h-9 text-gray-500" />
-              <ChevronRight className="w-5 h-5 opacity-0 group-hover:opacity-90 transition" />
-            </div>
-            <h2 className="mt-4 text-xl font-bold">Master</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Administração geral do sistema e condomínios.
-            </p>
+            <Shield className="w-4 h-4" /> Master
           </Link>
         )}
       </div>

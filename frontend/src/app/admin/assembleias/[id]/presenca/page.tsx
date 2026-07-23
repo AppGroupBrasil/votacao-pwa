@@ -14,7 +14,7 @@ import {
   Check,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import type { Assembleia, Eleitor } from "@/lib/types";
+import type { Assembleia, Eleitor, Presenca } from "@/lib/types";
 
 const perfilLabel: Record<string, string> = {
   proprietario: "Proprietário",
@@ -52,11 +52,12 @@ export default function ListaPresencaPage() {
   function exportarCsv() {
     if (!assembleia) return;
     const linhas = [
-      ["Nome", "Bloco", "Apartamento", "Perfil", "Método", "Registro facial", "IP", "Aparelho", "Horário de entrada"],
+      ["Nome", "Bloco", "Apartamento", "Inadimplente", "Perfil", "Método", "Registro facial", "IP", "Aparelho", "Horário de entrada"],
       ...presencas.map((p) => [
         p.nome,
         p.bloco || "",
         p.apartamento || "",
+        p.inadimplente ? "Sim" : "Não",
         perfilLabel[p.perfil] || p.perfil,
         metodoLabel[p.metodo_auth] || p.metodo_auth,
         p.assinatura_facial || "",
@@ -77,15 +78,49 @@ export default function ListaPresencaPage() {
     URL.revokeObjectURL(url);
   }
 
+  async function toggleInadimplente(p: Presenca) {
+    const novo = !p.inadimplente;
+    setAssembleia((prev) =>
+      prev
+        ? {
+            ...prev,
+            presencas: (prev.presencas || []).map((x) =>
+              x.id === p.id ? { ...x, inadimplente: novo } : x
+            ),
+          }
+        : prev
+    );
+    try {
+      await api.marcarPresencaInadimplente(assembleiaId, p.id, novo);
+    } catch {
+      setAssembleia((prev) =>
+        prev
+          ? {
+              ...prev,
+              presencas: (prev.presencas || []).map((x) =>
+                x.id === p.id ? { ...x, inadimplente: !novo } : x
+              ),
+            }
+          : prev
+      );
+    }
+  }
+
   if (loading) return <p className="text-gray-500">Carregando...</p>;
   if (!assembleia)
     return <p className="text-gray-500">Assembleia não encontrada.</p>;
 
-  const presencas = [...(assembleia.presencas || [])].sort(
-    (a, b) =>
-      new Date(a.horario_entrada).getTime() -
-      new Date(b.horario_entrada).getTime()
-  );
+  const presencas = [...(assembleia.presencas || [])].sort((a, b) => {
+    const porBloco = (a.bloco || "").localeCompare(b.bloco || "", "pt-BR", {
+      numeric: true,
+      sensitivity: "base",
+    });
+    if (porBloco !== 0) return porBloco;
+    return (a.apartamento || "").localeCompare(b.apartamento || "", "pt-BR", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
   const encerrada = assembleia.status === "encerrada";
 
   return (
@@ -152,6 +187,7 @@ export default function ListaPresencaPage() {
                 <th className="px-4 py-3 font-medium w-10">#</th>
                 <th className="px-4 py-3 font-medium">Nome</th>
                 <th className="px-4 py-3 font-medium">Unidade</th>
+                <th className="px-4 py-3 font-medium text-center">Inadimpl.</th>
                 <th className="px-4 py-3 font-medium">Perfil</th>
                 <th className="px-4 py-3 font-medium">Método</th>
                 <th className="px-4 py-3 font-medium">Registro facial</th>
@@ -162,7 +198,12 @@ export default function ListaPresencaPage() {
             </thead>
             <tbody>
               {presencas.map((p, i) => (
-                <tr key={p.id} className="border-b last:border-0">
+                <tr
+                  key={p.id}
+                  className={`border-b last:border-0 ${
+                    p.inadimplente ? "bg-red-50" : ""
+                  }`}
+                >
                   <td className="px-4 py-3 text-gray-400">{i + 1}</td>
                   <td className="px-4 py-3 font-medium">
                     {p.nome}
@@ -175,6 +216,15 @@ export default function ListaPresencaPage() {
                   <td className="px-4 py-3 text-gray-600">
                     {p.bloco ? `${p.bloco} / ` : ""}
                     {p.apartamento}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={p.inadimplente}
+                      onChange={() => toggleInadimplente(p)}
+                      className="h-4 w-4 cursor-pointer rounded border-gray-300 text-red-600 focus:ring-red-500"
+                      title="Marcar como inadimplente"
+                    />
                   </td>
                   <td className="px-4 py-3 text-gray-600">
                     {perfilLabel[p.perfil] || p.perfil}
