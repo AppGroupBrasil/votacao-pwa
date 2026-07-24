@@ -75,7 +75,7 @@ export default function RegistrosPresencaPage() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4 print:hidden">
         <Link
-          href="/admin/enquetes"
+          href="/admin/listas-presenca"
           className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
         >
           <ArrowLeft className="w-4 h-4" /> Voltar

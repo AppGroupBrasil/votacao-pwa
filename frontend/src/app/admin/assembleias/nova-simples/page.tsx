@@ -154,9 +154,10 @@ export default function VotacaoSimplesPage() {
           <Vote className="w-6 h-6" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">Votação Simples</h1>
+          <h1 className="text-2xl font-bold">Criar assembleia</h1>
           <p className="text-sm text-gray-500">
-            Na hora: condomínio, tipo e as questões. Gera o link e o comprovante.
+            Condomínio, tipo e as perguntas. Gera o link e o comprovante. O
+            morador se cadastra na hora.
           </p>
         </div>
       </div>

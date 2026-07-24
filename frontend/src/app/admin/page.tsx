@@ -5,17 +5,17 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Vote,
-  Building2,
-  UserCheck,
+  ClipboardList,
+  ListChecks,
   BarChart3,
   Shield,
   ChevronRight,
-  ListChecks,
+  Check,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
 
-type Quadrado = {
+type Acao = {
   href: string;
   titulo: string;
   descricao: string;
@@ -24,44 +24,35 @@ type Quadrado = {
   destaque?: boolean;
 };
 
-const modos: Quadrado[] = [
+const acoes: Acao[] = [
   {
     href: "/admin/assembleias/nova-simples",
-    titulo: "Votação Simples",
+    titulo: "Criar assembleia",
     descricao:
-      "Crie a assembleia na hora: nome do condomínio, tipo e as questões. Gera o link e o comprovante.",
+      "Condomínio, tipo e as perguntas. Gera o link e o comprovante. O morador se cadastra na hora — sem cadastro prévio.",
     icon: Vote,
     cor: "from-primary-600 to-primary-800",
     destaque: true,
   },
   {
-    href: "/admin/cadastro",
-    titulo: "Votação Completa",
+    href: "/admin/listas-presenca",
+    titulo: "Criar lista de presença",
     descricao:
-      "Cadastro completo de condomínio e moradores, no formato tradicional.",
-    icon: Building2,
-    cor: "from-slate-600 to-slate-800",
-  },
-];
-
-const ferramentas: Quadrado[] = [
-  {
-    href: "/admin/presenca",
-    titulo: "Lista de presença",
-    descricao: "Quem entrou na assembleia, em tempo real.",
-    icon: UserCheck,
+      "Link para os presentes registrarem presença pelo celular: selfie, nome, apartamento e assinatura. Sem cadastro prévio.",
+    icon: ClipboardList,
     cor: "from-indigo-500 to-blue-600",
   },
-  {
-    href: "/admin/assembleias",
-    titulo: "Resultados e relatórios",
-    descricao: "Acompanhe a votação, veja o resultado e gere o relatório.",
-    icon: BarChart3,
-    cor: "from-purple-500 to-fuchsia-600",
-  },
 ];
 
-function Card({ q }: { q: Quadrado }) {
+const vantagensVotacao = [
+  "Uma pergunta com respostas (ex.: “Qual a cor da fachada?”)",
+  "Gera um link — você compartilha",
+  "Morador vota sem nenhum cadastro: anônimo, 1 voto por aparelho",
+  "Secreta (ninguém sabe quem votou) ou aberta (mostra quem votou em quê)",
+  "O resultado só aparece depois que você encerra",
+];
+
+function AcaoCard({ q }: { q: Acao }) {
   return (
     <Link
       href={q.href}
@@ -98,37 +89,77 @@ export default function PainelPage() {
         <p className="text-gray-500">O que você quer fazer hoje?</p>
       </div>
 
-      {/* Dois caminhos no topo */}
+      {/* Ações principais */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {modos.map((q) => (
-          <Card key={q.href} q={q} />
+        {acoes.map((q) => (
+          <AcaoCard key={q.href} q={q} />
         ))}
       </div>
 
-      {/* Ferramentas compartilhadas */}
-      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {ferramentas.map((q) => (
-          <Card key={q.href} q={q} />
-        ))}
-      </div>
+      {/* Votação rápida — card dedicado com as vantagens */}
+      <Link
+        href="/admin/enquetes"
+        className="group mt-4 block rounded-2xl border border-emerald-200 bg-emerald-50 p-6 transition hover:shadow-lg hover:-translate-y-0.5"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 p-2.5 text-white">
+              <ListChecks className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-emerald-900">
+                Votação rápida
+              </h2>
+              <p className="text-sm text-emerald-700/80">
+                Simplicidade e controle total na sua votação
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 shrink-0 text-emerald-600 opacity-0 group-hover:opacity-100 transition" />
+        </div>
+        <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+          {vantagensVotacao.map((v) => (
+            <li
+              key={v}
+              className="flex items-start gap-2 text-sm text-emerald-900/90"
+            >
+              <Check className="mt-0.5 w-4 h-4 shrink-0 text-emerald-600" />
+              <span>{v}</span>
+            </li>
+          ))}
+        </ul>
+      </Link>
 
-      {/* Acessos discretos — vivos, fora do painel principal */}
-      <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm border-t border-gray-100 pt-5">
-        <Link
-          href="/admin/enquetes"
-          className="text-gray-400 hover:text-gray-600 inline-flex items-center gap-1.5 transition-colors"
-        >
-          <ListChecks className="w-4 h-4" /> Enquete rápida
-        </Link>
-        {user.is_superuser && (
+      {/* Resultados e relatórios — menor */}
+      <Link
+        href="/admin/assembleias"
+        className="group mt-4 flex items-center justify-between rounded-2xl border border-gray-200 bg-white p-5 transition hover:shadow-md"
+      >
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl bg-gray-100 p-2.5 text-gray-700">
+            <BarChart3 className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="font-bold text-gray-900">Resultados e relatórios</h2>
+            <p className="text-sm text-gray-500">
+              Acompanhe a votação, veja o resultado e gere a ata.
+            </p>
+          </div>
+        </div>
+        <ChevronRight className="w-5 h-5 shrink-0 text-gray-400 opacity-0 group-hover:opacity-100 transition" />
+      </Link>
+
+      {/* Acesso discreto — só para o dono do sistema */}
+      {user.is_superuser && (
+        <div className="mt-8 border-t border-gray-100 pt-5 text-sm">
           <Link
             href="/admin/master"
             className="text-gray-400 hover:text-gray-600 inline-flex items-center gap-1.5 transition-colors"
           >
             <Shield className="w-4 h-4" /> Master
           </Link>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
