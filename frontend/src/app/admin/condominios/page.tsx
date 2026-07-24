@@ -65,7 +65,7 @@ export default function CondominiosPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <h1 className="text-2xl font-bold">Condomínios</h1>
         <button
           onClick={() => setShowForm(!showForm)}

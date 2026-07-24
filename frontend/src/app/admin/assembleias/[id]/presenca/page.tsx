@@ -160,7 +160,7 @@ export default function ListaPresencaPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 print:hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 print:hidden">
         <Link
           href={`/admin/assembleias/${assembleiaId}`}
           className="flex items-center gap-2 text-gray-500 hover:text-gray-700"
@@ -168,7 +168,7 @@ export default function ListaPresencaPage() {
           <ArrowLeft className="w-4 h-4" />
           Voltar
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!encerrada && (
             <button
               onClick={() => setModalOpen(true)}

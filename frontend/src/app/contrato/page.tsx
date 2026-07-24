@@ -66,12 +66,12 @@ export default function ContratoPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-6 py-3 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-6 py-3 flex flex-wrap items-center justify-between gap-2">
           <Link href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-900 text-sm">
             <ArrowLeft className="w-4 h-4" />
             Voltar
           </Link>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => window.print()}
               className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"

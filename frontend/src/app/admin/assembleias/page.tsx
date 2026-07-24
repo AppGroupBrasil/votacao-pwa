@@ -259,9 +259,9 @@ export default function AssembleiasHubPage() {
       {/* Aba: Votação */}
       {tab === "votacao" && (
         <div>
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
             <h1 className="text-2xl font-bold">Assembleias</h1>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {assembleiaPresenca ? (
                 <Link
                   href={`/admin/assembleias/${assembleiaPresenca.id}/presenca`}
