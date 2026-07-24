@@ -96,15 +96,23 @@ export default function ListasPresencaPage() {
             prévio.
           </p>
         </div>
-        <button
-          onClick={() => {
-            setTitulo("");
-            setModalOpen(true);
-          }}
-          className="btn-primary flex items-center gap-2 shrink-0"
-        >
-          <Plus className="w-4 h-4" /> Nova lista
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <NextLink
+            href="/admin/listas-presenca/exemplo"
+            className="btn-secondary inline-flex items-center gap-2"
+          >
+            <Eye className="w-4 h-4" /> Ver exemplo da lista
+          </NextLink>
+          <button
+            onClick={() => {
+              setTitulo("");
+              setModalOpen(true);
+            }}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> Nova lista
+          </button>
+        </div>
       </div>
 
       {loading && <p className="text-gray-500">Carregando...</p>}
