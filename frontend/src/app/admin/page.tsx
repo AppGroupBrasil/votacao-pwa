@@ -99,7 +99,7 @@ export default function PainelPage() {
       {/* Votação rápida — card dedicado com as vantagens */}
       <Link
         href="/admin/enquetes"
-        className="group mt-4 block rounded-2xl border border-emerald-200 bg-emerald-50 p-6 transition hover:shadow-lg hover:-translate-y-0.5"
+        className="group mt-4 block rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-100 p-6 transition hover:shadow-lg hover:-translate-y-0.5"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -133,10 +133,10 @@ export default function PainelPage() {
       {/* Resultados e relatórios — menor */}
       <Link
         href="/admin/assembleias"
-        className="group mt-4 flex items-center justify-between rounded-2xl border border-gray-200 bg-white p-5 transition hover:shadow-md"
+        className="group mt-4 flex items-center justify-between rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-indigo-100 p-5 transition hover:shadow-md"
       >
         <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-gray-100 p-2.5 text-gray-700">
+          <div className="rounded-xl bg-sky-100 p-2.5 text-sky-700">
             <BarChart3 className="w-6 h-6" />
           </div>
           <div>
