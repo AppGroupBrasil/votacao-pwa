@@ -231,11 +231,11 @@ export default function EnquetesPage() {
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 onClick={() => copiarLink(e)}
-                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+                className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-orange-600/30 hover:bg-orange-600"
               >
                 {copiado === e.id ? (
                   <>
-                    <Check className="w-4 h-4 text-green-600" /> Copiado!
+                    <Check className="w-4 h-4" /> Copiado!
                   </>
                 ) : (
                   <>
@@ -243,6 +243,14 @@ export default function EnquetesPage() {
                   </>
                 )}
               </button>
+              <a
+                href={linkPublico(e)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-amber-950 shadow-sm ring-1 ring-amber-500/40 hover:bg-amber-300"
+              >
+                <Eye className="w-4 h-4" /> Ver como morador
+              </a>
               <button
                 onClick={() => alternarAtiva(e)}
                 className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
@@ -321,11 +329,11 @@ export default function EnquetesPage() {
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 onClick={() => copiarLinkLista(l)}
-                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+                className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-orange-600/30 hover:bg-orange-600"
               >
                 {copiado === `lista-${l.id}` ? (
                   <>
-                    <Check className="w-4 h-4 text-green-600" /> Copiado!
+                    <Check className="w-4 h-4" /> Copiado!
                   </>
                 ) : (
                   <>
@@ -333,6 +341,14 @@ export default function EnquetesPage() {
                   </>
                 )}
               </button>
+              <a
+                href={linkListaPublico(l)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-amber-950 shadow-sm ring-1 ring-amber-500/40 hover:bg-amber-300"
+              >
+                <Eye className="w-4 h-4" /> Ver como morador
+              </a>
               <button
                 onClick={() => alternarListaAtiva(l)}
                 className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"

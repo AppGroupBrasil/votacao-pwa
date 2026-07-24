@@ -27,6 +27,7 @@ import {
 import type { Condominio } from "@/lib/types";
 import { api } from "@/lib/api";
 import ComoFunciona from "@/components/ComoFunciona";
+import LinkDestaque from "@/components/LinkDestaque";
 import type { Assembleia } from "@/lib/types";
 import { clsx } from "clsx";
 
@@ -344,7 +345,7 @@ export default function AssembleiaDetailPage() {
     const origin =
       typeof window !== "undefined" ? window.location.origin : "";
     return assembleia?.codigo_curto
-      ? `${origin}/vote/${assembleia.codigo_curto}`
+      ? `${origin}/v/${assembleia.codigo_curto}`
       : `${origin}/votacao/${id}`;
   }
 
@@ -378,10 +379,10 @@ export default function AssembleiaDetailPage() {
           Voltar
         </Link>
 
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-2xl font-bold">{assembleia.titulo}</h1>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <h1 className="text-2xl font-bold break-words">{assembleia.titulo}</h1>
               <ComoFunciona tutorial="assembleia" />
               <span
                 className={clsx(
@@ -395,7 +396,7 @@ export default function AssembleiaDetailPage() {
             <p className="text-gray-500 text-sm">{assembleia.condominio_nome}</p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
             {assembleia.status === "rascunho" && (
               <>
                 <button
@@ -1157,25 +1158,15 @@ export default function AssembleiaDetailPage() {
 
       {/* Voting Link */}
       {assembleia.status === "aberta" && (
-        <div className="card bg-green-50 border border-green-200">
-          <p className="text-sm font-medium text-green-800 mb-2">
-            Link de votação para os moradores:
+        <div className="card border border-orange-200 bg-orange-50">
+          <p className="text-sm font-semibold text-orange-900">
+            Link da votação para os moradores
           </p>
-          <div className="flex items-center gap-2">
-            <code className="text-sm bg-white px-3 py-1.5 rounded border border-green-200 flex-1 truncate">
-              {votingLink()}
-            </code>
-            <button
-              onClick={copyVotingLink}
-              className="text-green-700 hover:text-green-800 p-1.5"
-            >
-              {copied ? (
-                <CheckCircle className="w-5 h-5" />
-              ) : (
-                <Copy className="w-5 h-5" />
-              )}
-            </button>
-          </div>
+          <p className="mb-3 text-xs text-orange-800/80">
+            Copie e cole no chat do Google Meet ou do Zoom. Use &quot;Ver como
+            morador&quot; para conferir como a votação aparece para eles.
+          </p>
+          <LinkDestaque url={votingLink()} />
         </div>
       )}
     </div>

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Pencil, Printer, Trash2, Users } from "lucide-react";
 import { api } from "@/lib/api";
+import LinkDestaque from "@/components/LinkDestaque";
 import type { ListaPresenca, PresencaManualRegistro } from "@/lib/types";
 
 const FUSO_BRASILIA = "America/Sao_Paulo";
@@ -98,6 +99,29 @@ export default function RegistrosPresencaPage() {
           </button>
         </div>
       </div>
+
+      {lista && (
+        <div className="card mb-4 border border-orange-200 bg-orange-50 print:hidden">
+          <p className="text-sm font-semibold text-orange-900">
+            Link da lista de presença para os moradores
+          </p>
+          <p className="mb-3 text-xs text-orange-800/80">
+            Copie e cole no chat do Google Meet ou do Zoom. Use &quot;Ver como
+            morador&quot; para conferir como a lista aparece para eles.
+          </p>
+          <LinkDestaque
+            url={
+              lista.codigo_curto
+                ? `${
+                    typeof window !== "undefined" ? window.location.origin : ""
+                  }/v/${lista.codigo_curto}`
+                : `${
+                    typeof window !== "undefined" ? window.location.origin : ""
+                  }/presenca-manual/${id}`
+            }
+          />
+        </div>
+      )}
 
       {editando && (
         <div className="card mb-4 space-y-3 print:hidden">
