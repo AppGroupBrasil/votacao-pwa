@@ -23,6 +23,16 @@ class CondominioViewSet(viewsets.ModelViewSet):
             qs = qs.filter(id__in=cond_ids)
         return qs
 
+    def perform_create(self, serializer):
+        # Vincula o condomínio recém-criado ao perfil do síndico; sem isso o
+        # condomínio nasce órfão e some da própria lista/escopo do usuário.
+        condominio = serializer.save()
+        user = self.request.user
+        if not user.is_superuser:
+            perfil = getattr(user, "perfil_admin", None)
+            if perfil is not None:
+                perfil.condominios.add(condominio)
+
     @action(detail=True, methods=["post"], url_path="autocadastro-link")
     def gerar_link_autocadastro(self, request, pk=None):
         """Gera (ou regenera) o token do link público de autocadastro."""

@@ -13,7 +13,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from core.otp import gerar_otp, validar_otp
-from core.permissions import IsAdminWithRole, get_user_condominios
+from core.permissions import (
+    IsAdminWithRole,
+    get_or_create_user_condominio,
+    get_user_condominios,
+)
 from core.request_info import get_client_user_agent, infer_device_info
 
 from .models import (
@@ -81,8 +85,7 @@ class EnqueteViewSet(viewsets.ModelViewSet):
         # senão sumiria da própria lista (get_queryset filtra por condominio).
         if condominios is not None:
             if condominio is None:
-                perfil = getattr(self.request.user, "perfil_admin", None)
-                condominio = perfil.condominios.first() if perfil else None
+                condominio = get_or_create_user_condominio(self.request.user)
                 if condominio is None:
                     raise PermissionDenied(
                         "Nenhum condomínio associado ao seu usuário."
@@ -110,8 +113,7 @@ class ListaPresencaViewSet(viewsets.ModelViewSet):
         condominio = serializer.validated_data.get("condominio")
         if condominios is not None:
             if condominio is None:
-                perfil = getattr(self.request.user, "perfil_admin", None)
-                condominio = perfil.condominios.first() if perfil else None
+                condominio = get_or_create_user_condominio(self.request.user)
                 if condominio is None:
                     raise PermissionDenied(
                         "Nenhum condomínio associado ao seu usuário."

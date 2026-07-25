@@ -13,6 +13,35 @@ def get_user_condominios(user):
     return set(perfil.condominios.values_list("id", flat=True))
 
 
+def get_or_create_user_condominio(user):
+    """Return the síndico's first condomínio, criando um padrão e vinculando ao
+    perfil quando ele ainda não tem nenhum (caso do usuário que se cadastrou
+    sozinho e vai direto criar uma lista de presença/enquete).
+
+    Master (superuser) devolve None — ele não precisa de escopo."""
+    if user.is_superuser:
+        return None
+    perfil = getattr(user, "perfil_admin", None)
+    if perfil is None:
+        return None
+
+    condominio = perfil.condominios.first()
+    if condominio is not None:
+        return condominio
+
+    from apps.condominios.models import Condominio
+
+    nome = (user.get_full_name() or user.username or "Meu condomínio").strip()
+    if not nome:
+        nome = "Meu condomínio"
+    condominio, _ = Condominio.objects.get_or_create(
+        cnpj=f"AUTO-{user.id}"[:18],
+        defaults={"nome": nome, "total_unidades": 0},
+    )
+    perfil.condominios.add(condominio)
+    return condominio
+
+
 class IsAdminWithRole(BasePermission):
     """
     Allow access to staff users who have a PerfilAdmin.

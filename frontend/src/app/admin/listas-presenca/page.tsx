@@ -45,6 +45,10 @@ export default function ListasPresencaPage() {
       setTitulo("");
       setModalOpen(false);
       carregar();
+    } catch {
+      alert(
+        "Não foi possível criar a lista agora. Tente novamente em instantes."
+      );
     } finally {
       setSalvando(false);
     }
