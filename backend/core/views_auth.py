@@ -46,17 +46,32 @@ class RegisterSerializer(serializers.ModelSerializer):
         write_only=True,
         error_messages={"invalid": "A senha deve conter exatamente 6 dígitos numéricos."},
     )
+    email = serializers.EmailField(required=True)
+    # O login é o próprio e-mail; não pedimos mais um "usuário" separado.
+    username = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User
         fields = ["id", "username", "email", "password", "first_name", "last_name"]
 
+    def validate_email(self, value):
+        email = value.strip().lower()
+        if (
+            User.objects.filter(email__iexact=email).exists()
+            or User.objects.filter(username__iexact=email).exists()
+        ):
+            raise serializers.ValidationError(
+                "Este e-mail já está cadastrado. Faça login ou recupere a senha."
+            )
+        return email
+
     def create(self, validated_data):
         from .models import PerfilAdmin
 
+        email = validated_data["email"]  # já normalizado em validate_email
         user = User.objects.create_user(
-            username=validated_data["username"],
-            email=validated_data.get("email", ""),
+            username=email,
+            email=email,
             password=validated_data["password"],
             first_name=validated_data.get("first_name", ""),
             last_name=validated_data.get("last_name", ""),
@@ -107,20 +122,30 @@ class RegisterView(generics.CreateAPIView):
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 def login_view(request):
-    username = str(request.data.get("username", "")).strip()
+    login_id = str(request.data.get("username", "")).strip()
     password = str(request.data.get("password", ""))
     remember = bool(request.data.get("remember", False))
 
-    if not username or not password:
+    if not login_id or not password:
         return Response(
-            {"detail": "Username e password são obrigatórios."},
+            {"detail": "Informe e-mail e senha."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip()
-    user = authenticate(username=username, password=password)
+    # Login por e-mail. Também aceita o antigo "usuário" (contas criadas antes
+    # da unificação) e é insensível a maiúsculas/minúsculas.
+    user = authenticate(username=login_id, password=password)
+    if user is None and "@" in login_id:
+        for cand in User.objects.filter(email__iexact=login_id).order_by(
+            "-is_superuser", "-id"
+        ):
+            u = authenticate(username=cand.username, password=password)
+            if u is not None:
+                user = u
+                break
     if user is None:
-        audit.warning("login_failed username=%s ip=%s", username, ip)
+        audit.warning("login_failed username=%s ip=%s", login_id, ip)
         return Response(
             {"detail": "Usuário e/ou senha incorreto(s)"},
             status=status.HTTP_401_UNAUTHORIZED,

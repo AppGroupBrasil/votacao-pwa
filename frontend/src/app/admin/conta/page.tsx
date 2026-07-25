@@ -165,19 +165,6 @@ export default function ContaPage() {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Username
-          </label>
-          <input
-            type="text"
-            className="input bg-gray-50 cursor-not-allowed"
-            value={user?.username || ""}
-            disabled
-          />
-          <p className="text-xs text-gray-400 mt-1">O username não pode ser alterado.</p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
             Nova Senha <span className="text-gray-400 font-normal">(deixe em branco para manter a atual)</span>
           </label>
           <div className="relative">

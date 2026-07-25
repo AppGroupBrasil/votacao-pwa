@@ -39,7 +39,7 @@ export default function LoginPage() {
       }
       router.push("/admin");
     } catch {
-      setError("Usuário ou senha incorretos.");
+      setError("E-mail ou senha incorretos.");
     } finally {
       setLoading(false);
     }
@@ -66,15 +66,16 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Usuário
+              E-mail
             </label>
             <input
-              type="text"
+              type="email"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="input-field"
               required
               autoComplete="username"
+              placeholder="seuemail@exemplo.com"
             />
           </div>
 
@@ -112,7 +113,7 @@ export default function LoginPage() {
               onChange={(e) => setRemember(e.target.checked)}
               className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
-            Manter conectado e salvar usuário
+            Manter conectado e salvar e-mail
           </label>
 
           <button

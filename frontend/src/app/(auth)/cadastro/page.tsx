@@ -12,7 +12,6 @@ export default function CadastroPage() {
     first_name: "",
     last_name: "",
     email: "",
-    username: "",
     password: "",
     password2: "",
   });
@@ -39,9 +38,16 @@ export default function CadastroPage() {
     }
 
     setLoading(true);
+    const email = form.email.trim().toLowerCase();
     try {
-      await api.register(form);
-      await api.login(form.username, form.password);
+      await api.register({
+        username: email,
+        email,
+        password: form.password,
+        first_name: form.first_name,
+        last_name: form.last_name,
+      });
+      await api.login(email, form.password);
       router.push("/admin/assembleias");
     } catch (err: any) {
       const data = err?.response?.data;
@@ -110,20 +116,6 @@ export default function CadastroPage() {
               onChange={(e) => update("email", e.target.value)}
               className="input-field"
               required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Usuário
-            </label>
-            <input
-              type="text"
-              value={form.username}
-              onChange={(e) => update("username", e.target.value)}
-              className="input-field"
-              required
-              autoComplete="username"
             />
           </div>
 
