@@ -115,23 +115,53 @@ class ListaPresencaViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # O síndico informa o nome do condomínio ao gerar a lista (obrigatório).
         nome_cond = serializer.validated_data.pop("nome_condominio", "").strip()
-        condominio = get_or_create_user_condominio(self.request.user)
-        if condominio is None:
-            # Master (superuser): não tem condomínio próprio — usa/cria pelo nome.
-            from apps.condominios.models import Condominio
-
-            condominio = Condominio.objects.filter(nome=nome_cond).first()
-            if condominio is None:
-                condominio = Condominio.objects.create(
-                    nome=nome_cond,
-                    cnpj=f"MSTR-{uuid.uuid4().hex[:12]}",
-                    total_unidades=0,
-                )
-        elif nome_cond and condominio.nome != nome_cond:
-            # Nomeia (ou renomeia) o condomínio do síndico com o que ele digitou.
-            condominio.nome = nome_cond
-            condominio.save(update_fields=["nome", "atualizado_em"])
+        condominio = self._resolver_condominio(self.request.user, nome_cond)
         serializer.save(condominio=condominio)
+
+    def _resolver_condominio(self, user, nome_cond):
+        """Descobre a qual condomínio a lista pertence a partir do nome digitado,
+        sem nunca renomear o condomínio errado de quem administra vários."""
+        from apps.condominios.models import Condominio
+
+        escopo = get_user_condominios(user)
+        if escopo is None:
+            # Master (superuser): não tem condomínio próprio — reusa/cria pelo nome.
+            cond = Condominio.objects.filter(nome__iexact=nome_cond).first()
+            return cond or Condominio.objects.create(
+                nome=nome_cond,
+                cnpj=f"MSTR-{uuid.uuid4().hex[:12]}",
+                total_unidades=0,
+            )
+
+        perfil = getattr(user, "perfil_admin", None)
+        if perfil is None:
+            raise PermissionDenied("Nenhum condomínio associado ao seu usuário.")
+
+        # Já existe um condomínio SEU com esse nome? usa ele (não renomeia nada).
+        cond = perfil.condominios.filter(nome__iexact=nome_cond).first()
+        if cond is not None:
+            return cond
+
+        conds = list(perfil.condominios.all()[:2])
+        if len(conds) <= 1:
+            # Caso comum: só tem 1 condomínio (ou o padrão auto). Nomeia-o.
+            cond = get_or_create_user_condominio(user)
+            if cond is None:
+                raise PermissionDenied("Nenhum condomínio associado ao seu usuário.")
+            if nome_cond and cond.nome != nome_cond:
+                cond.nome = nome_cond
+                cond.save(update_fields=["nome", "atualizado_em"])
+            return cond
+
+        # Administra vários condomínios e digitou um nome novo: cria e vincula
+        # esse, sem tocar nos demais.
+        cond = Condominio.objects.create(
+            nome=nome_cond,
+            cnpj=f"C-{uuid.uuid4().hex[:14]}",
+            total_unidades=0,
+        )
+        perfil.condominios.add(cond)
+        return cond
 
     @action(detail=True, methods=["get"], url_path="registros")
     def registros(self, request, pk=None):

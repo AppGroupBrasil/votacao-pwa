@@ -171,9 +171,11 @@ class PresencaManual(models.Model):
         ordering = ["criado_em"]
         constraints = [
             # Uma identidade facial só marca presença uma vez por lista.
+            # Condição idêntica à da migration 0009 (identidade preenchida), para
+            # não gerar migração fantasma que derrubaria/recriaria a constraint.
             models.UniqueConstraint(
-                fields=["lista", "identidade"],
-                condition=~models.Q(identidade=None),
+                fields=("lista", "identidade"),
+                condition=models.Q(("identidade__isnull", False)),
                 name="unique_presenca_identidade_por_lista",
             )
         ]

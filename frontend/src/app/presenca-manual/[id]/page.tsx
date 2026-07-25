@@ -475,8 +475,10 @@ export default function PresencaManualPublicaPage() {
         </h1>
         <p className="text-gray-500">
           {jaPresente
-            ? `Sua presença nesta assembleia já estava registrada, ${nome}.`
-            : `Obrigado, ${nome}.`}
+            ? `Sua presença nesta assembleia já estava registrada${
+                nome.trim() ? `, ${nome.trim()}` : ""
+              }.`
+            : `Obrigado${nome.trim() ? `, ${nome.trim()}` : ""}.`}
         </p>
       </div>
     );
