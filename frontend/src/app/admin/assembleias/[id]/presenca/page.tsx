@@ -308,7 +308,13 @@ export default function ListaPresencaPage() {
                         </a>
                       ) : null}
                       {!capturaMap[p.id]?.selfie && !capturaMap[p.id]?.assinatura && p.geo_lat == null ? (
-                        <span className="text-gray-300">—</span>
+                        pedidosRef.current.has(p.id) && !p.assinatura_facial ? (
+                          <span className="text-amber-600 text-xs whitespace-nowrap">
+                            Não autorizado pelo usuário
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )
                       ) : null}
                     </div>
                   </td>

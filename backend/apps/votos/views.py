@@ -644,6 +644,7 @@ def acesso_manual(request, assembleia_id):
         bloco=bloco,
         apartamento=apartamento,
         metodo_auth="manual",
+        selfie=selfie,
         ip_address=get_client_ip(request),
         user_agent=user_agent,
         device_info=infer_device_info(user_agent),

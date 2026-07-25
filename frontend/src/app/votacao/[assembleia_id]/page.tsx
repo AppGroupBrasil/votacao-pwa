@@ -185,6 +185,7 @@ export default function VotacaoPage() {
                 setAuthToken(token);
               }}
               onEmail={() => setEntryMode("email")}
+              onManual={() => setEntryMode("manual")}
             />
           )}
           {entryMode === "manual" && (

@@ -23,10 +23,12 @@ export default function AcessoFacialVotacao({
   assembleiaId,
   onSuccess,
   onEmail,
+  onManual,
 }: {
   assembleiaId: string;
   onSuccess: (token: string, votanteId: string) => void;
   onEmail: () => void;
+  onManual: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -277,10 +279,16 @@ export default function AcessoFacialVotacao({
           )}
         </button>
         <button
+          onClick={onManual}
+          className="w-full mt-3 text-sm text-primary-600 hover:text-primary-700 inline-flex items-center justify-center gap-1 font-medium"
+        >
+          <Camera className="w-4 h-4" /> Prefiro tirar só a selfie
+        </button>
+        <button
           onClick={onEmail}
           className="w-full mt-2 text-sm text-gray-500 hover:text-gray-700 inline-flex items-center justify-center gap-1"
         >
-          <Mail className="w-4 h-4" /> Prefiro entrar pelo e-mail
+          <Mail className="w-4 h-4" /> Ou entrar pelo e-mail
         </button>
       </div>
     );
@@ -345,10 +353,16 @@ export default function AcessoFacialVotacao({
       )}
 
       <button
+        onClick={onManual}
+        className="w-full mt-3 text-sm text-primary-600 hover:text-primary-700 inline-flex items-center justify-center gap-1 font-medium"
+      >
+        <Camera className="w-4 h-4" /> Não consigo pelo rosto — tirar só a selfie
+      </button>
+      <button
         onClick={onEmail}
         className="w-full mt-2 text-sm text-gray-500 hover:text-gray-700 inline-flex items-center justify-center gap-1"
       >
-        <Mail className="w-4 h-4" /> Não consigo pelo rosto — usar e-mail
+        <Mail className="w-4 h-4" /> Ou entrar pelo e-mail
       </button>
     </div>
   );
