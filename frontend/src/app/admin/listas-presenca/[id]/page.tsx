@@ -124,6 +124,8 @@ export default function RegistrosPresencaPage() {
             morador&quot; para conferir como a lista aparece para eles.
           </p>
           <LinkDestaque
+            abrirLabel="Abrir lista de presença"
+            shareTitle="Lista de presença"
             url={
               lista.codigo_curto
                 ? `${
