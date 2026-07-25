@@ -169,6 +169,14 @@ class PresencaManual(models.Model):
 
     class Meta:
         ordering = ["criado_em"]
+        constraints = [
+            # Uma identidade facial só marca presença uma vez por lista.
+            models.UniqueConstraint(
+                fields=["lista", "identidade"],
+                condition=~models.Q(identidade=None),
+                name="unique_presenca_identidade_por_lista",
+            )
+        ]
 
     def __str__(self):
         return self.nome

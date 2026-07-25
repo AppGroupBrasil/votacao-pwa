@@ -52,6 +52,7 @@ export default function PresencaManualPublicaPage() {
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [enviado, setEnviado] = useState(false);
+  const [jaPresente, setJaPresente] = useState(false);
 
   const [nome, setNome] = useState("");
   const [perfil, setPerfil] = useState<Perfil>("proprietario");
@@ -400,7 +401,7 @@ export default function PresencaManualPublicaPage() {
       }
       setEnviando(true);
       try {
-        await api.registrarPresencaFacial(id, {
+        const r = await api.registrarPresencaFacial(id, {
           descriptor: descriptorFacial,
           nome: nome.trim(),
           bloco: bloco.trim(),
@@ -411,6 +412,8 @@ export default function PresencaManualPublicaPage() {
           consentimento_lgpd: consentimento,
           declaracao_veracidade: consentimento,
         });
+        if (r.nome) setNome(r.nome);
+        if (r.ja_presente) setJaPresente(true);
         setEnviado(true);
       } catch (e: any) {
         setErro(
@@ -484,8 +487,14 @@ export default function PresencaManualPublicaPage() {
         <div className="rounded-full bg-green-100 text-green-600 p-4 mb-4">
           <Check className="w-10 h-10" />
         </div>
-        <h1 className="text-xl font-bold mb-1">Presença registrada!</h1>
-        <p className="text-gray-500">Obrigado, {nome}.</p>
+        <h1 className="text-xl font-bold mb-1">
+          {jaPresente ? "Você já está presente!" : "Presença registrada!"}
+        </h1>
+        <p className="text-gray-500">
+          {jaPresente
+            ? `Sua presença nesta assembleia já estava registrada, ${nome}.`
+            : `Obrigado, ${nome}.`}
+        </p>
       </div>
     );
   }

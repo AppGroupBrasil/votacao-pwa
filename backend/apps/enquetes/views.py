@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.core.cache import cache
 from django.core.mail import send_mail
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -295,7 +295,11 @@ def presenca_reconhecer_facial(request, lista_id):
         # Sem condomínio não há base permanente onde reconhecer.
         return Response({"encontrado": False})
 
-    identidades = IdentidadeFacial.objects.filter(condominio_id=lista.condominio_id)
+    # defer("selfie"): a foto-comprovante é base64 pesado e não entra na comparação;
+    # sem isso, cada leitura puxaria a selfie de TODOS os moradores do condomínio.
+    identidades = IdentidadeFacial.objects.filter(
+        condominio_id=lista.condominio_id
+    ).defer("selfie")
     ident, _dist = melhor_correspondencia(descriptor, identidades)
     if ident is None:
         return Response({"encontrado": False})
@@ -358,7 +362,7 @@ def registrar_presenca_facial(request, lista_id):
     if lista.condominio_id:
         identidades = IdentidadeFacial.objects.filter(
             condominio_id=lista.condominio_id
-        )
+        ).defer("selfie")
         ident, _dist = melhor_correspondencia(descriptor, identidades)
 
     if ident is None:
@@ -406,23 +410,36 @@ def registrar_presenca_facial(request, lista_id):
 
     user_agent = get_client_user_agent(request)
     marca_aparelho = str(request.data.get("marca_aparelho", "")).strip()[:120]
-    PresencaManual.objects.create(
-        lista=lista,
-        identidade=ident,
-        nome=nome_reg,
-        perfil=perfil_reg,
-        bloco=bloco_reg,
-        apartamento=apto_reg,
-        selfie=selfie or (ident.selfie if ident else ""),
-        metodo_auth="facial",
-        marca_aparelho=marca_aparelho or infer_device_info(user_agent),
-        user_agent=user_agent,
-        device_info=infer_device_info(user_agent),
-        consentimento_lgpd=True,
-        consentimento_em=agora,
-        declaracao_veracidade=bool(request.data.get("declaracao_veracidade")),
-        ip_address=get_client_ip(request),
-    )
+    try:
+        # Savepoint próprio: se dois cliques/aparelhos gravarem ao mesmo tempo,
+        # a constraint única barra o segundo sem derrubar a requisição.
+        with transaction.atomic():
+            PresencaManual.objects.create(
+                lista=lista,
+                identidade=ident,
+                nome=nome_reg,
+                perfil=perfil_reg,
+                bloco=bloco_reg,
+                apartamento=apto_reg,
+                selfie=selfie or (ident.selfie if ident else ""),
+                metodo_auth="facial",
+                marca_aparelho=marca_aparelho or infer_device_info(user_agent),
+                user_agent=user_agent,
+                device_info=infer_device_info(user_agent),
+                consentimento_lgpd=True,
+                consentimento_em=agora,
+                declaracao_veracidade=bool(request.data.get("declaracao_veracidade")),
+                ip_address=get_client_ip(request),
+            )
+    except IntegrityError:
+        return Response(
+            {"ok": True, "ja_presente": True, "novo": False, "nome": nome_reg}
+        )
+
+    # Rosto já conhecido: registra que foi visto de novo nesta assembleia.
+    if ident is not None and not novo:
+        ident.save(update_fields=["ultimo_visto_em"])
+
     return Response(
         {"ok": True, "ja_presente": False, "novo": novo, "nome": nome_reg},
         status=status.HTTP_201_CREATED,
