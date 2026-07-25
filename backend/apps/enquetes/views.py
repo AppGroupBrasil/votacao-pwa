@@ -383,6 +383,12 @@ def registrar_presenca_facial(request, lista_id):
             {"error": "Imagem muito grande."}, status=status.HTTP_400_BAD_REQUEST
         )
 
+    assinatura = str(request.data.get("assinatura", ""))
+    if len(assinatura) > 2_000_000:
+        return Response(
+            {"error": "Assinatura muito grande."}, status=status.HTTP_400_BAD_REQUEST
+        )
+
     perfis_validos = {"proprietario", "locatario", "conjuge", "procurador", "outro"}
     agora = timezone.now()
 
@@ -451,6 +457,7 @@ def registrar_presenca_facial(request, lista_id):
                 bloco=bloco_reg,
                 apartamento=apto_reg,
                 selfie=selfie or (ident.selfie if ident else ""),
+                assinatura=assinatura,
                 metodo_auth="facial",
                 marca_aparelho=marca_aparelho or infer_device_info(user_agent),
                 user_agent=user_agent,

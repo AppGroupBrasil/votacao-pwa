@@ -383,6 +383,11 @@ export default function PresencaManualPublicaPage() {
           return;
         }
       }
+      if (!temAssinatura) {
+        setErro("Assine no campo indicado.");
+        return;
+      }
+      const assinaturaFacialDesenho = canvasRef.current?.toDataURL("image/png") || "";
       setEnviando(true);
       try {
         const r = await api.registrarPresencaFacial(id, {
@@ -392,6 +397,7 @@ export default function PresencaManualPublicaPage() {
           apartamento: apartamento.trim(),
           perfil,
           selfie,
+          assinatura: assinaturaFacialDesenho,
           marca_aparelho: detectarAparelho(),
           consentimento_lgpd: consentimento,
           declaracao_veracidade: consentimento,
@@ -790,8 +796,8 @@ export default function PresencaManualPublicaPage() {
           )}
         </div>
 
-        {/* Assinatura — só na via reserva (digital/e-mail). No facial, o rosto assina. */}
-        {etapa !== "facial" && (
+        {/* Assinatura — todo presente assina (inclusive no fluxo facial). */}
+        {metodo && (
           <div className="card mb-4">
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium">Assinatura</label>

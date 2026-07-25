@@ -800,6 +800,7 @@ export const api = {
       apartamento?: string;
       perfil?: string;
       selfie?: string;
+      assinatura?: string;
       marca_aparelho?: string;
       consentimento_lgpd: boolean;
       declaracao_veracidade?: boolean;
