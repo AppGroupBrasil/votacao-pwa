@@ -505,6 +505,12 @@ export default function PresencaManualPublicaPage() {
       ? "Identidade confirmada pela digital do aparelho"
       : "Identidade confirmada por código no e-mail";
 
+  // A assinatura confirma os dados: só aparece depois de tudo preenchido.
+  // Rosto reconhecido não digita nada (o cadastro já existe no condomínio).
+  const dadosCompletos =
+    (metodo === "facial" && reconhecido) ||
+    (nome.trim() !== "" && apartamento.trim() !== "");
+
   return (
     <div className="min-h-screen bg-gray-50 py-6 px-4">
       <div className="max-w-md mx-auto">
@@ -796,8 +802,8 @@ export default function PresencaManualPublicaPage() {
           )}
         </div>
 
-        {/* Assinatura — todo presente assina (inclusive no fluxo facial). */}
-        {metodo && (
+        {/* Assinatura — última etapa: só depois de todos os dados preenchidos. */}
+        {metodo && dadosCompletos && (
           <div className="card mb-4">
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium">Assinatura</label>
