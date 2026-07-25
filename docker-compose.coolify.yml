@@ -49,6 +49,7 @@ services:
         condition: service_healthy
     volumes:
       - /mnt/docker-data/logs/votacao:/app/logs
+      - votacao_media:/app/media
     networks:
       - internal
       - coolify
@@ -125,6 +126,7 @@ services:
 
 volumes:
   votacao_postgres:
+  votacao_media:
 
 networks:
   internal:

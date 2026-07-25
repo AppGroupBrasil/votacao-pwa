@@ -74,6 +74,7 @@ export default function AssembleiaDetailPage() {
   });
   const [questaoImagens, setQuestaoImagens] = useState<(File | null)[]>([null, null]);
   const [questaoArquivos, setQuestaoArquivos] = useState<(File | null)[]>([null, null]);
+  const [mostrarMidia, setMostrarMidia] = useState(false);
   const [editingQuestaoId, setEditingQuestaoId] = useState<string | null>(null);
   const [editQuestaoForm, setEditQuestaoForm] = useState({
     titulo: "",
@@ -82,6 +83,7 @@ export default function AssembleiaDetailPage() {
   });
   const [editQuestaoImagens, setEditQuestaoImagens] = useState<(File | null)[]>([]);
   const [editQuestaoArquivos, setEditQuestaoArquivos] = useState<(File | null)[]>([]);
+  const [mostrarMidiaEdit, setMostrarMidiaEdit] = useState(false);
 
   const [isMaster, setIsMaster] = useState(false);
 
@@ -263,6 +265,9 @@ export default function AssembleiaDetailPage() {
     });
     setEditQuestaoImagens(q.opcoes.map(() => null));
     setEditQuestaoArquivos(q.opcoes.map(() => null));
+    setMostrarMidiaEdit(
+      q.opcoes.some((o) => o.imagem_url || o.arquivo_url || o.link_externo)
+    );
   }
 
   async function handleSaveQuestao(e: React.FormEvent) {
@@ -827,6 +832,21 @@ export default function AssembleiaDetailPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Opções de Voto
               </label>
+              <label className="mb-3 flex items-center gap-2 text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={mostrarMidia}
+                  onChange={(e) => {
+                    setMostrarMidia(e.target.checked);
+                    if (!e.target.checked) {
+                      setQuestaoImagens(questaoForm.opcoes.map(() => null));
+                      setQuestaoArquivos(questaoForm.opcoes.map(() => null));
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                Adicionar foto, arquivo ou link nas opções
+              </label>
               <div className="space-y-4">
                 {questaoForm.opcoes.map((opcao, i) => (
                   <div key={i} className="border rounded-lg p-3 space-y-2">
@@ -850,8 +870,12 @@ export default function AssembleiaDetailPage() {
                         </button>
                       )}
                     </div>
-                    {/* Anexos da opção */}
-                    <div className="ml-7 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {/* Anexos da opção (foto/arquivo/link) */}
+                    <div
+                      className={`ml-7 grid grid-cols-1 sm:grid-cols-3 gap-2 ${
+                        mostrarMidia ? "" : "hidden"
+                      }`}
+                    >
                       <div>
                         <label className="flex items-center gap-1 text-xs text-gray-500 mb-1">
                           <ImageIcon className="w-3 h-3" /> Foto
@@ -976,6 +1000,15 @@ export default function AssembleiaDetailPage() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Opções de Voto</label>
+                      <label className="mb-3 flex items-center gap-2 text-sm text-gray-600">
+                        <input
+                          type="checkbox"
+                          checked={mostrarMidiaEdit}
+                          onChange={(e) => setMostrarMidiaEdit(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                        Adicionar foto, arquivo ou link nas opções
+                      </label>
                       <div className="space-y-4">
                         {editQuestaoForm.opcoes.map((opcao, i) => (
                           <div key={i} className="border rounded-lg p-3 space-y-2">
@@ -998,8 +1031,12 @@ export default function AssembleiaDetailPage() {
                                 </button>
                               )}
                             </div>
-                            {/* Anexos da opção */}
-                            <div className="ml-7 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            {/* Anexos da opção (foto/arquivo/link) */}
+                            <div
+                              className={`ml-7 grid grid-cols-1 sm:grid-cols-3 gap-2 ${
+                                mostrarMidiaEdit ? "" : "hidden"
+                              }`}
+                            >
                               <div>
                                 <label className="flex items-center gap-1 text-xs text-gray-500 mb-1">
                                   <ImageIcon className="w-3 h-3" /> Foto

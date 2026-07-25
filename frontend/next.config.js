@@ -26,6 +26,18 @@ const nextConfig = {
       { source: "/votar", destination: "/acesso", permanent: false },
     ];
   },
+  async rewrites() {
+    // As fotos/anexos das questões (media) ficam no backend. Quando o request
+    // de /media/* chega ao frontend, encaminhamos para o container do backend
+    // na rede interna do Docker (só resolve em produção; em dev o Django serve
+    // direto e este rewrite não é acionado).
+    return [
+      {
+        source: "/media/:path*",
+        destination: "http://votacao-backend:8000/media/:path*",
+      },
+    ];
+  },
   compiler: {
     removeConsole:
       process.env.NODE_ENV === "production"

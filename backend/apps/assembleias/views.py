@@ -448,7 +448,13 @@ class QuestaoViewSet(viewsets.ModelViewSet):
         O master (superuser) pode alterar questões mesmo com a assembleia aberta."""
         if getattr(self.request.user, "is_superuser", False):
             return None
-        assembleia = Assembleia.objects.get(pk=self.kwargs["assembleia_pk"])
+        try:
+            assembleia = Assembleia.objects.get(pk=self.kwargs["assembleia_pk"])
+        except Assembleia.DoesNotExist:
+            return Response(
+                {"error": "Assembleia não encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         if assembleia.status != Assembleia.Status.RASCUNHO:
             return Response(
                 {"error": "Não é possível alterar questões após a votação ser aberta ou encerrada."},
