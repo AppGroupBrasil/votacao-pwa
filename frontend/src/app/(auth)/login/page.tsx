@@ -69,7 +69,8 @@ export default function LoginPage() {
               E-mail
             </label>
             <input
-              type="email"
+              type="text"
+              inputMode="email"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="input-field"
