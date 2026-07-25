@@ -7,15 +7,6 @@ function dataHoraBrasilia(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", { timeZone: FUSO_BRASILIA });
 }
 
-const CORES = [
-  "from-rose-400 to-pink-600",
-  "from-amber-400 to-orange-600",
-  "from-emerald-400 to-green-600",
-  "from-sky-400 to-blue-600",
-  "from-violet-400 to-purple-600",
-  "from-teal-400 to-cyan-600",
-];
-
 type Exemplo = {
   nome: string;
   perfil: string;
@@ -56,14 +47,51 @@ const REGISTROS: Exemplo[] = [
   { nome: "Pixinguinha", perfil: "proprietario", bloco: "C", apartamento: "33", metodo: "facial", aparelho: "Android / Chrome", ip: "187.66.200.101", criado_em: "2026-07-25T19:50:00-03:00" },
 ];
 
-function iniciais(nome: string) {
-  return nome
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0])
-    .join("")
-    .toUpperCase();
+// Retrato em traço preto (estilo desenho a lápis), só para mostrar que naquele
+// lugar fica o ROSTO (a selfie) do morador — e não o nome. Não representa
+// ninguém: pequenas variações fazem cada linha parecer uma pessoa diferente.
+function RostoSketch({ variante }: { variante: number }) {
+  const v = ((variante % 6) + 6) % 6;
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      className="h-full w-full"
+      fill="none"
+      stroke="#111827"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* ombros e pescoço */}
+      <path d="M12 60 C14 47 22 44 32 44 C42 44 50 47 52 60" />
+      <path d="M28 35 v6 M36 35 v6" />
+      {/* cabeça */}
+      <circle cx="32" cy="24" r="11" />
+      {/* olhos, nariz e boca */}
+      <path d="M26 22 h3 M35 22 h3" />
+      <path d="M31.5 24 v3 M31.5 27 h1.5" />
+      <path d="M29 30 q3 2.5 6 0" />
+      {/* cabelo/acessório — varia por pessoa */}
+      {v === 0 && <path d="M21 21 C22 11 42 11 43 21" />}
+      {v === 1 && (
+        <>
+          <path d="M21 22 C19 11 45 11 43 22" />
+          <circle cx="45" cy="15" r="4" />
+        </>
+      )}
+      {v === 2 && <path d="M23 19 q9 -11 18 0" strokeDasharray="2 3" />}
+      {v === 3 && <path d="M20 22 q1 -11 12 -11 q11 0 12 11" />}
+      {v === 4 && <path d="M19 20 h26 M23 20 v-3 h18 v3" />}
+      {v === 5 && (
+        <>
+          <path d="M21 21 C22 11 42 11 43 21" />
+          <circle cx="27" cy="22" r="2.5" />
+          <circle cx="37" cy="22" r="2.5" />
+          <path d="M29.5 22 h5" />
+        </>
+      )}
+    </svg>
+  );
 }
 
 export default function ExemploListaPresencaPage() {
@@ -112,12 +140,8 @@ export default function ExemploListaPresencaPage() {
                 <span className="w-8 shrink-0 text-right text-sm font-semibold text-blue-700">
                   {i + 1}.
                 </span>
-                <div
-                  className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-blue-200 bg-gradient-to-br text-lg font-bold text-white ${
-                    CORES[i % CORES.length]
-                  }`}
-                >
-                  {iniciais(r.nome)}
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-300 bg-white p-1">
+                  <RostoSketch variante={i} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate font-semibold">{r.nome}</h3>
