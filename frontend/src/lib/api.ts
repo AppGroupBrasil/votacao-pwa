@@ -765,15 +765,34 @@ export const api = {
     id: string,
     data: {
       nome: string;
+      perfil?: string;
       bloco?: string;
       apartamento?: string;
+      email?: string;
       selfie?: string;
       assinatura: string;
+      metodo_auth: string;
+      assinatura_facial?: string;
+      marca_aparelho?: string;
+      consentimento_lgpd: boolean;
+      declaracao_veracidade?: boolean;
     }
   ) =>
     request<{ ok: boolean }>(
       `/enquetes/listas-presenca/${id}/registrar/`,
       { method: "POST", body: JSON.stringify(data) }
+    ),
+
+  presencaEnviarCodigo: (id: string, email: string) =>
+    request<{ sent: boolean; email_masked: string }>(
+      `/enquetes/listas-presenca/${id}/enviar-codigo/`,
+      { method: "POST", body: JSON.stringify({ email }) }
+    ),
+
+  presencaVerificarCodigo: (id: string, email: string, codigo: string) =>
+    request<{ ok: boolean }>(
+      `/enquetes/listas-presenca/${id}/verificar-codigo/`,
+      { method: "POST", body: JSON.stringify({ email, codigo }) }
     ),
 
   // Acesso do morador (login + senha)

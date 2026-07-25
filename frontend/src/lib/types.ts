@@ -320,10 +320,19 @@ export interface ListaPresenca {
 export interface PresencaManualRegistro {
   id: string;
   nome: string;
+  perfil?: string;
   bloco: string;
   apartamento: string;
+  email?: string;
   selfie: string;
   assinatura: string;
+  metodo_auth?: string;
+  assinatura_facial?: string;
+  marca_aparelho?: string;
+  device_info?: string;
+  ip_address?: string | null;
+  consentimento_lgpd?: boolean;
+  declaracao_veracidade?: boolean;
   criado_em: string;
 }
 

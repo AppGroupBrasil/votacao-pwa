@@ -26,21 +26,21 @@ type Acao = {
 
 const acoes: Acao[] = [
   {
-    href: "/admin/assembleias/nova-simples",
-    titulo: "Criar assembleia",
-    descricao:
-      "Condomínio, tipo e as perguntas. Gera o link e o comprovante. O morador se cadastra na hora — sem cadastro prévio.",
-    icon: Vote,
-    cor: "from-primary-600 to-primary-800",
-    destaque: true,
-  },
-  {
     href: "/admin/listas-presenca",
     titulo: "Criar lista de presença",
     descricao:
       "Link para os presentes registrarem presença pelo celular: selfie, nome, apartamento e assinatura. Sem cadastro prévio.",
     icon: ClipboardList,
     cor: "from-indigo-500 to-blue-600",
+    destaque: true,
+  },
+  {
+    href: "/admin/assembleias/nova-simples",
+    titulo: "Criar assembleia",
+    descricao:
+      "Condomínio, tipo e as perguntas. Gera o link e o comprovante. O morador se cadastra na hora — sem cadastro prévio.",
+    icon: Vote,
+    cor: "from-primary-600 to-primary-800",
   },
 ];
 

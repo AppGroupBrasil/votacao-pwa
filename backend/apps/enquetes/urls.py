@@ -6,6 +6,8 @@ from .views import (
     ListaPresencaViewSet,
     enquete_publica,
     lista_presenca_publica,
+    presenca_enviar_codigo,
+    presenca_verificar_codigo,
     registrar_presenca_manual,
     resolver_codigo_enquete,
     resolver_codigo_lista,
@@ -32,6 +34,16 @@ urlpatterns = [
         "listas-presenca/<uuid:lista_id>/registrar/",
         registrar_presenca_manual,
         name="lista-presenca-registrar",
+    ),
+    path(
+        "listas-presenca/<uuid:lista_id>/enviar-codigo/",
+        presenca_enviar_codigo,
+        name="lista-presenca-enviar-codigo",
+    ),
+    path(
+        "listas-presenca/<uuid:lista_id>/verificar-codigo/",
+        presenca_verificar_codigo,
+        name="lista-presenca-verificar-codigo",
     ),
     path(
         "resolver/<str:codigo>/",

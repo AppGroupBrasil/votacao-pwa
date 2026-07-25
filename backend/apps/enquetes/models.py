@@ -122,10 +122,40 @@ class PresencaManual(models.Model):
         ListaPresenca, on_delete=models.CASCADE, related_name="registros"
     )
     nome = models.CharField(max_length=200)
+    perfil = models.CharField(
+        max_length=20,
+        choices=[
+            ("proprietario", "Proprietário"),
+            ("locatario", "Locatário"),
+            ("conjuge", "Cônjuge"),
+            ("procurador", "Procurador"),
+            ("outro", "Outro"),
+        ],
+        default="proprietario",
+    )
     bloco = models.CharField(max_length=20, blank=True, default="")
     apartamento = models.CharField(max_length=20, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
     selfie = models.TextField(blank=True, default="")
     assinatura = models.TextField(blank=True, default="")
+    metodo_auth = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Como o morador se identificou: facial, webauthn (digital) ou otp (código por e-mail).",
+    )
+    assinatura_facial = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Hash SHA-256 do vetor facial capturado (biometria facial).",
+    )
+    marca_aparelho = models.CharField(max_length=120, blank=True, default="")
+    user_agent = models.TextField(blank=True, default="")
+    device_info = models.CharField(max_length=255, blank=True, default="")
+    consentimento_lgpd = models.BooleanField(default=False)
+    consentimento_em = models.DateTimeField(null=True, blank=True)
+    declaracao_veracidade = models.BooleanField(default=False)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 

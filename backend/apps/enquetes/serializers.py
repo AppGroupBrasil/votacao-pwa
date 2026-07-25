@@ -78,10 +78,19 @@ class PresencaManualSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "nome",
+            "perfil",
             "bloco",
             "apartamento",
+            "email",
             "selfie",
             "assinatura",
+            "metodo_auth",
+            "assinatura_facial",
+            "marca_aparelho",
+            "device_info",
+            "ip_address",
+            "consentimento_lgpd",
+            "declaracao_veracidade",
             "criado_em",
         ]
 

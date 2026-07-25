@@ -14,6 +14,20 @@ function dataHoraBrasilia(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", { timeZone: FUSO_BRASILIA });
 }
 
+const PERFIL_LABEL: Record<string, string> = {
+  proprietario: "Proprietário",
+  locatario: "Locatário",
+  conjuge: "Cônjuge",
+  procurador: "Procurador",
+  outro: "Outro",
+};
+
+const METODO_LABEL: Record<string, string> = {
+  facial: "Biometria facial",
+  webauthn: "Digital do aparelho",
+  otp: "Código por e-mail",
+};
+
 export default function RegistrosPresencaPage() {
   const params = useParams();
   const id = params.id as string;
@@ -210,11 +224,29 @@ export default function RegistrosPresencaPage() {
                   <div className="min-w-0 flex-1">
                     <h3 className="font-semibold truncate">{r.nome}</h3>
                     <p className="text-sm text-gray-500">
+                      {r.perfil ? `${PERFIL_LABEL[r.perfil] || r.perfil} · ` : ""}
                       {r.bloco ? `Bloco ${r.bloco} · ` : ""}Ap. {r.apartamento}
                     </p>
                     <p className="text-xs text-gray-400">
                       {dataHoraBrasilia(r.criado_em)} (horário de Brasília)
                     </p>
+                    <div className="mt-1 flex flex-wrap gap-1 print:hidden">
+                      {r.metodo_auth && (
+                        <span className="inline-flex items-center rounded bg-green-50 px-1.5 py-0.5 text-[11px] font-medium text-green-700 ring-1 ring-green-200">
+                          {METODO_LABEL[r.metodo_auth] || r.metodo_auth}
+                        </span>
+                      )}
+                      {(r.marca_aparelho || r.device_info) && (
+                        <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">
+                          {r.marca_aparelho || r.device_info}
+                        </span>
+                      )}
+                      {r.ip_address && (
+                        <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">
+                          IP {r.ip_address}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {r.assinatura && (
                     // eslint-disable-next-line @next/next/no-img-element

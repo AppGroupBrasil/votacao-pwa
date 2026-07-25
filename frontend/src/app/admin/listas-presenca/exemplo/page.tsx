@@ -18,23 +18,42 @@ const CORES = [
 
 type Exemplo = {
   nome: string;
+  perfil: string;
   bloco: string;
   apartamento: string;
+  metodo: string;
+  aparelho: string;
+  ip: string;
   criado_em: string;
 };
 
+const PERFIL_LABEL: Record<string, string> = {
+  proprietario: "Proprietário",
+  locatario: "Locatário",
+  conjuge: "Cônjuge",
+  procurador: "Procurador",
+  outro: "Outro",
+};
+
+const METODO_LABEL: Record<string, string> = {
+  facial: "Biometria facial",
+  webauthn: "Digital do aparelho",
+  otp: "Código por e-mail",
+};
+
 // Lista 100% fictícia — nomes de artistas, escritores e músicos brasileiros,
-// só para o síndico ver como fica uma lista de presença preenchida.
+// só para o síndico ver como fica uma lista de presença preenchida, já com os
+// dados de segurança (identificação, aparelho e IP).
 const REGISTROS: Exemplo[] = [
-  { nome: "Machado de Assis", bloco: "A", apartamento: "101", criado_em: "2026-07-25T19:31:00-03:00" },
-  { nome: "Clarice Lispector", bloco: "A", apartamento: "102", criado_em: "2026-07-25T19:33:00-03:00" },
-  { nome: "Carlos Drummond de Andrade", bloco: "A", apartamento: "204", criado_em: "2026-07-25T19:35:00-03:00" },
-  { nome: "Tom Jobim", bloco: "B", apartamento: "301", criado_em: "2026-07-25T19:38:00-03:00" },
-  { nome: "Elis Regina", bloco: "B", apartamento: "302", criado_em: "2026-07-25T19:40:00-03:00" },
-  { nome: "Tarsila do Amaral", bloco: "B", apartamento: "405", criado_em: "2026-07-25T19:42:00-03:00" },
-  { nome: "Cartola", bloco: "C", apartamento: "12", criado_em: "2026-07-25T19:45:00-03:00" },
-  { nome: "Cecília Meireles", bloco: "C", apartamento: "21", criado_em: "2026-07-25T19:47:00-03:00" },
-  { nome: "Pixinguinha", bloco: "C", apartamento: "33", criado_em: "2026-07-25T19:50:00-03:00" },
+  { nome: "Machado de Assis", perfil: "proprietario", bloco: "A", apartamento: "101", metodo: "facial", aparelho: "Android / Chrome", ip: "189.40.12.7", criado_em: "2026-07-25T19:31:00-03:00" },
+  { nome: "Clarice Lispector", perfil: "proprietario", bloco: "A", apartamento: "102", metodo: "facial", aparelho: "iPhone / Safari", ip: "201.17.88.204", criado_em: "2026-07-25T19:33:00-03:00" },
+  { nome: "Carlos Drummond de Andrade", perfil: "locatario", bloco: "A", apartamento: "204", metodo: "webauthn", aparelho: "Android / Chrome", ip: "179.201.5.66", criado_em: "2026-07-25T19:35:00-03:00" },
+  { nome: "Tom Jobim", perfil: "proprietario", bloco: "B", apartamento: "301", metodo: "facial", aparelho: "iPhone / Safari", ip: "191.240.33.19", criado_em: "2026-07-25T19:38:00-03:00" },
+  { nome: "Elis Regina", perfil: "conjuge", bloco: "B", apartamento: "302", metodo: "otp", aparelho: "Windows / Edge", ip: "177.92.140.8", criado_em: "2026-07-25T19:40:00-03:00" },
+  { nome: "Tarsila do Amaral", perfil: "proprietario", bloco: "B", apartamento: "405", metodo: "facial", aparelho: "Android / Chrome", ip: "186.212.9.145", criado_em: "2026-07-25T19:42:00-03:00" },
+  { nome: "Cartola", perfil: "procurador", bloco: "C", apartamento: "12", metodo: "webauthn", aparelho: "Android / Chrome", ip: "200.155.71.30", criado_em: "2026-07-25T19:45:00-03:00" },
+  { nome: "Cecília Meireles", perfil: "locatario", bloco: "C", apartamento: "21", metodo: "otp", aparelho: "iPhone / Safari", ip: "189.5.44.212", criado_em: "2026-07-25T19:47:00-03:00" },
+  { nome: "Pixinguinha", perfil: "proprietario", bloco: "C", apartamento: "33", metodo: "facial", aparelho: "Android / Chrome", ip: "187.66.200.101", criado_em: "2026-07-25T19:50:00-03:00" },
 ];
 
 function iniciais(nome: string) {
@@ -103,11 +122,23 @@ export default function ExemploListaPresencaPage() {
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate font-semibold">{r.nome}</h3>
                   <p className="text-sm text-gray-500">
-                    Bloco {r.bloco} · Ap. {r.apartamento}
+                    {PERFIL_LABEL[r.perfil]} · Bloco {r.bloco} · Ap.{" "}
+                    {r.apartamento}
                   </p>
                   <p className="text-xs text-gray-400">
                     {dataHoraBrasilia(r.criado_em)} (horário de Brasília)
                   </p>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <span className="inline-flex items-center rounded bg-green-50 px-1.5 py-0.5 text-[11px] font-medium text-green-700 ring-1 ring-green-200">
+                      {METODO_LABEL[r.metodo]}
+                    </span>
+                    <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">
+                      {r.aparelho}
+                    </span>
+                    <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">
+                      IP {r.ip}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex h-16 w-28 shrink-0 items-center justify-center rounded border border-gray-200 bg-white">
                   <span
