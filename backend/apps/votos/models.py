@@ -24,11 +24,26 @@ class VotanteManual(models.Model):
     user_agent = models.TextField(blank=True, default="")
     device_info = models.CharField(max_length=255, blank=True, default="")
     device_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    identidade_facial = models.ForeignKey(
+        "eleitores.IdentidadeFacial",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="votantes_manuais",
+        help_text="Rosto reconhecido (quando entrou pela facial). Garante 1 voto por rosto.",
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["criado_em"]
         verbose_name_plural = "votantes manuais"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["assembleia", "identidade_facial"],
+                condition=models.Q(identidade_facial__isnull=False),
+                name="uniq_votante_facial_por_assembleia",
+            )
+        ]
 
     def __str__(self):
         return f"{self.nome} - {self.apartamento} (manual)"

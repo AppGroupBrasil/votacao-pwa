@@ -483,6 +483,32 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  acessoFacialVotacao: (
+    assembleiaId: string,
+    data: {
+      descriptor: number[];
+      nome?: string;
+      bloco?: string;
+      apartamento?: string;
+      perfil?: string;
+      selfie?: string;
+      consentimento_lgpd?: boolean;
+      device_id?: string;
+    }
+  ) =>
+    request<{
+      encontrado: boolean;
+      authenticated?: boolean;
+      method?: string;
+      novo?: boolean;
+      nome?: string;
+      votante_manual_id?: string;
+      token?: string;
+    }>(`/votos/${assembleiaId}/acesso-facial/`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   getVotosManuais: (assembleiaId: string) =>
     request<{
       total: number;

@@ -17,7 +17,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.assembleias.models import Assembleia, OpcaoVoto, Presenca, Questao
-from apps.eleitores.models import Eleitor
+from apps.eleitores.models import Eleitor, IdentidadeFacial
+from apps.eleitores.facial import melhor_correspondencia, validar_descriptor
 from core.permissions import IsAdminWithRole, get_user_condominios
 
 from .models import VotanteManual, Voto
@@ -552,7 +553,11 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
         votante_manual=votante,
         questao=questao,
         opcao_escolhida=opcao,
-        metodo_auth=Voto.MetodoAuth.MANUAL,
+        metodo_auth=(
+            Voto.MetodoAuth.FACIAL
+            if votante.identidade_facial_id
+            else Voto.MetodoAuth.MANUAL
+        ),
         ip_address=get_client_ip(request),
         user_agent=get_client_user_agent(request),
         device_info=infer_device_info(get_client_user_agent(request)),
@@ -662,6 +667,140 @@ def acesso_manual(request, assembleia_id):
             "token": token,
         },
         status=status.HTTP_201_CREATED,
+    )
+
+
+@ratelimit(key="ip", rate="20/m", block=True)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def acesso_facial(request, assembleia_id):
+    """Entrada da votação pelo rosto (reconhecimento 1:N, igual à lista de
+    presença). Se o rosto já é conhecido no condomínio, reconhece e libera o voto
+    na hora. Se é a primeira vez, cadastra a identidade facial (nome/unidade/
+    selfie/LGPD) ali mesmo. Garante 1 voto por rosto e registra a presença."""
+    assembleia = get_object_or_404(Assembleia, id=assembleia_id)
+
+    if assembleia.status != Assembleia.Status.ABERTA:
+        return Response(
+            {"error": "Esta assembleia não está aberta para votação"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not assembleia.condominio_id:
+        return Response(
+            {"error": "Esta votação não usa reconhecimento facial."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    descriptor = validar_descriptor(request.data.get("descriptor"))
+    if descriptor is None:
+        return Response(
+            {"error": "Não foi possível ler o rosto. Tente novamente."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Procura o rosto entre as identidades já cadastradas no condomínio.
+    identidades = IdentidadeFacial.objects.filter(
+        condominio_id=assembleia.condominio_id
+    ).defer("selfie")
+    ident, _dist = melhor_correspondencia(descriptor, identidades)
+
+    novo = False
+    if ident is None:
+        # Rosto desconhecido: sem nome, avisa o front que precisa do 1º cadastro.
+        nome = str(request.data.get("nome", "")).strip()[:200]
+        if not nome:
+            return Response({"encontrado": False}, status=status.HTTP_200_OK)
+        if not bool(request.data.get("consentimento_lgpd")):
+            return Response(
+                {"error": "É necessário concordar com o uso dos dados (LGPD)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        selfie = str(request.data.get("selfie", ""))
+        if len(selfie) > 3_500_000:
+            return Response(
+                {"error": "Imagem muito grande."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        bloco = str(request.data.get("bloco", "")).strip()[:20]
+        apartamento = str(request.data.get("apartamento", "")).strip()[:20]
+        if not apartamento:
+            return Response(
+                {"error": "Informe seu apartamento/unidade."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        perfil = str(request.data.get("perfil", "")).strip().lower()
+        if perfil not in {"proprietario", "locatario", "conjuge", "procurador", "outro"}:
+            perfil = "proprietario"
+        ident = IdentidadeFacial.objects.create(
+            condominio_id=assembleia.condominio_id,
+            nome=nome,
+            bloco=bloco,
+            apartamento=apartamento,
+            perfil=perfil,
+            descriptor=descriptor,
+            selfie=selfie,
+            consentimento_lgpd=True,
+            consentimento_em=timezone.now(),
+        )
+        novo = True
+
+    # 1 votante por rosto por assembleia (reaproveita quem já entrou antes).
+    user_agent = get_client_user_agent(request)
+    selfie_ident = (
+        IdentidadeFacial.objects.values_list("selfie", flat=True).get(id=ident.id) or ""
+    )
+    votante, criado = VotanteManual.objects.get_or_create(
+        assembleia=assembleia,
+        identidade_facial=ident,
+        defaults=dict(
+            nome=ident.nome,
+            bloco=ident.bloco or "",
+            apartamento=ident.apartamento or "",
+            selfie=selfie_ident,
+            ip_address=get_client_ip(request),
+            user_agent=user_agent,
+            device_info=infer_device_info(user_agent),
+            device_id=str(request.data.get("device_id", "")).strip()[:64],
+        ),
+    )
+    if criado:
+        Presenca.objects.create(
+            assembleia=assembleia,
+            eleitor=None,
+            nome=votante.nome,
+            bloco=votante.bloco,
+            apartamento=votante.apartamento,
+            metodo_auth="facial",
+            ip_address=get_client_ip(request),
+            user_agent=user_agent,
+            device_info=infer_device_info(user_agent),
+        )
+    if not novo:
+        ident.save(update_fields=["ultimo_visto_em"])
+
+    token = signing.dumps(
+        {
+            "manual_id": str(votante.id),
+            "assembleia_id": str(assembleia.id),
+            "method": "manual",
+        },
+        salt="vote-auth",
+    )
+
+    audit.info(
+        "acesso_facial assembleia=%s votante=%s ident=%s novo=%s",
+        assembleia.id, votante.id, ident.id, novo,
+    )
+    return Response(
+        {
+            "encontrado": True,
+            "authenticated": True,
+            "method": "facial",
+            "novo": novo,
+            "nome": votante.nome,
+            "votante_manual_id": str(votante.id),
+            "token": token,
+        },
+        status=status.HTTP_200_OK,
     )
 
 

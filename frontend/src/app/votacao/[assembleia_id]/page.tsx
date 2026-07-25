@@ -10,6 +10,7 @@ import SelfieVerify from "@/components/SelfieVerify";
 import OtpVerify from "@/components/OtpVerify";
 import IdentificacaoEmail from "@/components/IdentificacaoEmail";
 import IdentificacaoManual from "@/components/IdentificacaoManual";
+import AcessoFacialVotacao from "@/components/AcessoFacialVotacao";
 import ConsentimentoGate from "@/components/ConsentimentoGate";
 import type { Assembleia, UnidadeVotante, CapturaIdentidade } from "@/lib/types";
 
@@ -19,8 +20,10 @@ export default function VotacaoPage() {
 
   const [assembleia, setAssembleia] = useState<Assembleia | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
-  // Votação manual (sem cadastro, com selfie)
-  const [manualMode, setManualMode] = useState(false);
+  // Entrada da votação sem login: rosto (padrão) → e-mail → votação manual.
+  const [entryMode, setEntryMode] = useState<"facial" | "email" | "manual">(
+    "facial"
+  );
   const [manualId, setManualId] = useState("");
   const [votoPendente, setVotoPendente] = useState(false);
   const [authMethod, setAuthMethod] = useState<"facial" | "selfie" | "webauthn" | "otp">("facial");
@@ -163,7 +166,8 @@ export default function VotacaoPage() {
     );
   }
 
-  // Link sem login: ninguém identificado ainda → identificação por e-mail (OTP).
+  // Link sem login: ninguém identificado ainda → rosto (padrão), com e-mail e
+  // votação manual como alternativas para quem não entra pela facial.
   if (!authToken && !eleitorId) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
@@ -172,7 +176,18 @@ export default function VotacaoPage() {
             <Vote className="w-7 h-7 text-primary-600" />
             <span className="font-bold text-lg">Votação</span>
           </div>
-          {manualMode ? (
+          {entryMode === "facial" && (
+            <AcessoFacialVotacao
+              assembleiaId={assembleiaId}
+              onSuccess={(token, id) => {
+                setManualId(id);
+                setVotosPermitidos(1);
+                setAuthToken(token);
+              }}
+              onEmail={() => setEntryMode("email")}
+            />
+          )}
+          {entryMode === "manual" && (
             <IdentificacaoManual
               assembleiaId={assembleiaId}
               onSuccess={(token, id) => {
@@ -180,19 +195,28 @@ export default function VotacaoPage() {
                 setVotosPermitidos(1);
                 setAuthToken(token);
               }}
-              onBack={() => setManualMode(false)}
+              onBack={() => setEntryMode("facial")}
             />
-          ) : (
-            <IdentificacaoEmail
-              assembleiaId={assembleiaId}
-              exigirConfirmacao={assembleia.exigir_confirmacao_email !== false}
-              onSuccess={(token, id, votos) => {
-                setEleitorId(id);
-                setVotosPermitidos(Math.max(1, votos || 1));
-                setAuthToken(token);
-              }}
-              onManual={() => setManualMode(true)}
-            />
+          )}
+          {entryMode === "email" && (
+            <>
+              <IdentificacaoEmail
+                assembleiaId={assembleiaId}
+                exigirConfirmacao={assembleia.exigir_confirmacao_email !== false}
+                onSuccess={(token, id, votos) => {
+                  setEleitorId(id);
+                  setVotosPermitidos(Math.max(1, votos || 1));
+                  setAuthToken(token);
+                }}
+                onManual={() => setEntryMode("manual")}
+              />
+              <button
+                onClick={() => setEntryMode("facial")}
+                className="w-full mt-3 text-sm text-gray-500 hover:text-gray-700"
+              >
+                ← Voltar para o reconhecimento facial
+              </button>
+            </>
           )}
         </div>
       </div>

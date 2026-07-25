@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    acesso_facial,
     acesso_manual,
     procuracoes_pendentes,
     presencas_captura,
@@ -24,6 +25,7 @@ urlpatterns = [
     path("<uuid:assembleia_id>/unidades/", unidades_assembleia, name="unidades-assembleia"),
     path("<uuid:assembleia_id>/procuracoes/", procuracoes_pendentes, name="procuracoes-pendentes"),
     path("<uuid:assembleia_id>/procuracoes/validar/", validar_procuracao, name="validar-procuracao"),
+    path("<uuid:assembleia_id>/acesso-facial/", acesso_facial, name="acesso-facial"),
     path("<uuid:assembleia_id>/acesso-manual/", acesso_manual, name="acesso-manual"),
     path("<uuid:assembleia_id>/votos-manuais/", votos_manuais, name="votos-manuais"),
     path("<uuid:assembleia_id>/votos-manuais/validar/", validar_voto_manual, name="validar-voto-manual"),
