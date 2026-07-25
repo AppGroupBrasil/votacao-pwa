@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.conf import settings
+from django.utils.decorators import method_decorator
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django_ratelimit.decorators import ratelimit
@@ -109,6 +110,8 @@ class UserSerializer(serializers.ModelSerializer):
         return []
 
 
+@method_decorator(ratelimit(key="ip", rate="5/m", block=True), name="post")
+@method_decorator(ratelimit(key="ip", rate="20/h", block=True), name="post")
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
@@ -320,6 +323,9 @@ class MeView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             user.email = email
+            # Login unificado: manter o username igual ao e-mail (se estiver livre).
+            if not User.objects.filter(username__iexact=email).exclude(pk=user.pk).exists():
+                user.username = email
 
         for field in ("first_name", "last_name"):
             if field in request.data:

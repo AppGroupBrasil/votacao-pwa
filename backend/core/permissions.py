@@ -31,12 +31,9 @@ def get_or_create_user_condominio(user):
 
     from apps.condominios.models import Condominio
 
-    nome = (user.get_full_name() or user.username or "Meu condomínio").strip()
-    if not nome:
-        nome = "Meu condomínio"
     condominio, _ = Condominio.objects.get_or_create(
         cnpj=f"AUTO-{user.id}"[:18],
-        defaults={"nome": nome, "total_unidades": 0},
+        defaults={"nome": "Meu condomínio", "total_unidades": 0},
     )
     perfil.condominios.add(condominio)
     return condominio
