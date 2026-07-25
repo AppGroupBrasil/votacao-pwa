@@ -12,6 +12,7 @@ import {
   Fingerprint,
   Mail,
   ScanFace,
+  HelpCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { loadModels, detectFace, hashDescriptor } from "@/lib/faceapi";
@@ -564,6 +565,16 @@ export default function PresencaManualPublicaPage() {
                   ? "Rosto reconhecido. Agora tire uma selfie."
                   : "Agora tire uma selfie para o comprovante."}
               </p>
+              {faseFacial === "biometria" && (
+                <p className="mb-3 flex items-start justify-center gap-1.5 text-xs text-gray-400">
+                  <HelpCircle className="mt-0.5 w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    Só é preciso ler o rosto uma vez. Se você já cadastrou a
+                    biometria em outra assembleia, será reconhecido
+                    automaticamente — não precisa cadastrar de novo.
+                  </span>
+                </p>
+              )}
               {camAtiva ? (
                 <>
                   <video
