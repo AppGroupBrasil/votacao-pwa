@@ -506,7 +506,7 @@ export default function PresencaManualPublicaPage() {
         <p className="text-sm text-gray-500 mb-4">{lista?.titulo}</p>
 
         {/* LGPD — consentimento antes de ler o rosto */}
-        <label className="mb-4 flex items-start gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-600">
+        <label className="mb-2 flex items-start gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-600">
           <input
             type="checkbox"
             checked={consentimento}
@@ -516,9 +516,17 @@ export default function PresencaManualPublicaPage() {
           <span>
             Concordo com o tratamento dos meus dados pessoais e biométricos para
             registro da presença nesta assembleia do condomínio, conforme a LGPD
-            (Lei nº 13.709/2018), e declaro que as informações são verdadeiras.
+            (Lei nº 13.709/2018). Declaro que sou eu mesmo(a) e que as
+            informações são verdadeiras.
           </span>
         </label>
+
+        {/* Aviso legal — desencorajar votar/registrar no lugar de outra pessoa */}
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+          Registrar presença ou votar no lugar de outra pessoa é crime de falsa
+          identidade e falsidade ideológica (arts. 307 e 299 do Código Penal),
+          com pena de detenção e multa. Cada morador responde apenas por si.
+        </div>
 
         {/* Confirmação de identidade (cascata de segurança) */}
         <div className="card mb-4">
