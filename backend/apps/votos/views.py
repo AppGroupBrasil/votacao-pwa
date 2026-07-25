@@ -643,7 +643,7 @@ def acesso_manual(request, assembleia_id):
         nome=nome,
         bloco=bloco,
         apartamento=apartamento,
-        metodo_auth="manual",
+        metodo_auth="selfie",
         selfie=selfie,
         ip_address=get_client_ip(request),
         user_agent=user_agent,
