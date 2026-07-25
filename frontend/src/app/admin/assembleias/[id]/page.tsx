@@ -223,6 +223,7 @@ export default function AssembleiaDetailPage() {
       });
       setQuestaoImagens([null, null]);
       setQuestaoArquivos([null, null]);
+      setMostrarMidia(false);
       setShowAddQuestao(false);
       loadAssembleia();
     } catch {
@@ -1004,7 +1005,13 @@ export default function AssembleiaDetailPage() {
                         <input
                           type="checkbox"
                           checked={mostrarMidiaEdit}
-                          onChange={(e) => setMostrarMidiaEdit(e.target.checked)}
+                          onChange={(e) => {
+                            setMostrarMidiaEdit(e.target.checked);
+                            if (!e.target.checked) {
+                              setEditQuestaoImagens(editQuestaoForm.opcoes.map(() => null));
+                              setEditQuestaoArquivos(editQuestaoForm.opcoes.map(() => null));
+                            }
+                          }}
                           className="h-4 w-4 rounded border-gray-300"
                         />
                         Adicionar foto, arquivo ou link nas opções

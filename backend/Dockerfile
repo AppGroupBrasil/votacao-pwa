@@ -16,7 +16,7 @@ COPY . .
 
 RUN python manage.py collectstatic --noinput 2>/dev/null || true
 
-RUN useradd --create-home --uid 10001 app && chown -R app:app /app
+RUN mkdir -p /app/media && useradd --create-home --uid 10001 app && chown -R app:app /app
 USER app
 
 EXPOSE 8000
