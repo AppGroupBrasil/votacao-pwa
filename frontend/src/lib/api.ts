@@ -783,6 +783,38 @@ export const api = {
       { method: "POST", body: JSON.stringify(data) }
     ),
 
+  reconhecerPresencaFacial: (id: string, descriptor: number[]) =>
+    request<{
+      encontrado: boolean;
+      identidade_id?: string;
+      nome?: string;
+      bloco?: string;
+      apartamento?: string;
+      perfil?: string;
+    }>(`/enquetes/listas-presenca/${id}/facial/reconhecer/`, {
+      method: "POST",
+      body: JSON.stringify({ descriptor }),
+    }),
+
+  registrarPresencaFacial: (
+    id: string,
+    data: {
+      descriptor: number[];
+      nome?: string;
+      bloco?: string;
+      apartamento?: string;
+      perfil?: string;
+      selfie?: string;
+      marca_aparelho?: string;
+      consentimento_lgpd: boolean;
+      declaracao_veracidade?: boolean;
+    }
+  ) =>
+    request<{ ok: boolean; ja_presente: boolean; novo: boolean; nome: string }>(
+      `/enquetes/listas-presenca/${id}/facial/registrar/`,
+      { method: "POST", body: JSON.stringify(data) }
+    ),
+
   presencaEnviarCodigo: (id: string, email: string) =>
     request<{ sent: boolean; email_masked: string }>(
       `/enquetes/listas-presenca/${id}/enviar-codigo/`,

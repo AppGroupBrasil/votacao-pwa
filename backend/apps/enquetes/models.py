@@ -121,6 +121,14 @@ class PresencaManual(models.Model):
     lista = models.ForeignKey(
         ListaPresenca, on_delete=models.CASCADE, related_name="registros"
     )
+    identidade = models.ForeignKey(
+        "eleitores.IdentidadeFacial",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="presencas",
+        help_text="Identidade facial permanente reconhecida/cadastrada nesta presença.",
+    )
     nome = models.CharField(max_length=200)
     perfil = models.CharField(
         max_length=20,

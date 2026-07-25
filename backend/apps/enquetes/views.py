@@ -12,6 +12,8 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.eleitores.facial import melhor_correspondencia, validar_descriptor
+from apps.eleitores.models import IdentidadeFacial
 from core.otp import gerar_otp, validar_otp
 from core.permissions import (
     IsAdminWithRole,
@@ -267,6 +269,164 @@ def registrar_presenca_manual(request, lista_id):
         ip_address=get_client_ip(request),
     )
     return Response({"ok": True}, status=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@ratelimit(key="ip", rate="30/m", block=True)
+def presenca_reconhecer_facial(request, lista_id):
+    """Recebe o vetor facial e diz se essa pessoa já tem identidade facial cadastrada
+    no condomínio desta lista. Não grava nada — só reconhece."""
+    try:
+        lista = ListaPresenca.objects.get(id=lista_id)
+    except ListaPresenca.DoesNotExist:
+        return Response(
+            {"error": "Lista não encontrada."}, status=status.HTTP_404_NOT_FOUND
+        )
+
+    descriptor = validar_descriptor(request.data.get("descriptor"))
+    if descriptor is None:
+        return Response(
+            {"error": "Não foi possível ler o rosto. Tente novamente."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not lista.condominio_id:
+        # Sem condomínio não há base permanente onde reconhecer.
+        return Response({"encontrado": False})
+
+    identidades = IdentidadeFacial.objects.filter(condominio_id=lista.condominio_id)
+    ident, _dist = melhor_correspondencia(descriptor, identidades)
+    if ident is None:
+        return Response({"encontrado": False})
+    return Response(
+        {
+            "encontrado": True,
+            "identidade_id": str(ident.id),
+            "nome": ident.nome,
+            "bloco": ident.bloco,
+            "apartamento": ident.apartamento,
+            "perfil": ident.perfil,
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@ratelimit(key="ip", rate="20/m", block=True)
+def registrar_presenca_facial(request, lista_id):
+    """Marca a presença pelo rosto. Se o rosto já está cadastrado no condomínio,
+    reconhece e usa os dados existentes (não pede cadastro de novo). Se é a
+    primeira vez, cadastra a identidade facial permanente (rosto + nome + apto)."""
+    try:
+        lista = ListaPresenca.objects.get(id=lista_id)
+    except ListaPresenca.DoesNotExist:
+        return Response(
+            {"error": "Lista não encontrada."}, status=status.HTTP_404_NOT_FOUND
+        )
+    if not lista.ativa:
+        return Response(
+            {"error": "Esta lista de presença está encerrada."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    descriptor = validar_descriptor(request.data.get("descriptor"))
+    if descriptor is None:
+        return Response(
+            {"error": "Não foi possível ler o rosto. Tente novamente."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    consentimento_lgpd = bool(request.data.get("consentimento_lgpd"))
+    if not consentimento_lgpd:
+        return Response(
+            {"error": "É necessário concordar com o uso dos dados (LGPD) para registrar a presença."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    selfie = str(request.data.get("selfie", ""))
+    if len(selfie) > 3_500_000:
+        return Response(
+            {"error": "Imagem muito grande."}, status=status.HTTP_400_BAD_REQUEST
+        )
+
+    perfis_validos = {"proprietario", "locatario", "conjuge", "procurador", "outro"}
+    agora = timezone.now()
+
+    # Procura se esse rosto já é conhecido no condomínio.
+    ident = None
+    if lista.condominio_id:
+        identidades = IdentidadeFacial.objects.filter(
+            condominio_id=lista.condominio_id
+        )
+        ident, _dist = melhor_correspondencia(descriptor, identidades)
+
+    if ident is None:
+        # Primeira vez: precisa de nome e apartamento para cadastrar a identidade.
+        nome = str(request.data.get("nome", "")).strip()[:200]
+        if not nome:
+            return Response(
+                {"error": "Informe o nome para o primeiro cadastro."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        bloco = str(request.data.get("bloco", "")).strip()[:20]
+        apartamento = str(request.data.get("apartamento", "")).strip()[:20]
+        perfil = str(request.data.get("perfil", "")).strip().lower()
+        if perfil not in perfis_validos:
+            perfil = "proprietario"
+        if lista.condominio_id:
+            ident = IdentidadeFacial.objects.create(
+                condominio_id=lista.condominio_id,
+                nome=nome,
+                bloco=bloco,
+                apartamento=apartamento,
+                perfil=perfil,
+                descriptor=descriptor,
+                selfie=selfie,
+                consentimento_lgpd=True,
+                consentimento_em=agora,
+            )
+        nome_reg, bloco_reg, apto_reg, perfil_reg = nome, bloco, apartamento, perfil
+        novo = True
+    else:
+        # Rosto já conhecido: usa os dados cadastrados.
+        nome_reg = ident.nome
+        bloco_reg = ident.bloco
+        apto_reg = ident.apartamento
+        perfil_reg = ident.perfil if ident.perfil in perfis_validos else "proprietario"
+        novo = False
+
+    # Evita presença duplicada na mesma lista.
+    if ident is not None and PresencaManual.objects.filter(
+        lista=lista, identidade=ident
+    ).exists():
+        return Response(
+            {"ok": True, "ja_presente": True, "novo": False, "nome": nome_reg}
+        )
+
+    user_agent = get_client_user_agent(request)
+    marca_aparelho = str(request.data.get("marca_aparelho", "")).strip()[:120]
+    PresencaManual.objects.create(
+        lista=lista,
+        identidade=ident,
+        nome=nome_reg,
+        perfil=perfil_reg,
+        bloco=bloco_reg,
+        apartamento=apto_reg,
+        selfie=selfie or (ident.selfie if ident else ""),
+        metodo_auth="facial",
+        marca_aparelho=marca_aparelho or infer_device_info(user_agent),
+        user_agent=user_agent,
+        device_info=infer_device_info(user_agent),
+        consentimento_lgpd=True,
+        consentimento_em=agora,
+        declaracao_veracidade=bool(request.data.get("declaracao_veracidade")),
+        ip_address=get_client_ip(request),
+    )
+    return Response(
+        {"ok": True, "ja_presente": False, "novo": novo, "nome": nome_reg},
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["POST"])

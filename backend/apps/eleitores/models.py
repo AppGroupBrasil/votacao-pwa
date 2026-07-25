@@ -74,3 +74,38 @@ class Eleitor(models.Model):
 
     def __str__(self):
         return f"{self.nome} - {self.apartamento}"
+
+
+class IdentidadeFacial(models.Model):
+    """Identidade facial permanente do morador, por condomínio.
+
+    O vetor facial (descriptor de 128 posições do face-api) é o documento:
+    a pessoa se cadastra uma vez e é reconhecida nas assembleias seguintes,
+    de qualquer aparelho, sem precisar se cadastrar de novo."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    condominio = models.ForeignKey(
+        Condominio, on_delete=models.CASCADE, related_name="identidades_faciais"
+    )
+    nome = models.CharField(max_length=200)
+    bloco = models.CharField(max_length=20, blank=True, default="")
+    apartamento = models.CharField(max_length=20, blank=True, default="")
+    perfil = models.CharField(max_length=20, blank=True, default="proprietario")
+    descriptor = models.JSONField(
+        help_text="Vetor facial 128-D (face-api). Base da comparação para reconhecer a pessoa."
+    )
+    selfie = models.TextField(
+        blank=True, default="", help_text="Foto-comprovante capturada no cadastro."
+    )
+    consentimento_lgpd = models.BooleanField(default=False)
+    consentimento_em = models.DateTimeField(null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    ultimo_visto_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nome"]
+        verbose_name = "Identidade facial"
+        verbose_name_plural = "Identidades faciais"
+
+    def __str__(self):
+        return f"{self.nome} - {self.apartamento}"

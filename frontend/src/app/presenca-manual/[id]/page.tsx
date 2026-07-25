@@ -65,6 +65,17 @@ export default function PresencaManualPublicaPage() {
   const [selfie, setSelfie] = useState("");
   const [assinaturaFacial, setAssinaturaFacial] = useState("");
   const [processandoFacial, setProcessandoFacial] = useState(false);
+  // Fluxo facial em 2 etapas: 1) biometria (leitura do rosto) 2) selfie (foto comprovante).
+  const [faseFacial, setFaseFacial] = useState<"biometria" | "selfie">("biometria");
+  // Vetor facial (128-D) lido do rosto — vira a identidade permanente no servidor.
+  const [descriptorFacial, setDescriptorFacial] = useState<number[] | null>(null);
+  // Dados do rosto reconhecido (cadastro anterior no condomínio), se houver.
+  const [reconhecido, setReconhecido] = useState<{
+    nome: string;
+    bloco: string;
+    apartamento: string;
+    perfil: string;
+  } | null>(null);
 
   // --- digital (WebAuthn) ---
   const [autenticandoDigital, setAutenticandoDigital] = useState(false);
@@ -114,6 +125,13 @@ export default function PresencaManualPublicaPage() {
 
   async function abrirCamera() {
     setCamErro("");
+    if (!consentimento) {
+      setCamErro(
+        "Marque a concordância com a LGPD (no topo) antes de abrir a câmera."
+      );
+      return;
+    }
+    setFaseFacial("biometria"); // sempre começa pela leitura do rosto
     loadModels().catch(() => {});
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -127,7 +145,22 @@ export default function PresencaManualPublicaPage() {
     }
   }
 
-  async function capturarSelfie() {
+  function capturarFrame(video: HTMLVideoElement) {
+    const canvas = document.createElement("canvas");
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    const max = 640;
+    const escala = Math.min(1, max / Math.max(w, h));
+    canvas.width = Math.round(w * escala);
+    canvas.height = Math.round(h * escala);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  // Etapa 1: lê a biometria facial (não guarda foto ainda, só confirma o rosto).
+  async function escanearRosto() {
     const video = videoRef.current;
     if (!video) return;
     if (!video.videoWidth) {
@@ -137,17 +170,8 @@ export default function PresencaManualPublicaPage() {
     setCamErro("");
     setProcessandoFacial(true);
     try {
-      const canvas = document.createElement("canvas");
-      const w = video.videoWidth;
-      const h = video.videoHeight;
-      const max = 640;
-      const escala = Math.min(1, max / Math.max(w, h));
-      canvas.width = Math.round(w * escala);
-      canvas.height = Math.round(h * escala);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
+      const canvas = capturarFrame(video);
+      if (!canvas) return;
       await loadModels();
       const descriptor = await detectFace(canvas);
       if (!descriptor) {
@@ -157,10 +181,31 @@ export default function PresencaManualPublicaPage() {
         return;
       }
       const hash = await hashDescriptor(descriptor);
-      setSelfie(canvas.toDataURL("image/jpeg", 0.7));
       setAssinaturaFacial(hash);
-      setMetodo("facial");
-      pararCamera();
+      const arr = Array.from(descriptor);
+      setDescriptorFacial(arr);
+      // Pergunta ao servidor se esse rosto já tem cadastro no condomínio.
+      try {
+        const r = await api.reconhecerPresencaFacial(id, arr);
+        if (r.encontrado) {
+          setReconhecido({
+            nome: r.nome || "",
+            bloco: r.bloco || "",
+            apartamento: r.apartamento || "",
+            perfil: r.perfil || "proprietario",
+          });
+          if (r.nome) setNome(r.nome);
+          if (r.bloco) setBloco(r.bloco);
+          if (r.apartamento) setApartamento(r.apartamento);
+          if (r.perfil) setPerfil(r.perfil as Perfil);
+        } else {
+          setReconhecido(null);
+        }
+      } catch {
+        // Se o reconhecimento falhar, segue como cadastro novo.
+        setReconhecido(null);
+      }
+      setFaseFacial("selfie"); // câmera continua aberta para a selfie
     } catch {
       setCamErro("Não foi possível processar o rosto. Tente novamente.");
     } finally {
@@ -168,10 +213,27 @@ export default function PresencaManualPublicaPage() {
     }
   }
 
+  // Etapa 2: tira a selfie que fica como comprovante da presença.
+  function capturarSelfie() {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!video.videoWidth) {
+      setCamErro("Aguarde a imagem da câmera aparecer e tente de novo.");
+      return;
+    }
+    setCamErro("");
+    const canvas = capturarFrame(video);
+    if (!canvas) return;
+    setSelfie(canvas.toDataURL("image/jpeg", 0.7));
+    setMetodo("facial");
+    pararCamera();
+  }
+
   function recusarFacial() {
     pararCamera();
     setSelfie("");
     setAssinaturaFacial("");
+    setFaseFacial("biometria");
     setCamErro("");
     setEtapa("digital");
   }
@@ -310,12 +372,59 @@ export default function PresencaManualPublicaPage() {
 
   async function enviar() {
     setErro("");
-    if (!nome.trim()) {
-      setErro("Informe o seu nome.");
-      return;
-    }
     if (!metodo) {
       setErro("Confirme sua identidade (rosto, digital ou código por e-mail).");
+      return;
+    }
+    if (!consentimento) {
+      setErro("Marque a caixa de concordância (LGPD) para registrar a presença.");
+      return;
+    }
+
+    // Caminho facial (padrão): o rosto é a identidade e a assinatura.
+    if (metodo === "facial") {
+      if (!descriptorFacial) {
+        setErro("Leia o rosto novamente para confirmar a identidade.");
+        return;
+      }
+      // Só o primeiro cadastro deste rosto precisa de nome e apartamento.
+      if (!reconhecido) {
+        if (!nome.trim()) {
+          setErro("Informe o seu nome.");
+          return;
+        }
+        if (!apartamento.trim()) {
+          setErro("Informe o apartamento.");
+          return;
+        }
+      }
+      setEnviando(true);
+      try {
+        await api.registrarPresencaFacial(id, {
+          descriptor: descriptorFacial,
+          nome: nome.trim(),
+          bloco: bloco.trim(),
+          apartamento: apartamento.trim(),
+          perfil,
+          selfie,
+          marca_aparelho: detectarAparelho(),
+          consentimento_lgpd: consentimento,
+          declaracao_veracidade: consentimento,
+        });
+        setEnviado(true);
+      } catch (e: any) {
+        setErro(
+          e?.response?.data?.error || "Não foi possível registrar a presença."
+        );
+      } finally {
+        setEnviando(false);
+      }
+      return;
+    }
+
+    // Caminho reserva (digital / código por e-mail): mantém a assinatura desenhada.
+    if (!nome.trim()) {
+      setErro("Informe o seu nome.");
       return;
     }
     if (!apartamento.trim()) {
@@ -324,10 +433,6 @@ export default function PresencaManualPublicaPage() {
     }
     if (!temAssinatura) {
       setErro("Assine no campo indicado.");
-      return;
-    }
-    if (!consentimento) {
-      setErro("Marque a caixa de concordância (LGPD) para registrar a presença.");
       return;
     }
     const assinatura = canvasRef.current?.toDataURL("image/png") || "";
@@ -404,7 +509,22 @@ export default function PresencaManualPublicaPage() {
     <div className="min-h-screen bg-gray-50 py-6 px-4">
       <div className="max-w-md mx-auto">
         <h1 className="text-xl font-bold mb-1">Lista de presença</h1>
-        <p className="text-sm text-gray-500 mb-5">{lista?.titulo}</p>
+        <p className="text-sm text-gray-500 mb-4">{lista?.titulo}</p>
+
+        {/* LGPD — consentimento antes de ler o rosto */}
+        <label className="mb-4 flex items-start gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-600">
+          <input
+            type="checkbox"
+            checked={consentimento}
+            onChange={(e) => setConsentimento(e.target.checked)}
+            className="mt-0.5 shrink-0"
+          />
+          <span>
+            Concordo com o tratamento dos meus dados pessoais e biométricos para
+            registro da presença nesta assembleia do condomínio, conforme a LGPD
+            (Lei nº 13.709/2018), e declaro que as informações são verdadeiras.
+          </span>
+        </label>
 
         {/* Confirmação de identidade (cascata de segurança) */}
         <div className="card mb-4">
@@ -431,8 +551,14 @@ export default function PresencaManualPublicaPage() {
           ) : etapa === "facial" ? (
             <div className="text-center">
               <p className="mb-3 flex items-center justify-center gap-1.5 text-sm text-gray-500">
-                <ScanFace className="w-4 h-4" /> Faça uma selfie para confirmar
-                seu rosto.
+                <ScanFace className="w-4 h-4" />{" "}
+                {faseFacial === "biometria"
+                  ? "Primeiro vamos ler o seu rosto."
+                  : reconhecido
+                  ? `Rosto reconhecido${
+                      reconhecido.nome ? `: ${reconhecido.nome}` : ""
+                    }. Agora tire uma selfie.`
+                  : "Agora tire uma selfie para o comprovante."}
               </p>
               {camAtiva ? (
                 <>
@@ -443,21 +569,31 @@ export default function PresencaManualPublicaPage() {
                     muted
                     className="mx-auto rounded-lg max-h-60 bg-black"
                   />
-                  <button
-                    onClick={capturarSelfie}
-                    disabled={processandoFacial}
-                    className="btn-primary mt-3 inline-flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {processandoFacial ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" /> Analisando...
-                      </>
-                    ) : (
-                      <>
-                        <Camera className="w-4 h-4" /> Capturar
-                      </>
-                    )}
-                  </button>
+                  {faseFacial === "biometria" ? (
+                    <button
+                      onClick={escanearRosto}
+                      disabled={processandoFacial}
+                      className="btn-primary mt-3 inline-flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {processandoFacial ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" /> Lendo seu
+                          rosto...
+                        </>
+                      ) : (
+                        <>
+                          <ScanFace className="w-4 h-4" /> Ler meu rosto
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={capturarSelfie}
+                      className="btn-primary mt-3 inline-flex items-center gap-2"
+                    >
+                      <Camera className="w-4 h-4" /> Tirar selfie
+                    </button>
+                  )}
                 </>
               ) : (
                 <button
@@ -595,6 +731,24 @@ export default function PresencaManualPublicaPage() {
 
         {/* Dados */}
         <div className="card mb-4 space-y-3">
+          {metodo === "facial" && reconhecido && (
+            <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+              <Check className="mt-0.5 w-4 h-4 shrink-0" />
+              <span>
+                Já reconhecemos o seu rosto do cadastro do condomínio. Confira
+                os dados abaixo.
+              </span>
+            </div>
+          )}
+          {metodo === "facial" && !reconhecido && descriptorFacial && (
+            <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+              <ScanFace className="mt-0.5 w-4 h-4 shrink-0" />
+              <span>
+                Primeiro acesso: preencha nome e apartamento. Da próxima vez o
+                seu rosto já será reconhecido.
+              </span>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium mb-1">Nome</label>
             <input
@@ -639,47 +793,33 @@ export default function PresencaManualPublicaPage() {
           </div>
         </div>
 
-        {/* Assinatura */}
-        <div className="card mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-medium">Assinatura</label>
-            <button
-              onClick={limparAssinatura}
-              className="inline-flex items-center gap-1 text-sm text-gray-500"
-            >
-              <Eraser className="w-4 h-4" /> Limpar
-            </button>
+        {/* Assinatura — só na via reserva (digital/e-mail). No facial, o rosto assina. */}
+        {etapa !== "facial" && (
+          <div className="card mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium">Assinatura</label>
+              <button
+                onClick={limparAssinatura}
+                className="inline-flex items-center gap-1 text-sm text-gray-500"
+              >
+                <Eraser className="w-4 h-4" /> Limpar
+              </button>
+            </div>
+            <canvas
+              ref={canvasRef}
+              width={500}
+              height={200}
+              onPointerDown={iniciarTraco}
+              onPointerMove={moverTraco}
+              onPointerUp={terminarTraco}
+              onPointerLeave={terminarTraco}
+              className="w-full h-44 rounded-lg border border-dashed border-gray-300 bg-white touch-none"
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              Assine com o dedo na área acima.
+            </p>
           </div>
-          <canvas
-            ref={canvasRef}
-            width={500}
-            height={200}
-            onPointerDown={iniciarTraco}
-            onPointerMove={moverTraco}
-            onPointerUp={terminarTraco}
-            onPointerLeave={terminarTraco}
-            className="w-full h-44 rounded-lg border border-dashed border-gray-300 bg-white touch-none"
-          />
-          <p className="mt-1 text-xs text-gray-400">
-            Assine com o dedo na área acima.
-          </p>
-        </div>
-
-        {/* LGPD — discreto, no fim */}
-        <label className="mb-4 flex items-start gap-2 text-xs text-gray-500">
-          <input
-            type="checkbox"
-            checked={consentimento}
-            onChange={(e) => setConsentimento(e.target.checked)}
-            className="mt-0.5 shrink-0"
-          />
-          <span>
-            Concordo com o tratamento dos meus dados pessoais e biométricos para
-            registro da presença nesta assembleia do condomínio, conforme a LGPD
-            (Lei nº 13.709/2018), e declaro que as informações acima são
-            verdadeiras.
-          </span>
-        </label>
+        )}
 
         {erro && <p className="mb-3 text-sm text-red-600">{erro}</p>}
 
