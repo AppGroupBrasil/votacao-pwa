@@ -10,6 +10,8 @@ import {
   Check,
   Power,
   Eye,
+  ExternalLink,
+  Share2,
   Users,
   ClipboardList,
 } from "lucide-react";
@@ -82,6 +84,19 @@ export default function ListasPresencaPage() {
     } catch {
       /* ignore */
     }
+  }
+
+  async function compartilhar(lista: ListaPresenca) {
+    const url = linkPublico(lista);
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title: "Lista de presença", url });
+        return;
+      } catch {
+        /* usuário cancelou ou não suportado: cai no copiar */
+      }
+    }
+    await copiarLink(lista);
   }
 
   async function alternarAtiva(l: ListaPresenca) {
@@ -184,8 +199,14 @@ export default function ListasPresencaPage() {
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-amber-950 shadow-sm ring-1 ring-amber-500/40 hover:bg-amber-300"
               >
-                <Eye className="w-4 h-4" /> Ver como morador
+                <ExternalLink className="w-4 h-4" /> Abrir lista de presença
               </a>
+              <button
+                onClick={() => compartilhar(l)}
+                className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-green-700/30 hover:bg-green-700"
+              >
+                <Share2 className="w-4 h-4" /> Compartilhar
+              </button>
               <button
                 onClick={() => alternarAtiva(l)}
                 className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
