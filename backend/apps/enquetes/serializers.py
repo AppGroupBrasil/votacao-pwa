@@ -97,6 +97,13 @@ class PresencaManualSerializer(serializers.ModelSerializer):
 
 class ListaPresencaSerializer(serializers.ModelSerializer):
     total_registros = serializers.SerializerMethodField()
+    # O síndico digita o nome do condomínio ao gerar a lista (obrigatório). É o
+    # que dá nome ao condomínio e garante que o reconhecimento facial permanente
+    # tenha onde ser guardado. O morador não preenche isso.
+    nome_condominio = serializers.CharField(
+        write_only=True, required=True, allow_blank=False, max_length=200
+    )
+    condominio_nome = serializers.SerializerMethodField()
 
     class Meta:
         model = ListaPresenca
@@ -104,13 +111,24 @@ class ListaPresencaSerializer(serializers.ModelSerializer):
             "id",
             "codigo_curto",
             "condominio",
+            "condominio_nome",
+            "nome_condominio",
             "titulo",
             "descricao",
             "ativa",
             "criado_em",
             "total_registros",
         ]
-        read_only_fields = ["id", "codigo_curto", "criado_em"]
+        read_only_fields = ["id", "codigo_curto", "condominio", "criado_em"]
+
+    def validate_nome_condominio(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Informe o nome do condomínio.")
+        return value
+
+    def get_condominio_nome(self, obj):
+        return obj.condominio.nome if obj.condominio_id else ""
 
     def get_total_registros(self, obj):
         return obj.registros.count()

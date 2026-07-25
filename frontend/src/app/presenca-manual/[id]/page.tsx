@@ -70,13 +70,9 @@ export default function PresencaManualPublicaPage() {
   const [faseFacial, setFaseFacial] = useState<"biometria" | "selfie">("biometria");
   // Vetor facial (128-D) lido do rosto — vira a identidade permanente no servidor.
   const [descriptorFacial, setDescriptorFacial] = useState<number[] | null>(null);
-  // Dados do rosto reconhecido (cadastro anterior no condomínio), se houver.
-  const [reconhecido, setReconhecido] = useState<{
-    nome: string;
-    bloco: string;
-    apartamento: string;
-    perfil: string;
-  } | null>(null);
+  // Só marca SE o rosto já é conhecido no condomínio — sem trazer nome/unidade
+  // (LGPD). Quem está com o aparelho não vê dados de outra pessoa.
+  const [reconhecido, setReconhecido] = useState(false);
 
   // --- digital (WebAuthn) ---
   const [autenticandoDigital, setAutenticandoDigital] = useState(false);
@@ -185,26 +181,14 @@ export default function PresencaManualPublicaPage() {
       setAssinaturaFacial(hash);
       const arr = Array.from(descriptor);
       setDescriptorFacial(arr);
-      // Pergunta ao servidor se esse rosto já tem cadastro no condomínio.
+      // Pergunta ao servidor só se esse rosto já é conhecido no condomínio.
+      // Não trazemos nome/unidade: o servidor reusa os dados ao registrar.
       try {
         const r = await api.reconhecerPresencaFacial(id, arr);
-        if (r.encontrado) {
-          setReconhecido({
-            nome: r.nome || "",
-            bloco: r.bloco || "",
-            apartamento: r.apartamento || "",
-            perfil: r.perfil || "proprietario",
-          });
-          if (r.nome) setNome(r.nome);
-          if (r.bloco) setBloco(r.bloco);
-          if (r.apartamento) setApartamento(r.apartamento);
-          if (r.perfil) setPerfil(r.perfil as Perfil);
-        } else {
-          setReconhecido(null);
-        }
+        setReconhecido(!!r.encontrado);
       } catch {
         // Se o reconhecimento falhar, segue como cadastro novo.
-        setReconhecido(null);
+        setReconhecido(false);
       }
       setFaseFacial("selfie"); // câmera continua aberta para a selfie
     } catch {
@@ -412,7 +396,6 @@ export default function PresencaManualPublicaPage() {
           consentimento_lgpd: consentimento,
           declaracao_veracidade: consentimento,
         });
-        if (r.nome) setNome(r.nome);
         if (r.ja_presente) setJaPresente(true);
         setEnviado(true);
       } catch (e: any) {
@@ -564,9 +547,7 @@ export default function PresencaManualPublicaPage() {
                 {faseFacial === "biometria"
                   ? "Primeiro vamos ler o seu rosto."
                   : reconhecido
-                  ? `Rosto reconhecido${
-                      reconhecido.nome ? `: ${reconhecido.nome}` : ""
-                    }. Agora tire uma selfie.`
+                  ? "Rosto reconhecido. Agora tire uma selfie."
                   : "Agora tire uma selfie para o comprovante."}
               </p>
               {camAtiva ? (
@@ -744,8 +725,8 @@ export default function PresencaManualPublicaPage() {
             <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
               <Check className="mt-0.5 w-4 h-4 shrink-0" />
               <span>
-                Já reconhecemos o seu rosto do cadastro do condomínio. Confira
-                os dados abaixo.
+                Rosto reconhecido. Seus dados já estão no cadastro do
+                condomínio — é só tirar a selfie e confirmar.
               </span>
             </div>
           )}
@@ -758,48 +739,53 @@ export default function PresencaManualPublicaPage() {
               </span>
             </div>
           )}
-          <div>
-            <label className="block text-sm font-medium mb-1">Nome</label>
-            <input
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              className="input-field w-full"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Perfil</label>
-            <select
-              value={perfil}
-              onChange={(e) => setPerfil(e.target.value as Perfil)}
-              className="input-field w-full"
-            >
-              {PERFIS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1">Bloco</label>
-              <input
-                value={bloco}
-                onChange={(e) => setBloco(e.target.value)}
-                className="input-field w-full"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Apartamento
-              </label>
-              <input
-                value={apartamento}
-                onChange={(e) => setApartamento(e.target.value)}
-                className="input-field w-full"
-              />
-            </div>
-          </div>
+          {/* Rosto já reconhecido não digita nada: o servidor reusa o cadastro. */}
+          {!(metodo === "facial" && reconhecido) && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">Nome</label>
+                <input
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  className="input-field w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Perfil</label>
+                <select
+                  value={perfil}
+                  onChange={(e) => setPerfil(e.target.value as Perfil)}
+                  className="input-field w-full"
+                >
+                  {PERFIS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Bloco</label>
+                  <input
+                    value={bloco}
+                    onChange={(e) => setBloco(e.target.value)}
+                    className="input-field w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Apartamento
+                  </label>
+                  <input
+                    value={apartamento}
+                    onChange={(e) => setApartamento(e.target.value)}
+                    className="input-field w-full"
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Assinatura — só na via reserva (digital/e-mail). No facial, o rosto assina. */}

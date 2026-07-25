@@ -7,10 +7,11 @@ a mesma pessoa em qualquer aparelho.
 """
 import math
 
-# Limiar de reconhecimento. O face-api usa 0.6 para comparar 1 rosto com 1 rosto.
-# Aqui procuramos 1 rosto entre vários (busca 1:N), então usamos um valor um pouco
-# mais rígido para reduzir a chance de confundir duas pessoas diferentes.
-LIMIAR_RECONHECIMENTO = 0.55
+# Limiar de reconhecimento (distância euclidiana máxima para tratar como a mesma
+# pessoa). Objetivo aqui é só evitar voto duplo — não é segurança financeira —,
+# então priorizamos RECONHECER com facilidade (evitar pedir cadastro de novo) em
+# vez de ser rígido. 0.6 é o mesmo valor que o face-api usa para comparar 1:1.
+LIMIAR_RECONHECIMENTO = 0.6
 
 # Tamanho esperado do vetor facial do face-api.
 TAMANHO_DESCRIPTOR = 128

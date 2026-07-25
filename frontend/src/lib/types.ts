@@ -310,6 +310,7 @@ export interface ListaPresenca {
   id: string;
   codigo_curto: string | null;
   condominio: string | null;
+  condominio_nome?: string;
   titulo: string;
   descricao: string;
   ativa: boolean;

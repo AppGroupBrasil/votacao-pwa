@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.core.cache import cache
 from django.core.mail import send_mail
@@ -111,20 +113,25 @@ class ListaPresencaViewSet(viewsets.ModelViewSet):
         return qs.filter(condominio__in=condominios)
 
     def perform_create(self, serializer):
-        condominios = get_user_condominios(self.request.user)
-        condominio = serializer.validated_data.get("condominio")
-        if condominios is not None:
+        # O síndico informa o nome do condomínio ao gerar a lista (obrigatório).
+        nome_cond = serializer.validated_data.pop("nome_condominio", "").strip()
+        condominio = get_or_create_user_condominio(self.request.user)
+        if condominio is None:
+            # Master (superuser): não tem condomínio próprio — usa/cria pelo nome.
+            from apps.condominios.models import Condominio
+
+            condominio = Condominio.objects.filter(nome=nome_cond).first()
             if condominio is None:
-                condominio = get_or_create_user_condominio(self.request.user)
-                if condominio is None:
-                    raise PermissionDenied(
-                        "Nenhum condomínio associado ao seu usuário."
-                    )
-                serializer.save(condominio=condominio)
-                return
-            if condominio.id not in condominios:
-                raise PermissionDenied("Condomínio fora do seu escopo.")
-        serializer.save()
+                condominio = Condominio.objects.create(
+                    nome=nome_cond,
+                    cnpj=f"MSTR-{uuid.uuid4().hex[:12]}",
+                    total_unidades=0,
+                )
+        elif nome_cond and condominio.nome != nome_cond:
+            # Nomeia (ou renomeia) o condomínio do síndico com o que ele digitou.
+            condominio.nome = nome_cond
+            condominio.save(update_fields=["nome", "atualizado_em"])
+        serializer.save(condominio=condominio)
 
     @action(detail=True, methods=["get"], url_path="registros")
     def registros(self, request, pk=None):
@@ -301,18 +308,10 @@ def presenca_reconhecer_facial(request, lista_id):
         condominio_id=lista.condominio_id
     ).defer("selfie")
     ident, _dist = melhor_correspondencia(descriptor, identidades)
-    if ident is None:
-        return Response({"encontrado": False})
-    return Response(
-        {
-            "encontrado": True,
-            "identidade_id": str(ident.id),
-            "nome": ident.nome,
-            "bloco": ident.bloco,
-            "apartamento": ident.apartamento,
-            "perfil": ident.perfil,
-        }
-    )
+    # Só informamos SE o rosto é conhecido — nunca o nome/unidade de quem foi
+    # reconhecido (LGPD: quem está com o aparelho não deve ver dados de outra
+    # pessoa). Na hora de registrar, o servidor reusa os dados guardados.
+    return Response({"encontrado": ident is not None})
 
 
 @api_view(["POST"])

@@ -22,6 +22,7 @@ export default function ListasPresencaPage() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [titulo, setTitulo] = useState("");
+  const [nomeCondominio, setNomeCondominio] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [copiado, setCopiado] = useState<string>("");
 
@@ -37,11 +38,22 @@ export default function ListasPresencaPage() {
     carregar();
   }, []);
 
+  function abrirModal() {
+    // Reaproveita o nome do condomínio de uma lista já criada, se houver.
+    const anterior = listas.find((l) => l.condominio_nome)?.condominio_nome;
+    if (anterior) setNomeCondominio(anterior);
+    setModalOpen(true);
+  }
+
   async function salvar() {
     if (!titulo.trim()) return;
+    if (!nomeCondominio.trim()) {
+      alert("Informe o nome do condomínio.");
+      return;
+    }
     setSalvando(true);
     try {
-      await api.createListaPresenca(titulo.trim());
+      await api.createListaPresenca(titulo.trim(), nomeCondominio.trim());
       setTitulo("");
       setModalOpen(false);
       carregar();
@@ -110,7 +122,7 @@ export default function ListasPresencaPage() {
           <button
             onClick={() => {
               setTitulo("");
-              setModalOpen(true);
+              abrirModal();
             }}
             className="btn-primary flex items-center gap-2"
           >
@@ -200,6 +212,19 @@ export default function ListasPresencaPage() {
                 <X className="w-5 h-5 text-gray-400" />
               </button>
             </div>
+            <label className="block text-sm font-medium mb-1">
+              Nome do condomínio
+            </label>
+            <input
+              value={nomeCondominio}
+              onChange={(e) => setNomeCondominio(e.target.value)}
+              placeholder="Ex.: Edifício Vendeiros"
+              className="input-field w-full mb-1"
+            />
+            <p className="text-xs text-gray-500 mb-4">
+              Aparece na lista e vincula o reconhecimento facial dos moradores
+              deste condomínio.
+            </p>
             <label className="block text-sm font-medium mb-1">Título</label>
             <input
               value={titulo}

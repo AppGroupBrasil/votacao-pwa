@@ -722,10 +722,10 @@ export const api = {
       import("./types").PaginatedResponse<import("./types").ListaPresenca>
     >("/enquetes/listas-presenca/"),
 
-  createListaPresenca: (titulo: string, condominio?: string | null) =>
+  createListaPresenca: (titulo: string, nomeCondominio: string) =>
     request<import("./types").ListaPresenca>("/enquetes/listas-presenca/", {
       method: "POST",
-      body: JSON.stringify({ titulo, condominio: condominio ?? null }),
+      body: JSON.stringify({ titulo, nome_condominio: nomeCondominio }),
     }),
 
   getListaPresenca: (id: string) =>
@@ -784,14 +784,9 @@ export const api = {
     ),
 
   reconhecerPresencaFacial: (id: string, descriptor: number[]) =>
-    request<{
-      encontrado: boolean;
-      identidade_id?: string;
-      nome?: string;
-      bloco?: string;
-      apartamento?: string;
-      perfil?: string;
-    }>(`/enquetes/listas-presenca/${id}/facial/reconhecer/`, {
+    request<{ encontrado: boolean }>(
+      `/enquetes/listas-presenca/${id}/facial/reconhecer/`,
+    {
       method: "POST",
       body: JSON.stringify({ descriptor }),
     }),
