@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import uuid
 
@@ -772,6 +773,8 @@ def acesso_facial(request, assembleia_id):
             bloco=votante.bloco,
             apartamento=votante.apartamento,
             metodo_auth="facial",
+            selfie=selfie_ident,
+            assinatura_facial=hashlib.sha256(str(descriptor).encode()).hexdigest(),
             ip_address=get_client_ip(request),
             user_agent=user_agent,
             device_info=infer_device_info(user_agent),
