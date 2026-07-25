@@ -514,7 +514,9 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
 
     bloco = (votante.bloco or "").strip()
     apartamento = (votante.apartamento or "").strip()
-    conflito_unidade = (
+    # Sem unidade informada (rosto reconhecido sem apartamento) não dá para
+    # deduplicar por unidade — evita marcar pendente à toa.
+    conflito_unidade = bool(apartamento) and (
         Voto.objects.filter(assembleia=assembleia, questao=questao)
         .filter(
             Q(
