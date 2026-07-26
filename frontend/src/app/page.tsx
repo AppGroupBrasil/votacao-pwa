@@ -286,8 +286,8 @@ export default function HomePage() {
             {
               icon: UserPlus,
               step: "1",
-              title: "Cadastro do Morador",
-              desc: "Importe via planilha Excel, PDF ou pelo nosso suporte. O morador registra sua biometria pelo celular.",
+              title: "Primeiro Acesso",
+              desc: "No primeiro acesso, o próprio morador registra o rosto pelo celular. Nas próximas vezes, é reconhecido na hora.",
             },
             {
               icon: ClipboardList,
@@ -503,8 +503,6 @@ export default function HomePage() {
                 "Resultados em tempo real",
                 "Relatórios e auditoria completa",
                 "Bloqueio automático de inadimplentes",
-                "Integração com Superlógica, Condomob e outros ERPs",
-                "API aberta para integração personalizada",
                 "Conformidade total com a LGPD",
               ].map((item) => (
                 <li key={item} className="flex items-start gap-2 text-sm">
