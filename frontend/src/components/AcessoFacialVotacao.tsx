@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ScanFace, Camera, Loader2, Mail, ShieldCheck } from "lucide-react";
 import { api, getDeviceId } from "@/lib/api";
-import { loadModels, detectFace } from "@/lib/faceapi";
+import { loadModels, detectFaceAveraged } from "@/lib/faceapi";
 
 const PERFIS = [
   { v: "proprietario", l: "Proprietário" },
@@ -106,7 +106,9 @@ export default function AcessoFacialVotacao({
       const canvas = capturarFrame(video);
       if (!canvas) return;
       await loadModels();
-      const desc = await detectFace(canvas);
+      // Média de várias leituras do rosto ao vivo: vetor mais estável, reconhece
+      // a mesma pessoa com mais facilidade. O canvas serve só para a selfie.
+      const desc = await detectFaceAveraged(video, 4);
       if (!desc) {
         setErro(
           "Não reconheci um rosto. Aproxime-se, melhore a luz e tente de novo."

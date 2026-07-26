@@ -50,6 +50,31 @@ export async function detectFace(
 }
 
 /**
+ * Lê o rosto várias vezes e devolve a MÉDIA dos descritores. Cada leitura tem um
+ * ruído pequeno (luz/tremor/ângulo); tirar a média aproxima o vetor do "rosto
+ * real" da pessoa e reduz a distância na comparação — reconhece com mais
+ * facilidade a mesma pessoa. Retorna null se não achar rosto em nenhuma amostra.
+ */
+export async function detectFaceAveraged(
+  input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
+  amostras = 4
+): Promise<Float32Array | null> {
+  const descritores: Float32Array[] = [];
+  for (let i = 0; i < amostras; i++) {
+    const d = await detectFace(input);
+    if (d) descritores.push(d);
+    if (i < amostras - 1) await new Promise((r) => setTimeout(r, 160));
+  }
+  if (!descritores.length) return null;
+  const media = new Float32Array(descritores[0].length);
+  for (const d of descritores) {
+    for (let j = 0; j < media.length; j++) media[j] += d[j];
+  }
+  for (let j = 0; j < media.length; j++) media[j] /= descritores.length;
+  return media;
+}
+
+/**
  * Calcula a distância euclidiana entre dois descritores faciais.
  * Menor = mais similar. Limiar típico: 0.6
  */
@@ -57,7 +82,7 @@ export function euclideanDistance(a: Float32Array, b: Float32Array): number {
   return faceapi.euclideanDistance(Array.from(a), Array.from(b));
 }
 
-export const FACE_MATCH_THRESHOLD = 0.6;
+export const FACE_MATCH_THRESHOLD = 0.65;
 
 /**
  * Verifica se dois descritores pertencem à mesma pessoa.

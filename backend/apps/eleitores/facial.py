@@ -6,12 +6,18 @@ que o face-api usa no navegador — só que aqui rodamos no servidor para reconh
 a mesma pessoa em qualquer aparelho.
 """
 import math
+import os
 
 # Limiar de reconhecimento (distância euclidiana máxima para tratar como a mesma
 # pessoa). Objetivo aqui é só evitar voto duplo — não é segurança financeira —,
 # então priorizamos RECONHECER com facilidade (evitar pedir cadastro de novo) em
-# vez de ser rígido. 0.6 é o mesmo valor que o face-api usa para comparar 1:1.
-LIMIAR_RECONHECIMENTO = 0.6
+# vez de ser rígido. O face-api usa 0.6 no 1:1; aqui subimos um pouco (0.65) para
+# tolerar variação de luz/ângulo/câmera e não deixar de reconhecer a mesma pessoa.
+# Ajustável sem redeploy pela variável de ambiente FACIAL_LIMIAR.
+try:
+    LIMIAR_RECONHECIMENTO = float(os.environ.get("FACIAL_LIMIAR", "0.65"))
+except (TypeError, ValueError):
+    LIMIAR_RECONHECIMENTO = 0.65
 
 # Tamanho esperado do vetor facial do face-api.
 TAMANHO_DESCRIPTOR = 128
