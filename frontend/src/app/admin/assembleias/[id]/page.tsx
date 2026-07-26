@@ -10,7 +10,6 @@ import {
   Plus,
   Trash2,
   Play,
-  Lock,
   Square,
   Copy,
   CheckCircle,
@@ -161,24 +160,6 @@ export default function AssembleiaDetailPage() {
       setAssembleia(updated);
     } catch (err: any) {
       const msg = err?.response?.data?.error || "Erro ao abrir assembleia.";
-      alert(msg);
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
-  async function handleLiberar(liberar: boolean) {
-    if (
-      liberar &&
-      !confirm("Liberar a votação agora? Os moradores presentes poderão votar.")
-    )
-      return;
-    setActionLoading(true);
-    try {
-      const updated = await api.liberarVotacao(id, liberar);
-      setAssembleia(updated);
-    } catch (err: any) {
-      const msg = err?.response?.data?.error || "Erro ao liberar votação.";
       alert(msg);
     } finally {
       setActionLoading(false);
@@ -443,27 +424,6 @@ export default function AssembleiaDetailPage() {
                   )}
                   {copied ? "Copiado!" : "Link de Votação"}
                 </button>
-                {assembleia.votacao_liberada ? (
-                  <button
-                    onClick={() => handleLiberar(false)}
-                    disabled={actionLoading}
-                    className="btn-secondary flex items-center gap-2 text-sm"
-                    title="Travar a votação novamente (moradores não conseguem votar)"
-                  >
-                    <Lock className="w-4 h-4" />
-                    Travar votação
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleLiberar(true)}
-                    disabled={actionLoading}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm font-medium"
-                    title="Liberar a votação para os moradores presentes"
-                  >
-                    <Play className="w-4 h-4" />
-                    Liberar votação
-                  </button>
-                )}
                 <button
                   onClick={handleEncerrar}
                   disabled={actionLoading}

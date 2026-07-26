@@ -113,9 +113,9 @@ class AssembleiaViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         assembleia.status = Assembleia.Status.ABERTA
-        assembleia.votacao_liberada = False
+        assembleia.votacao_liberada = True
         assembleia.save(update_fields=["status", "votacao_liberada"])
-        registrar_log(request, assembleia, LogAuditoria.Acao.ABRIR, "Votação aberta (aguardando liberação).")
+        registrar_log(request, assembleia, LogAuditoria.Acao.ABRIR, "Votação aberta e liberada.")
         return Response(AssembleiaSerializer(assembleia).data)
 
     @action(detail=True, methods=["post"], url_path="liberar-votacao")
