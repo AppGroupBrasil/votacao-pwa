@@ -6,7 +6,7 @@ import { Copy, Check, ExternalLink, Share2 } from "lucide-react";
 /**
  * Bloco de destaque para compartilhar o link curto (/v/<codigo>) no chat do
  * Google Meet / Zoom, com botões grandes e responsivos:
- *  - "Copiar link para o chat" (laranja, bem chamativo)
+ *  - "Copiar link para votação" (laranja, bem chamativo)
  *  - Abrir a página em nova aba (âmbar) — rótulo via `abrirLabel`
  *  - "Compartilhar" (verde) — usa o menu nativo do celular (WhatsApp etc.);
  *    onde não houver, cai no copiar.
@@ -80,7 +80,7 @@ export default function LinkDestaque({
           </>
         ) : (
           <>
-            <Copy className="w-5 h-5 shrink-0" /> Copiar link para o chat
+            <Copy className="w-5 h-5 shrink-0" /> Copiar link para votação
           </>
         )}
       </button>
