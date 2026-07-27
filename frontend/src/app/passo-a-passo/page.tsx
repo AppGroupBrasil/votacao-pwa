@@ -1,16 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Vote, ClipboardList, Video, ListChecks, CheckSquare, Printer } from "lucide-react";
+import {
+  Vote,
+  ClipboardList,
+  Video,
+  MessageSquare,
+  CheckSquare,
+  Printer,
+} from "lucide-react";
 
 // Valores padrão desta assembleia. Para reaproveitar em outro condomínio,
 // basta trocar aqui — ou passar pela URL:
-// /passo-a-passo?cond=Nome&lista=...&meet=...&votacao=...
+// /passo-a-passo?cond=Nome&link=https://appvotacao.com.br/assembleia
 const DEFAULTS = {
   cond: "San Residence",
-  lista: "https://appvotacao.com.br/v/G5B",
-  meet: "https://meet.google.com/xjx-zyrh-bhw",
-  votacao: "",
+  link: "https://appvotacao.com.br/assembleia",
+  votacao: "https://appvotacao.com.br/v/EY3",
 };
 
 function LinkBox({ url }: { url: string }) {
@@ -40,8 +46,7 @@ export default function PassoAPassoPage() {
     const q = new URLSearchParams(window.location.search);
     setCfg({
       cond: q.get("cond") || DEFAULTS.cond,
-      lista: q.get("lista") || DEFAULTS.lista,
-      meet: q.get("meet") || DEFAULTS.meet,
+      link: q.get("link") || DEFAULTS.link,
       votacao: q.get("votacao") || DEFAULTS.votacao,
     });
   }, []);
@@ -91,13 +96,13 @@ export default function PassoAPassoPage() {
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <ClipboardList className="h-5 w-5 text-primary-600" />
-                <h2 className="font-bold">Preencha a lista de presença</h2>
+                <h2 className="font-bold">Acesse a assembleia e preencha a presença</h2>
               </div>
               <p className="mt-1 text-sm text-gray-600">
-                Acesse o link da lista de presença e preencha suas informações
-                (nome, unidade e assinatura).
+                Abra o endereço abaixo e preencha a lista de presença com as suas
+                informações (nome, unidade e assinatura).
               </p>
-              <LinkBox url={cfg.lista} />
+              <LinkBox url={cfg.link} />
             </div>
           </div>
 
@@ -112,10 +117,9 @@ export default function PassoAPassoPage() {
                 <h2 className="font-bold">Entre na sala da assembleia</h2>
               </div>
               <p className="mt-1 text-sm text-gray-600">
-                Ao terminar, você será encaminhado para a sala da Assembleia
-                Online. Se preferir, acesse pelo link:
+                Ao terminar de preencher, você será encaminhado para a sala da
+                Assembleia Online.
               </p>
-              <LinkBox url={cfg.meet} />
             </div>
           </div>
 
@@ -126,12 +130,12 @@ export default function PassoAPassoPage() {
             </span>
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <ListChecks className="h-5 w-5 text-primary-600" />
+                <MessageSquare className="h-5 w-5 text-primary-600" />
                 <h2 className="font-bold">Acesse a votação</h2>
               </div>
               <p className="mt-1 text-sm text-gray-600">
-                A votação de cada um dos tópicos estará disponível no link
-                abaixo.
+                A votação de cada um dos tópicos estará disponível no chat da
+                sala da Assembleia. Você também pode acessar pelo link:
               </p>
               <LinkBox url={cfg.votacao} />
             </div>
