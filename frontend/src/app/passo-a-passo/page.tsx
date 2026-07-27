@@ -60,7 +60,7 @@ export default function PassoAPassoPage() {
       }`}</style>
 
       <header className="bg-gradient-to-br from-primary-900 via-primary-800 to-primary-700 text-white">
-        <div className="mx-auto max-w-2xl px-6 pb-24 pt-6">
+        <div className="mx-auto max-w-2xl px-6 pb-24 pt-6 print:pb-10">
           <div className="mb-8 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Vote className="h-6 w-6" />
@@ -86,7 +86,7 @@ export default function PassoAPassoPage() {
         </div>
       </header>
 
-      <main className="-mt-14 px-4 pb-16">
+      <main className="-mt-14 px-4 pb-16 print:mt-4">
         <div className="mx-auto max-w-2xl space-y-4">
           {/* Passo 1 */}
           <div className="step-card card flex gap-4">
