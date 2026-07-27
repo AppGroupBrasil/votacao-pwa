@@ -18,7 +18,13 @@ class Eleitor(models.Model):
         help_text="ID do morador na central (auth-central) — mapeia o sync de cadastro.",
     )
     nome = models.CharField(max_length=200)
-    cpf_hash = models.CharField(max_length=64, unique=True, blank=True, null=True)
+    cpf_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="Hash SHA-256 do CPF/CNPJ. Não é único: uma pessoa pode ter várias unidades e a construtora repete o CNPJ.",
+    )
     bloco = models.CharField(max_length=20, blank=True, default="")
     apartamento = models.CharField(max_length=20)
     perfil = models.CharField(
@@ -26,7 +32,7 @@ class Eleitor(models.Model):
         choices=[("proprietario", "Proprietário"), ("procurador", "Procurador")],
         default="proprietario",
     )
-    email = models.EmailField(max_length=200)
+    email = models.EmailField(max_length=200, blank=True, default="")
     senha = models.CharField(max_length=128, blank=True, default="")
     senha_alterada = models.BooleanField(
         default=False,

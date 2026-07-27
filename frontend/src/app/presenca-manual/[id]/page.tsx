@@ -13,6 +13,7 @@ import {
   Mail,
   ScanFace,
   HelpCircle,
+  CreditCard,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { loadModels, detectFace, hashDescriptor } from "@/lib/faceapi";
@@ -29,6 +30,14 @@ const PERFIS: { value: Perfil; label: string }[] = [
   { value: "procurador", label: "Procurador" },
   { value: "outro", label: "Outro" },
 ];
+
+async function sha256Hex(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value.replace(/\D/g, ""));
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 function detectarAparelho(): string {
   if (typeof navigator === "undefined") return "";
@@ -60,6 +69,15 @@ export default function PresencaManualPublicaPage() {
   const [bloco, setBloco] = useState("");
   const [apartamento, setApartamento] = useState("");
   const [consentimento, setConsentimento] = useState(false);
+
+  // --- portão de CPF: morador digita o CPF e o sistema traz a unidade ---
+  const [cpf, setCpf] = useState("");
+  const [cpfConfirmado, setCpfConfirmado] = useState(false);
+  const [consultandoCpf, setConsultandoCpf] = useState(false);
+  const [unidadesCpf, setUnidadesCpf] = useState<
+    { nome: string; bloco: string; apartamento: string; perfil: string }[] | null
+  >(null);
+  const [erroCpf, setErroCpf] = useState("");
 
   // --- cascata de identificação ---
   const [metodo, setMetodo] = useState<Metodo>("");
@@ -105,6 +123,45 @@ export default function PresencaManualPublicaPage() {
       .catch(() => setErro("Lista de presença não encontrada."))
       .finally(() => setLoading(false));
   }, [id]);
+
+  async function consultarCpf() {
+    const digitos = cpf.replace(/\D/g, "");
+    if (digitos.length !== 11 && digitos.length !== 14) {
+      setErroCpf("Digite os 11 números do seu CPF.");
+      return;
+    }
+    setConsultandoCpf(true);
+    setErroCpf("");
+    try {
+      const hash = await sha256Hex(digitos);
+      const res = await api.consultarCpfPresenca(id, hash);
+      setUnidadesCpf(res.unidades);
+    } catch {
+      setErroCpf("Não consegui consultar agora. Tente de novo em instantes.");
+    } finally {
+      setConsultandoCpf(false);
+    }
+  }
+
+  function escolherUnidade(u: {
+    nome: string;
+    bloco: string;
+    apartamento: string;
+    perfil: string;
+  }) {
+    setNome(u.nome || "");
+    setBloco(u.bloco || "");
+    setApartamento(u.apartamento || "");
+    if (u.perfil === "proprietario" || u.perfil === "procurador") {
+      setPerfil(u.perfil);
+    }
+    setCpfConfirmado(true);
+  }
+
+  function pularCpf() {
+    // Cadastro na hora: segue com os campos em branco para o morador digitar.
+    setCpfConfirmado(true);
+  }
 
   const pararCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -495,6 +552,113 @@ export default function PresencaManualPublicaPage() {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 text-center text-gray-600">
         Esta lista de presença está encerrada.
+      </div>
+    );
+  }
+
+  // Portão de CPF: primeiro passo. O morador digita o CPF e o sistema já traz
+  // nome/bloco/apartamento; depois segue para a facial e a assinatura.
+  if (lista && lista.ativa && !cpfConfirmado) {
+    const digitos = cpf.replace(/\D/g, "");
+    const cpfValido = digitos.length === 11 || digitos.length === 14;
+    return (
+      <div className="min-h-screen bg-gray-50 py-6 px-4">
+        <div className="max-w-md mx-auto">
+          <h1 className="text-xl font-bold mb-1">Lista de presença</h1>
+          {lista?.titulo && (
+            <p className="text-sm text-gray-500 mb-4">{lista.titulo}</p>
+          )}
+
+          <div className="card mb-4">
+            <label className="flex items-center gap-2 text-sm font-semibold mb-2">
+              <CreditCard className="w-4 h-4 text-primary-600" />
+              Digite o seu CPF
+            </label>
+            <p className="mb-3 text-xs text-gray-500">
+              É só digitar o CPF que o sistema encontra a sua unidade e preenche
+              tudo automaticamente. Depois você faz a facial e assina.
+            </p>
+            <input
+              inputMode="numeric"
+              autoComplete="off"
+              value={cpf}
+              onChange={(e) => {
+                setCpf(e.target.value);
+                setErroCpf("");
+                setUnidadesCpf(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && cpfValido && !consultandoCpf)
+                  consultarCpf();
+              }}
+              placeholder="000.000.000-00"
+              className="input-field w-full text-center tracking-widest text-lg"
+              disabled={consultandoCpf}
+            />
+            <button
+              onClick={consultarCpf}
+              disabled={!cpfValido || consultandoCpf}
+              className="btn-primary w-full mt-3 disabled:opacity-50"
+            >
+              {consultandoCpf ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Procurando...
+                </span>
+              ) : (
+                "Continuar"
+              )}
+            </button>
+            {erroCpf && <p className="mt-2 text-sm text-red-600">{erroCpf}</p>}
+
+            {unidadesCpf && unidadesCpf.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-sm font-medium">
+                  {unidadesCpf.length === 1
+                    ? "Encontramos a sua unidade:"
+                    : "Escolha a unidade (uma de cada vez):"}
+                </p>
+                {unidadesCpf.map((u, i) => (
+                  <button
+                    key={i}
+                    onClick={() => escolherUnidade(u)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-primary-400 hover:bg-primary-50"
+                  >
+                    <span className="block font-medium text-gray-800">
+                      {u.nome}
+                    </span>
+                    <span className="block text-xs text-gray-500">
+                      {[u.bloco && `Bloco ${u.bloco}`, `Apt ${u.apartamento}`]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </button>
+                ))}
+                {unidadesCpf.length > 1 && (
+                  <p className="pt-1 text-xs text-gray-400">
+                    Tem mais de uma unidade? Registre uma agora e depois abra o
+                    link de novo para a próxima.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {unidadesCpf && unidadesCpf.length === 0 && (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+                Não encontramos esse CPF na lista. Sem problema — você pode se
+                cadastrar na hora no botão abaixo.
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={pularCpf}
+            className="w-full text-sm text-gray-500 underline underline-offset-2"
+          >
+            {unidadesCpf && unidadesCpf.length === 0
+              ? "Cadastrar meus dados na hora"
+              : "Não tenho o CPF em mãos / cadastrar na hora"}
+          </button>
+        </div>
       </div>
     );
   }

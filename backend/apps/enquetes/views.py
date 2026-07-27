@@ -15,7 +15,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.eleitores.facial import melhor_correspondencia, validar_descriptor
-from apps.eleitores.models import IdentidadeFacial
+from apps.eleitores.models import Eleitor, IdentidadeFacial
 from core.otp import gerar_otp, validar_otp
 from core.permissions import (
     IsAdminWithRole,
@@ -199,6 +199,39 @@ def lista_presenca_publica(request, lista_id):
             "ativa": lista.ativa,
         }
     )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@ratelimit(key="ip", rate="30/m", block=True)
+def consultar_cpf_presenca(request, lista_id):
+    """Morador digita o CPF na lista de presença; devolve as unidades ligadas a
+    esse CPF/CNPJ no condomínio da lista, para preencher nome/bloco/apartamento
+    sem digitação. Recebe já o hash (o CPF nunca trafega em texto). Não expõe
+    e-mail nem qualquer outro dado do morador."""
+    try:
+        lista = ListaPresenca.objects.get(id=lista_id)
+    except ListaPresenca.DoesNotExist:
+        return Response(
+            {"error": "Lista não encontrada."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    cpf_hash = str(request.data.get("cpf_hash", "")).strip().lower()
+    if len(cpf_hash) != 64 or any(c not in "0123456789abcdef" for c in cpf_hash):
+        return Response(
+            {"error": "CPF inválido."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if lista.condominio_id is None:
+        return Response({"unidades": []})
+    unidades = list(
+        Eleitor.objects.filter(
+            condominio_id=lista.condominio_id, cpf_hash=cpf_hash
+        )
+        .order_by("bloco", "apartamento")
+        .values("nome", "bloco", "apartamento", "perfil")
+    )
+    return Response({"unidades": unidades})
 
 
 @api_view(["POST"])

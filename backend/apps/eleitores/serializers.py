@@ -10,9 +10,11 @@ class EleitorSerializer(serializers.ModelSerializer):
     cpf_hash = serializers.CharField(
         max_length=64, required=False, allow_blank=True, allow_null=True
     )
+    email = serializers.EmailField(required=False, allow_blank=True)
 
     def validate_cpf_hash(self, value):
-        # CPF é opcional; vazio vira NULL para não colidir no índice único.
+        # CPF é opcional; vazio vira NULL (o campo não é mais único, mas manter
+        # NULL evita agrupar todo mundo sem CPF sob o mesmo hash de vazio).
         return value or None
 
     class Meta:

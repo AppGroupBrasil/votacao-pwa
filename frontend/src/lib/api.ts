@@ -787,6 +787,19 @@ export const api = {
       `/enquetes/listas-presenca/${id}/publica/`
     ),
 
+  consultarCpfPresenca: (id: string, cpf_hash: string) =>
+    request<{
+      unidades: {
+        nome: string;
+        bloco: string;
+        apartamento: string;
+        perfil: string;
+      }[];
+    }>(`/enquetes/listas-presenca/${id}/consultar-cpf/`, {
+      method: "POST",
+      body: JSON.stringify({ cpf_hash }),
+    }),
+
   registrarPresencaManual: (
     id: string,
     data: {

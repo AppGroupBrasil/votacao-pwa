@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     EnqueteViewSet,
     ListaPresencaViewSet,
+    consultar_cpf_presenca,
     enquete_publica,
     lista_presenca_publica,
     presenca_enviar_codigo,
@@ -36,6 +37,11 @@ urlpatterns = [
         "listas-presenca/<uuid:lista_id>/registrar/",
         registrar_presenca_manual,
         name="lista-presenca-registrar",
+    ),
+    path(
+        "listas-presenca/<uuid:lista_id>/consultar-cpf/",
+        consultar_cpf_presenca,
+        name="lista-presenca-consultar-cpf",
     ),
     path(
         "listas-presenca/<uuid:lista_id>/facial/reconhecer/",
