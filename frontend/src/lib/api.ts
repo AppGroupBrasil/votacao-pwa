@@ -697,7 +697,11 @@ export const api = {
   createEnquete: (
     titulo: string,
     opcoes_texto: string[],
-    opts?: { voto_aberto?: boolean; condominio?: string }
+    opts?: {
+      voto_aberto?: boolean;
+      exige_identificacao?: boolean;
+      condominio?: string;
+    }
   ) =>
     request<import("./types").Enquete>("/enquetes/", {
       method: "POST",
@@ -705,13 +709,20 @@ export const api = {
         titulo,
         opcoes_texto,
         voto_aberto: opts?.voto_aberto ?? false,
+        exige_identificacao: opts?.exige_identificacao ?? false,
         condominio: opts?.condominio ?? null,
       }),
     }),
 
   updateEnquete: (
     id: string,
-    data: Partial<{ titulo: string; ativa: boolean; voto_aberto: boolean; opcoes_texto: string[] }>
+    data: Partial<{
+      titulo: string;
+      ativa: boolean;
+      voto_aberto: boolean;
+      exige_identificacao: boolean;
+      opcoes_texto: string[];
+    }>
   ) =>
     request<import("./types").Enquete>(`/enquetes/${id}/`, {
       method: "PATCH",
@@ -730,7 +741,18 @@ export const api = {
   votarEnquete: (
     id: string,
     opcaoId: string,
-    votante?: { nome: string; bloco?: string; apartamento: string }
+    votante?: {
+      nome: string;
+      bloco?: string;
+      apartamento: string;
+      selfie?: string;
+      assinatura?: string;
+      consentimento_lgpd?: boolean;
+      declaracao_veracidade?: boolean;
+      marca_aparelho?: string;
+      geo_lat?: number | null;
+      geo_lng?: number | null;
+    }
   ) =>
     request<import("./types").EnqueteResultado>(`/enquetes/${id}/votar/`, {
       method: "POST",
@@ -740,6 +762,13 @@ export const api = {
         votante_nome: votante?.nome ?? "",
         votante_bloco: votante?.bloco ?? "",
         votante_apartamento: votante?.apartamento ?? "",
+        selfie: votante?.selfie ?? "",
+        assinatura: votante?.assinatura ?? "",
+        consentimento_lgpd: votante?.consentimento_lgpd ?? false,
+        declaracao_veracidade: votante?.declaracao_veracidade ?? false,
+        marca_aparelho: votante?.marca_aparelho ?? "",
+        geo_lat: votante?.geo_lat ?? null,
+        geo_lng: votante?.geo_lng ?? null,
       }),
     }),
 

@@ -29,6 +29,14 @@ class Enquete(models.Model):
         default=False,
         help_text="Se True, identifica quem votou (nome/unidade). Se False, anônimo.",
     )
+    exige_identificacao = models.BooleanField(
+        default=False,
+        help_text=(
+            "Se True, o morador só vota após se identificar: selfie, nome, "
+            "bloco/apartamento, assinatura e aceite da LGPD (mesma comprovação "
+            "da votação da assembleia)."
+        ),
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -197,6 +205,15 @@ class EnqueteVoto(models.Model):
     votante_nome = models.CharField(max_length=200, blank=True, default="")
     votante_bloco = models.CharField(max_length=20, blank=True, default="")
     votante_apartamento = models.CharField(max_length=20, blank=True, default="")
+    votante_selfie = models.TextField(blank=True, default="")
+    votante_assinatura = models.TextField(blank=True, default="")
+    consentimento_lgpd = models.BooleanField(default=False)
+    consentimento_em = models.DateTimeField(null=True, blank=True)
+    declaracao_veracidade = models.BooleanField(default=False)
+    marca_aparelho = models.CharField(max_length=120, blank=True, default="")
+    user_agent = models.TextField(blank=True, default="")
+    geo_lat = models.FloatField(null=True, blank=True)
+    geo_lng = models.FloatField(null=True, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:

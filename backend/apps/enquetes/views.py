@@ -723,6 +723,7 @@ def enquete_publica(request, enquete_id):
             "titulo": enquete.titulo,
             "ativa": enquete.ativa,
             "voto_aberto": enquete.voto_aberto,
+            "exige_identificacao": enquete.exige_identificacao,
             "opcoes": [
                 {"id": str(o.id), "texto": o.texto} for o in enquete.opcoes.all()
             ],
@@ -784,10 +785,20 @@ def votar_enquete(request, enquete_id):
             status=status.HTTP_409_CONFLICT,
         )
 
+    exige = enquete.exige_identificacao
     votante_nome = ""
     votante_bloco = ""
     votante_apartamento = ""
-    if enquete.voto_aberto:
+    selfie = ""
+    assinatura = ""
+    consentimento_lgpd = False
+    declaracao_veracidade = False
+    marca_aparelho = ""
+    user_agent = ""
+    geo_lat = None
+    geo_lng = None
+
+    if enquete.voto_aberto or exige:
         votante_nome = str(request.data.get("votante_nome", "")).strip()[:200]
         votante_bloco = str(request.data.get("votante_bloco", "")).strip()[:20]
         votante_apartamento = str(
@@ -799,6 +810,42 @@ def votar_enquete(request, enquete_id):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+    if exige:
+        selfie = str(request.data.get("selfie", ""))
+        assinatura = str(request.data.get("assinatura", ""))
+        if len(selfie) > 3_500_000 or len(assinatura) > 3_500_000:
+            return Response(
+                {"error": "Imagem muito grande."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not selfie:
+            return Response(
+                {"error": "A selfie (foto) é obrigatória nesta votação."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not assinatura:
+            return Response(
+                {"error": "A assinatura é obrigatória nesta votação."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        consentimento_lgpd = bool(request.data.get("consentimento_lgpd"))
+        if not consentimento_lgpd:
+            return Response(
+                {"error": "É necessário concordar com o uso dos dados (LGPD) para votar."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        declaracao_veracidade = bool(request.data.get("declaracao_veracidade"))
+        marca_aparelho = str(request.data.get("marca_aparelho", "")).strip()[:120]
+        try:
+            geo_lat = float(request.data.get("geo_lat"))
+        except (TypeError, ValueError):
+            geo_lat = None
+        try:
+            geo_lng = float(request.data.get("geo_lng"))
+        except (TypeError, ValueError):
+            geo_lng = None
+        user_agent = get_client_user_agent(request)
+
     try:
         EnqueteVoto.objects.create(
             enquete=enquete,
@@ -808,6 +855,15 @@ def votar_enquete(request, enquete_id):
             votante_nome=votante_nome,
             votante_bloco=votante_bloco,
             votante_apartamento=votante_apartamento,
+            votante_selfie=selfie,
+            votante_assinatura=assinatura,
+            consentimento_lgpd=consentimento_lgpd,
+            consentimento_em=timezone.now() if consentimento_lgpd else None,
+            declaracao_veracidade=declaracao_veracidade,
+            marca_aparelho=marca_aparelho,
+            user_agent=user_agent,
+            geo_lat=geo_lat,
+            geo_lng=geo_lng,
         )
     except IntegrityError:
         # Corrida: o mesmo dispositivo enviou dois votos quase simultâneos.

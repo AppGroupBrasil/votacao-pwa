@@ -11,6 +11,7 @@ import {
   Power,
   Lock,
   Eye,
+  ShieldCheck,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import ComoFunciona from "@/components/ComoFunciona";
@@ -23,6 +24,7 @@ export default function VotacaoRapidaPage() {
   const [titulo, setTitulo] = useState("");
   const [opcoes, setOpcoes] = useState<string[]>(["", ""]);
   const [votoAberto, setVotoAberto] = useState(false);
+  const [exigeIdent, setExigeIdent] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
   const [copiado, setCopiado] = useState<string>("");
@@ -43,6 +45,7 @@ export default function VotacaoRapidaPage() {
     setTitulo("");
     setOpcoes(["", ""]);
     setVotoAberto(false);
+    setExigeIdent(false);
     setErro("");
     setModalOpen(true);
   }
@@ -64,7 +67,10 @@ export default function VotacaoRapidaPage() {
     }
     setSalvando(true);
     try {
-      await api.createEnquete(titulo.trim(), limpo, { voto_aberto: votoAberto });
+      await api.createEnquete(titulo.trim(), limpo, {
+        voto_aberto: votoAberto,
+        exige_identificacao: exigeIdent,
+      });
       setModalOpen(false);
       carregar();
     } catch {
@@ -145,6 +151,11 @@ export default function VotacaoRapidaPage() {
                   ) : (
                     <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 text-gray-600 px-2 py-0.5 text-xs font-medium">
                       <Lock className="w-3 h-3" /> Secreta
+                    </span>
+                  )}
+                  {e.exige_identificacao && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary-100 text-primary-700 px-2 py-0.5 text-xs font-medium">
+                      <ShieldCheck className="w-3 h-3" /> Identificação
                     </span>
                   )}
                 </div>
@@ -299,6 +310,45 @@ export default function VotacaoRapidaPage() {
                 </span>
               </button>
             </div>
+
+            <label className="mt-5 block text-sm font-medium mb-2">
+              Identificação de quem vota
+            </label>
+            <button
+              type="button"
+              onClick={() => setExigeIdent((v) => !v)}
+              className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left ${
+                exigeIdent
+                  ? "border-primary-600 bg-primary-50"
+                  : "border-gray-300 hover:bg-gray-50"
+              }`}
+            >
+              <ShieldCheck
+                className={`w-5 h-5 shrink-0 ${
+                  exigeIdent ? "text-primary-600" : "text-gray-400"
+                }`}
+              />
+              <span className="flex-1">
+                <span className="block text-sm font-medium">
+                  Exigir identificação para votar
+                </span>
+                <span className="block text-xs text-gray-500">
+                  O morador tira uma selfie e informa nome, bloco, apartamento e
+                  assinatura, com autorização da LGPD, antes de votar.
+                </span>
+              </span>
+              <span
+                className={`mt-0.5 flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition ${
+                  exigeIdent ? "bg-primary-600" : "bg-gray-300"
+                }`}
+              >
+                <span
+                  className={`h-5 w-5 rounded-full bg-white shadow transition ${
+                    exigeIdent ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </span>
+            </button>
 
             {erro && <p className="mt-3 text-sm text-red-600">{erro}</p>}
 

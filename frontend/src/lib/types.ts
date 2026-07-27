@@ -279,6 +279,7 @@ export interface Enquete {
   titulo: string;
   ativa: boolean;
   voto_aberto: boolean;
+  exige_identificacao?: boolean;
   criado_em: string;
   opcoes: EnqueteOpcaoItem[];
   total_votos: number;
@@ -344,6 +345,7 @@ export interface EnquetePublica {
   titulo: string;
   ativa: boolean;
   voto_aberto: boolean;
+  exige_identificacao?: boolean;
   opcoes: { id: string; texto: string }[];
 }
 
