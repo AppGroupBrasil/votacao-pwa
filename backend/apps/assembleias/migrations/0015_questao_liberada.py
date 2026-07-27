@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("assembleias", "0014_assembleia_codigo_curto"),
+        ("assembleias", "0019_presenca_captura_identidade"),
     ]
 
     operations = [
