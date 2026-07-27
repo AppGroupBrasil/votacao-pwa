@@ -23,6 +23,7 @@ const PERFIL_LABEL: Record<string, string> = {
 };
 
 const METODO_LABEL: Record<string, string> = {
+  selfie: "Selfie",
   facial: "Biometria facial",
   webauthn: "Digital do aparelho",
   otp: "Código por e-mail",

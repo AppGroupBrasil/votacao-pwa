@@ -351,9 +351,14 @@ def registrar_presenca_manual(request, lista_id):
 
     # Cascata de identificação: facial → digital (webauthn) → código por e-mail (otp).
     metodo_auth = str(request.data.get("metodo_auth", "")).strip().lower()
-    if metodo_auth not in {"facial", "webauthn", "otp"}:
+    if metodo_auth not in {"selfie", "facial", "webauthn", "otp"}:
         return Response(
-            {"error": "É necessário confirmar a identidade (biometria facial, digital ou código por e-mail)."},
+            {"error": "É necessário confirmar a identidade (selfie, biometria facial, digital ou código por e-mail)."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if metodo_auth == "selfie" and not selfie:
+        return Response(
+            {"error": "A selfie é obrigatória."},
             status=status.HTTP_400_BAD_REQUEST,
         )
     if metodo_auth == "facial" and not assinatura_facial:
