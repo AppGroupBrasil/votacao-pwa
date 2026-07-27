@@ -101,3 +101,16 @@ class IsAdminWithRole(BasePermission):
         if not request.user.is_staff:
             return False
         return hasattr(request.user, "perfil_admin")
+
+
+class IsMaster(BasePermission):
+    """Apenas o master (superuser). Usado onde os dados não têm escopo de
+    condomínio confiável (ex.: pedidos de exclusão LGPD com condomínio em texto
+    livre), evitando expor CPF/e-mail de um condomínio a síndicos de outro."""
+
+    def has_permission(self, request, view):
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and request.user.is_superuser
+        )

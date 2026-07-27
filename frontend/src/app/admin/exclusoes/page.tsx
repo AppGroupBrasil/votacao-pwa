@@ -37,13 +37,24 @@ export default function ExclusoesPage() {
   const router = useRouter();
   const [itens, setItens] = useState<SolicitacaoExclusao[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [erro, setErro] = useState("");
 
   async function carregar() {
     try {
       const d = await api.getSolicitacoesExclusao();
       setItens(d.results);
-    } catch {
-      router.push("/login");
+      setErro("");
+    } catch (e: any) {
+      const st = e?.response?.status;
+      if (st === 401) {
+        router.push("/login");
+      } else if (st === 403) {
+        setErro("Esta área é exclusiva do master.");
+        setItens([]);
+      } else {
+        setErro("Não foi possível carregar os pedidos. Tente novamente.");
+        setItens([]);
+      }
     }
   }
 
@@ -97,9 +108,13 @@ export default function ExclusoesPage() {
         </div>
       </div>
 
+      {erro && (
+        <div className="card mb-3 text-center text-red-600">{erro}</div>
+      )}
+
       {itens === null ? (
         <p className="text-gray-400">Carregando...</p>
-      ) : itens.length === 0 ? (
+      ) : itens.length === 0 && !erro ? (
         <div className="card text-center text-gray-500">
           Nenhum pedido de exclusão registrado.
         </div>

@@ -14,7 +14,7 @@ from rest_framework.response import Response
 
 from apps.condominios.models import Condominio
 from core.otp import gerar_otp, validar_otp
-from core.permissions import IsAdminWithRole, get_user_condominios
+from core.permissions import IsAdminWithRole, IsMaster, get_user_condominios
 from core.request_info import get_client_user_agent
 
 from .models import Eleitor, SolicitacaoExclusao
@@ -71,7 +71,7 @@ class SolicitacaoExclusaoViewSet(viewsets.ModelViewSet):
     """Painel admin: lista e atualiza o status dos pedidos de exclusão."""
 
     serializer_class = SolicitacaoExclusaoSerializer
-    permission_classes = [IsAdminWithRole]
+    permission_classes = [IsMaster]
     http_method_names = ["get", "patch", "delete", "head", "options"]
     queryset = SolicitacaoExclusao.objects.all()
 
