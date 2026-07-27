@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("enquetes", "0003_listapresenca_presencamanual"),
+        ("enquetes", "0009_presencamanual_unique_identidade"),
     ]
 
     operations = [
