@@ -1,4 +1,6 @@
+import secrets
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.cache import cache
@@ -16,11 +18,13 @@ from rest_framework.response import Response
 
 from apps.eleitores.facial import melhor_correspondencia, validar_descriptor
 from apps.eleitores.models import Eleitor, IdentidadeFacial
+from apps.eleitores.serializers import EleitorSerializer
 from core.otp import gerar_otp, validar_otp
 from core.permissions import (
     IsAdminWithRole,
     get_or_create_user_condominio,
     get_user_condominios,
+    resolver_condominio_por_nome,
 )
 from core.request_info import get_client_user_agent, infer_device_info
 
@@ -119,49 +123,7 @@ class ListaPresencaViewSet(viewsets.ModelViewSet):
         serializer.save(condominio=condominio)
 
     def _resolver_condominio(self, user, nome_cond):
-        """Descobre a qual condomínio a lista pertence a partir do nome digitado,
-        sem nunca renomear o condomínio errado de quem administra vários."""
-        from apps.condominios.models import Condominio
-
-        escopo = get_user_condominios(user)
-        if escopo is None:
-            # Master (superuser): não tem condomínio próprio — reusa/cria pelo nome.
-            cond = Condominio.objects.filter(nome__iexact=nome_cond).first()
-            return cond or Condominio.objects.create(
-                nome=nome_cond,
-                cnpj=f"MSTR-{uuid.uuid4().hex[:12]}",
-                total_unidades=0,
-            )
-
-        perfil = getattr(user, "perfil_admin", None)
-        if perfil is None:
-            raise PermissionDenied("Nenhum condomínio associado ao seu usuário.")
-
-        # Já existe um condomínio SEU com esse nome? usa ele (não renomeia nada).
-        cond = perfil.condominios.filter(nome__iexact=nome_cond).first()
-        if cond is not None:
-            return cond
-
-        conds = list(perfil.condominios.all()[:2])
-        if len(conds) <= 1:
-            # Caso comum: só tem 1 condomínio (ou o padrão auto). Nomeia-o.
-            cond = get_or_create_user_condominio(user)
-            if cond is None:
-                raise PermissionDenied("Nenhum condomínio associado ao seu usuário.")
-            if nome_cond and cond.nome != nome_cond:
-                cond.nome = nome_cond
-                cond.save(update_fields=["nome", "atualizado_em"])
-            return cond
-
-        # Administra vários condomínios e digitou um nome novo: cria e vincula
-        # esse, sem tocar nos demais.
-        cond = Condominio.objects.create(
-            nome=nome_cond,
-            cnpj=f"C-{uuid.uuid4().hex[:14]}",
-            total_unidades=0,
-        )
-        perfil.condominios.add(cond)
-        return cond
+        return resolver_condominio_por_nome(user, nome_cond)
 
     @action(detail=True, methods=["get"], url_path="registros")
     def registros(self, request, pk=None):
@@ -181,6 +143,103 @@ class ListaPresencaViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@api_view(["POST"])
+@permission_classes([IsAdminWithRole])
+def importar_planilha_completa(request):
+    """Um clique a partir da planilha de moradores: cria/reusa o condomínio,
+    importa os moradores (com CPF, sem duplicar), atualiza blocos e total de
+    unidades, e cria já vinculadas a lista de presença e a votação (rascunho,
+    com todos os moradores como votantes). Só falta o síndico digitar as
+    perguntas da pauta — a planilha traz pessoas, não o que será votado."""
+    from apps.assembleias.models import Assembleia
+
+    nome_cond = str(request.data.get("nome_condominio") or "").strip()
+    titulo = str(request.data.get("titulo") or "").strip()
+    rows = request.data.get("eleitores") or []
+    if not nome_cond or not titulo:
+        return Response(
+            {"error": "Informe o nome do condomínio e o título da reunião."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not isinstance(rows, list) or not rows:
+        return Response(
+            {"error": "A planilha está vazia ou não foi lida."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    with transaction.atomic():
+        condominio = resolver_condominio_por_nome(request.user, nome_cond)
+
+        criados = 0
+        pulados = 0
+        erros = []
+        for i, row in enumerate(rows, start=2):  # linha 2 = 1ª linha de dados
+            serializer = EleitorSerializer(
+                data={**row, "condominio": str(condominio.id)}
+            )
+            if serializer.is_valid():
+                v = serializer.validated_data
+                ja_existe = Eleitor.objects.filter(
+                    condominio_id=condominio.id,
+                    bloco=v.get("bloco", "") or "",
+                    apartamento=v.get("apartamento", ""),
+                    cpf_hash=v.get("cpf_hash"),
+                ).exists()
+                if ja_existe:
+                    pulados += 1
+                    continue
+                serializer.save(
+                    convite_token=secrets.token_urlsafe(48),
+                    convite_expira_em=timezone.now() + timedelta(days=7),
+                )
+                criados += 1
+            else:
+                erros.append({"linha": i, "erros": serializer.errors})
+
+        # Blocos e total de unidades deduzidos da planilha (todos do condomínio).
+        eleitores_cond = Eleitor.objects.filter(condominio_id=condominio.id)
+        blocos = sorted(
+            {
+                (e.bloco or "").strip()
+                for e in eleitores_cond
+                if (e.bloco or "").strip()
+            }
+        )
+        total_unidades = (
+            eleitores_cond.values("bloco", "apartamento").distinct().count()
+        )
+        condominio.blocos = blocos
+        condominio.total_unidades = total_unidades
+        condominio.save(update_fields=["blocos", "total_unidades", "atualizado_em"])
+
+        lista = ListaPresenca.objects.create(condominio=condominio, titulo=titulo)
+
+        agora = timezone.now()
+        assembleia = Assembleia.objects.create(
+            condominio=condominio,
+            titulo=titulo,
+            data_inicio=agora,
+            data_fim=agora + timedelta(days=1),
+        )
+        assembleia.votantes.set(
+            list(eleitores_cond.values_list("id", flat=True))
+        )
+
+    return Response(
+        {
+            "condominio_id": str(condominio.id),
+            "lista_id": str(lista.id),
+            "lista_codigo": lista.codigo_curto,
+            "assembleia_id": str(assembleia.id),
+            "assembleia_codigo": assembleia.codigo_curto,
+            "criados": criados,
+            "pulados": pulados,
+            "erros": erros,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 @ratelimit(key="ip", rate="60/m", block=True)
@@ -196,9 +255,10 @@ def lista_presenca_publica(request, lista_id):
     # importados (com CPF). Nas demais listas, a tela vai direto para a facial.
     tem_cpf = bool(
         lista.condominio_id
-        and Eleitor.objects.filter(
-            condominio_id=lista.condominio_id, cpf_hash__isnull=False
-        ).exists()
+        and Eleitor.objects.filter(condominio_id=lista.condominio_id)
+        .exclude(cpf_hash__isnull=True)
+        .exclude(cpf_hash="")
+        .exists()
     )
     return Response(
         {

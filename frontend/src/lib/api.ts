@@ -754,6 +754,37 @@ export const api = {
       body: JSON.stringify({ titulo, nome_condominio: nomeCondominio }),
     }),
 
+  // Um clique: importa a planilha e cria condomínio + moradores + lista de
+  // presença + votação (rascunho) já vinculados.
+  importarPlanilhaCompleta: (
+    nomeCondominio: string,
+    titulo: string,
+    eleitores: {
+      nome: string;
+      cpf_hash: string;
+      bloco: string;
+      apartamento: string;
+      email: string;
+    }[]
+  ) =>
+    request<{
+      condominio_id: string;
+      lista_id: string;
+      lista_codigo: string | null;
+      assembleia_id: string;
+      assembleia_codigo: string | null;
+      criados: number;
+      pulados: number;
+      erros: { linha: number; erros: Record<string, unknown> }[];
+    }>("/enquetes/listas-presenca/importar-planilha/", {
+      method: "POST",
+      body: JSON.stringify({
+        nome_condominio: nomeCondominio,
+        titulo,
+        eleitores,
+      }),
+    }),
+
   getListaPresenca: (id: string) =>
     request<import("./types").ListaPresenca>(
       `/enquetes/listas-presenca/${id}/`

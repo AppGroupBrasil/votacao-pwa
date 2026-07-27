@@ -39,6 +39,54 @@ def get_or_create_user_condominio(user):
     return condominio
 
 
+def resolver_condominio_por_nome(user, nome_cond):
+    """A partir do nome informado pelo síndico, devolve o condomínio ao qual a
+    lista/votação pertence, sem nunca renomear o condomínio errado de quem
+    administra vários. Master reusa/cria pelo nome; síndico com 1 condomínio
+    nomeia o dele; síndico com vários cria um novo e vincula ao próprio perfil."""
+    import uuid
+
+    from rest_framework.exceptions import PermissionDenied
+
+    from apps.condominios.models import Condominio
+
+    nome_cond = (nome_cond or "").strip()
+    escopo = get_user_condominios(user)
+    if escopo is None:
+        cond = Condominio.objects.filter(nome__iexact=nome_cond).first()
+        return cond or Condominio.objects.create(
+            nome=nome_cond,
+            cnpj=f"MSTR-{uuid.uuid4().hex[:12]}",
+            total_unidades=0,
+        )
+
+    perfil = getattr(user, "perfil_admin", None)
+    if perfil is None:
+        raise PermissionDenied("Nenhum condomínio associado ao seu usuário.")
+
+    cond = perfil.condominios.filter(nome__iexact=nome_cond).first()
+    if cond is not None:
+        return cond
+
+    conds = list(perfil.condominios.all()[:2])
+    if len(conds) <= 1:
+        cond = get_or_create_user_condominio(user)
+        if cond is None:
+            raise PermissionDenied("Nenhum condomínio associado ao seu usuário.")
+        if nome_cond and cond.nome != nome_cond:
+            cond.nome = nome_cond
+            cond.save(update_fields=["nome", "atualizado_em"])
+        return cond
+
+    cond = Condominio.objects.create(
+        nome=nome_cond,
+        cnpj=f"C-{uuid.uuid4().hex[:14]}",
+        total_unidades=0,
+    )
+    perfil.condominios.add(cond)
+    return cond
+
+
 class IsAdminWithRole(BasePermission):
     """
     Allow access to staff users who have a PerfilAdmin.

@@ -6,6 +6,7 @@ from .views import (
     ListaPresencaViewSet,
     consultar_cpf_presenca,
     enquete_publica,
+    importar_planilha_completa,
     lista_presenca_publica,
     presenca_enviar_codigo,
     presenca_reconhecer_facial,
@@ -27,6 +28,11 @@ urlpatterns = [
         "listas-presenca/resolver/<str:codigo>/",
         resolver_codigo_lista,
         name="lista-presenca-resolver-codigo",
+    ),
+    path(
+        "listas-presenca/importar-planilha/",
+        importar_planilha_completa,
+        name="lista-presenca-importar-planilha",
     ),
     path(
         "listas-presenca/<uuid:lista_id>/publica/",
