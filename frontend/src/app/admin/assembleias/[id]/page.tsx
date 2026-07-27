@@ -263,8 +263,14 @@ export default function AssembleiaDetailPage() {
       });
       setEditingQuestaoId(null);
       loadAssembleia();
-    } catch {
-      alert("Erro ao salvar questão.");
+    } catch (err: any) {
+      const data = err?.response?.data;
+      const msg =
+        data?.error ||
+        (Array.isArray(data) ? data[0] : null) ||
+        data?.detail ||
+        "Erro ao salvar questão.";
+      alert(msg);
     } finally {
       setActionLoading(false);
     }

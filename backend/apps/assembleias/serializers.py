@@ -128,6 +128,35 @@ class QuestaoCreateSerializer(serializers.ModelSerializer):
         self._save_opcoes(questao, opcoes_data, files)
         return questao
 
+    def _sync_opcoes(self, questao, opcoes_data, files):
+        """Atualiza as opções no lugar (casando por posição) em vez de apagar e
+        recriar. Isso preserva os votos já registrados — OpcaoVoto é PROTECT, então
+        apagar uma opção votada quebraria a edição ao vivo do master."""
+        existentes = list(questao.opcoes.order_by("ordem", "id"))
+        for i, opcao_data in enumerate(opcoes_data):
+            if i < len(existentes):
+                opcao = existentes[i]
+            else:
+                opcao = OpcaoVoto(questao=questao)
+            opcao.texto = opcao_data.get("texto", "")
+            opcao.ordem = opcao_data.get("ordem", i)
+            opcao.link_externo = opcao_data.get("link_externo", "")
+            img_key = f"opcao_imagem_{i}"
+            arq_key = f"opcao_arquivo_{i}"
+            if img_key in files:
+                opcao.imagem = files[img_key]
+            if arq_key in files:
+                opcao.arquivo = files[arq_key]
+            opcao.save()
+        # Opções removidas na edição: só dá para apagar as que não têm voto.
+        for opcao in existentes[len(opcoes_data):]:
+            if opcao.votos.exists():
+                raise serializers.ValidationError(
+                    "Não é possível remover uma opção que já recebeu votos. "
+                    "Você pode editar o texto dela, mas não excluí-la."
+                )
+            opcao.delete()
+
     def update(self, instance, validated_data):
         opcoes_raw = validated_data.pop("opcoes_json", None)
         for attr, value in validated_data.items():
@@ -138,9 +167,8 @@ class QuestaoCreateSerializer(serializers.ModelSerializer):
                 opcoes_data = json.loads(opcoes_raw) if isinstance(opcoes_raw, str) else opcoes_raw
             except (json.JSONDecodeError, TypeError):
                 opcoes_data = []
-            instance.opcoes.all().delete()
             files = self.context.get("request").FILES if self.context.get("request") else {}
-            self._save_opcoes(instance, opcoes_data, files)
+            self._sync_opcoes(instance, opcoes_data, files)
         return instance
 
 
