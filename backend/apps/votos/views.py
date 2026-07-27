@@ -28,6 +28,10 @@ from .serializers import RelatorioVotoSerializer, VotoCreateSerializer
 
 VOTE_AUTH_MAX_AGE_SECONDS = 900
 
+# Libera totalmente a votação: remove os bloqueios de dispositivo/unidade/
+# cota e conta todo voto imediatamente. Voltar para False encerra a liberação.
+LIBERAR_VOTACAO_TOTAL = True
+
 
 def get_client_ip(request):
     x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
@@ -317,7 +321,7 @@ def registrar_voto(request, assembleia_id):
             assembleia.votantes.add(eleitor)
 
         device_id = (serializer.validated_data.get("device_id") or "").strip()
-        if device_id and not por_procuracao and not unidade_declarada:
+        if not LIBERAR_VOTACAO_TOTAL and device_id and not por_procuracao and not unidade_declarada:
             conflito = (
                 Voto.objects.filter(assembleia=assembleia, device_id=device_id)
                 .exclude(eleitor=eleitor)
@@ -380,7 +384,7 @@ def registrar_voto(request, assembleia_id):
                 .exclude(status=Voto.Status.REJEITADO)
                 .exists()
             )
-            if dup:
+            if dup and not LIBERAR_VOTACAO_TOTAL:
                 return Response(
                     {"error": "Esta unidade já tem um voto nesta questão."},
                     status=status.HTTP_409_CONFLICT,
@@ -396,7 +400,7 @@ def registrar_voto(request, assembleia_id):
                 .exclude(status=Voto.Status.REJEITADO)
                 .count()
             )
-            if ja_votou >= votos_permitidos:
+            if not LIBERAR_VOTACAO_TOTAL and ja_votou >= votos_permitidos:
                 return Response(
                     {"error": "Você já usou todos os seus votos nesta questão."},
                     status=status.HTTP_409_CONFLICT,
@@ -430,7 +434,7 @@ def registrar_voto(request, assembleia_id):
                 .exclude(status=Voto.Status.REJEITADO)
                 .exists()
             )
-            if unidade_ja_votou:
+            if unidade_ja_votou and not LIBERAR_VOTACAO_TOTAL:
                 return Response(
                     {"error": "Sua unidade já tem um voto."},
                     status=status.HTTP_409_CONFLICT,
@@ -519,7 +523,7 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
         .exclude(status=Voto.Status.REJEITADO)
         .exists()
     )
-    if ja_votou:
+    if ja_votou and not LIBERAR_VOTACAO_TOTAL:
         return Response(
             {"error": "Você já votou nesta questão."},
             status=status.HTTP_409_CONFLICT,
@@ -579,7 +583,7 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
         device_id=device_id,
         status=(
             Voto.Status.PENDENTE
-            if (conflito_unidade or conflito_device)
+            if ((conflito_unidade or conflito_device) and not LIBERAR_VOTACAO_TOTAL)
             else Voto.Status.VALIDADO
         ),
     )
