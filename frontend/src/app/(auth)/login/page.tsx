@@ -31,13 +31,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await api.login(username, password, remember);
+      const user = await api.login(username, password, remember);
       if (remember) {
         localStorage.setItem(REMEMBER_KEY, username);
       } else {
         localStorage.removeItem(REMEMBER_KEY);
       }
-      router.push("/admin");
+      router.push(user.is_superuser ? "/admin" : "/painel");
     } catch {
       setError("E-mail ou senha incorretos.");
     } finally {
