@@ -139,6 +139,7 @@ export interface Assembleia {
 
 export interface AssembleiaListItem {
   id: string;
+  codigo_curto?: string | null;
   condominio: string;
   condominio_nome: string;
   titulo: string;

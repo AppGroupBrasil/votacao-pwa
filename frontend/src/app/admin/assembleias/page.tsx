@@ -2,12 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Plus,
   Calendar,
   Users,
-  ChevronRight,
   Trash2,
   Square,
   ClipboardList,
@@ -19,6 +17,9 @@ import {
   Vote,
   BarChart3,
   FileText,
+  Link as LinkIcon,
+  ExternalLink,
+  Share2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
@@ -44,12 +45,12 @@ const abas: { id: Tab; label: string; icon: typeof Vote }[] = [
 ];
 
 export default function AssembleiasHubPage() {
-  const router = useRouter();
   const [tab, setTab] = useState<Tab>("votacao");
 
   // Lista
   const [assembleias, setAssembleias] = useState<AssembleiaListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [copiado, setCopiado] = useState<string>("");
 
   // Resultados / relatório
   const [selected, setSelected] = useState<string>("");
@@ -137,6 +138,37 @@ export default function AssembleiasHubPage() {
     } catch {
       alert("Erro ao encerrar assembleia.");
     }
+  }
+
+  function linkPublico(a: AssembleiaListItem) {
+    if (typeof window === "undefined") return "";
+    if (a.codigo_curto) {
+      return `${window.location.origin}/vote/${a.codigo_curto}`;
+    }
+    return `${window.location.origin}/votacao/${a.id}`;
+  }
+
+  async function copiarLink(a: AssembleiaListItem) {
+    try {
+      await navigator.clipboard.writeText(linkPublico(a));
+      setCopiado(a.id);
+      setTimeout(() => setCopiado(""), 2000);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function compartilhar(a: AssembleiaListItem) {
+    const url = linkPublico(a);
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title: "Votação", url });
+        return;
+      } catch {
+        /* usuário cancelou ou não suportado: cai no copiar */
+      }
+    }
+    await copiarLink(a);
   }
 
   async function validar(p: ProcuracaoPendente, acao: "aprovar" | "rejeitar") {
@@ -294,72 +326,97 @@ export default function AssembleiasHubPage() {
               <p className="text-gray-500">Nenhuma assembleia cadastrada.</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {assembleias.map((a) => {
                 const st = statusMap[a.status];
                 return (
-                  <Link
-                    key={a.id}
-                    href={`/admin/assembleias/${a.id}`}
-                    className="card flex items-center justify-between hover:shadow-md transition-shadow group"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold truncate">{a.titulo}</h3>
-                        <span
-                          className={clsx(
-                            "text-xs font-medium px-2 py-0.5 rounded-full",
-                            st.class
-                          )}
-                        >
-                          {st.label}
-                        </span>
+                  <div key={a.id} className="card">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-lg truncate">
+                            {a.titulo}
+                          </h3>
+                          <span
+                            className={clsx(
+                              "text-xs font-medium px-2 py-0.5 rounded-full",
+                              st.class
+                            )}
+                          >
+                            {st.label}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5" />
+                            {new Date(a.data_inicio).toLocaleDateString("pt-BR")}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Users className="w-3.5 h-3.5" />
+                            {a.total_votantes} votante
+                            {a.total_votantes !== 1 ? "s" : ""}
+                          </span>
+                          <span>
+                            {a.total_questoes} pergunta
+                            {a.total_questoes !== 1 ? "s" : ""}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5" />
-                          {new Date(a.data_inicio).toLocaleDateString("pt-BR")}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Users className="w-3.5 h-3.5" />
-                          {a.total_votantes} votante{a.total_votantes !== 1 ? "s" : ""}
-                        </span>
-                        <span>{a.total_questoes} questão(ões)</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          router.push(`/admin/assembleias/${a.id}/presenca`);
-                        }}
-                        className="text-gray-300 hover:text-primary-600 p-1.5 rounded hover:bg-primary-50 transition-colors"
-                        title="Lista de presença"
+                      <Link
+                        href={`/admin/assembleias/${a.id}`}
+                        className="btn-secondary inline-flex items-center gap-1 text-sm shrink-0"
                       >
-                        <ClipboardList className="w-4 h-4" />
+                        <ClipboardList className="w-4 h-4" /> Gerenciar
+                      </Link>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => copiarLink(a)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-orange-600/30 hover:bg-orange-600"
+                      >
+                        {copiado === a.id ? (
+                          <>
+                            <Check className="w-4 h-4" /> Copiado!
+                          </>
+                        ) : (
+                          <>
+                            <LinkIcon className="w-4 h-4" /> Copiar link
+                          </>
+                        )}
+                      </button>
+                      <a
+                        href={linkPublico(a)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-amber-950 shadow-sm ring-1 ring-amber-500/40 hover:bg-amber-300"
+                      >
+                        <ExternalLink className="w-4 h-4" /> Abrir votação
+                      </a>
+                      <button
+                        onClick={() => compartilhar(a)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-green-700/30 hover:bg-green-700"
+                      >
+                        <Share2 className="w-4 h-4" /> Compartilhar
                       </button>
                       {a.status === "aberta" && (
                         <button
                           onClick={(e) => handleEncerrar(e, a.id, a.titulo)}
-                          className="text-gray-300 hover:text-red-500 p-1.5 rounded hover:bg-red-50 transition-colors"
-                          title="Encerrar votação"
+                          className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
                         >
-                          <Square className="w-4 h-4" />
+                          <Square className="w-4 h-4" /> Encerrar
                         </button>
                       )}
                       {a.status !== "aberta" && (
                         <button
                           onClick={(e) => handleDelete(e, a.id, a.titulo)}
-                          className="text-gray-300 hover:text-red-500 p-1.5 rounded hover:bg-red-50 transition-colors"
-                          title="Excluir"
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-300 text-red-600 px-3 py-1.5 text-sm hover:bg-red-50"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" /> Excluir
                         </button>
                       )}
-                      <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-primary-600 transition-colors" />
                     </div>
-                  </Link>
+                  </div>
                 );
               })}
             </div>

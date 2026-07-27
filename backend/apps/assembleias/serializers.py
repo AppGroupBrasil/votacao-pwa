@@ -236,6 +236,7 @@ class AssembleiaListSerializer(serializers.ModelSerializer):
         model = Assembleia
         fields = [
             "id",
+            "codigo_curto",
             "condominio",
             "condominio_nome",
             "titulo",
