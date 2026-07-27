@@ -11,6 +11,7 @@ import {
   Trash2,
   Play,
   Square,
+  Lock,
   Copy,
   CheckCircle,
   Pencil,
@@ -214,14 +215,9 @@ export default function AssembleiaDetailPage() {
     }
   }
 
-  async function handleEncerrarQuestao(questaoId: string, encerrar: boolean) {
-    if (
-      encerrar &&
-      !confirm("Encerrar a votação deste item? Nenhum novo voto será aceito para esta questão.")
-    )
-      return;
+  async function handleLiberarQuestao(questaoId: string, liberar: boolean) {
     try {
-      await api.encerrarQuestao(id, questaoId, encerrar);
+      await api.liberarQuestao(id, questaoId, liberar);
       loadAssembleia();
     } catch {
       alert("Erro ao alterar o item.");
@@ -1084,6 +1080,16 @@ export default function AssembleiaDetailPage() {
                             Votação encerrada
                           </span>
                         )}
+                        {!q.encerrada && q.liberada === false && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            Bloqueado
+                          </span>
+                        )}
+                        {!q.encerrada && q.liberada !== false && assembleia.status === "aberta" && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                            Liberado
+                          </span>
+                        )}
                       </h3>
                       {q.descricao && (
                         <p className="text-sm text-gray-500 mt-1">
@@ -1116,21 +1122,21 @@ export default function AssembleiaDetailPage() {
                         ))}
                       </div>
                     </div>
-                    {assembleia.status === "aberta" && (
+                    {assembleia.status !== "encerrada" && !q.encerrada && (
                       <button
-                        onClick={() => handleEncerrarQuestao(q.id, !q.encerrada)}
+                        onClick={() => handleLiberarQuestao(q.id, q.liberada === false)}
                         className={clsx(
                           "shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
-                          q.encerrada
+                          q.liberada === false
                             ? "bg-green-600 text-white hover:bg-green-700"
-                            : "bg-red-600 text-white hover:bg-red-700"
+                            : "bg-amber-500 text-white hover:bg-amber-600"
                         )}
-                        title={q.encerrada ? "Reabrir votação deste item" : "Encerrar votação desse item"}
+                        title={q.liberada === false ? "Liberar a votação deste item" : "Bloquear a votação deste item"}
                       >
-                        {q.encerrada ? (
-                          <><Play className="w-3.5 h-3.5" /> Reabrir votação</>
+                        {q.liberada === false ? (
+                          <><Play className="w-3.5 h-3.5" /> Liberar votação</>
                         ) : (
-                          <><Square className="w-3.5 h-3.5" /> Encerrar votação desse item</>
+                          <><Lock className="w-3.5 h-3.5" /> Bloquear votação</>
                         )}
                       </button>
                     )}

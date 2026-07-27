@@ -657,6 +657,12 @@ export const api = {
       body: JSON.stringify({ encerrar }),
     }),
 
+  liberarQuestao: (assembleiaId: string, questaoId: string, liberar: boolean) =>
+    request<Questao>(`/assembleias/${assembleiaId}/questoes/${questaoId}/liberar/`, {
+      method: "POST",
+      body: JSON.stringify({ liberar }),
+    }),
+
   // Register & Password Reset
   register: (data: {
     username: string;

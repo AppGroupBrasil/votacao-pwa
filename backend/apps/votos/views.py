@@ -344,6 +344,12 @@ def registrar_voto(request, assembleia_id):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        if not questao.liberada:
+            return Response(
+                {"error": "A votação deste item ainda não foi liberada. Aguarde a liberação pela administração."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         if unidade_declarada:
             # Unidade declarada não consome a cota própria do declarante.
             # Garante 1 voto por unidade declarada nesta questão e impede
@@ -498,6 +504,12 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
     if questao.encerrada:
         return Response(
             {"error": "A votação deste item foi encerrada."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    if not questao.liberada:
+        return Response(
+            {"error": "A votação deste item ainda não foi liberada. Aguarde a liberação pela administração."},
             status=status.HTTP_409_CONFLICT,
         )
 

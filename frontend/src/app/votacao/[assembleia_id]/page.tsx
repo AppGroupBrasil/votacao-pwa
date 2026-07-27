@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { Vote, CheckCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, Link2, Users, Clock, ArrowLeft, MessageCircle, X } from "lucide-react";
+import { Vote, CheckCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, Link2, Users, Clock, ArrowLeft, MessageCircle, X, Lock } from "lucide-react";
 import { api, getDeviceId } from "@/lib/api";
 import WebAuthnVerify from "@/components/webauthn/WebAuthnVerify";
 import FaceVerify from "@/components/FaceVerify";
@@ -291,10 +291,13 @@ export default function VotacaoPage() {
 
   // Questões encerradas pela administração não entram na sequência de votação.
   const questoes = (assembleia.questoes || []).filter((q) => !q.encerrada);
-  // A questão atual é a primeira ainda pendente — robusto a itens encerrados ao
-  // vivo, que somem da lista filtrada sem deslocar um índice fixo.
+  // Itens ainda não votados por este eleitor (inclui os bloqueados, que
+  // permanecem pendentes até a administração liberar).
   const pendentes = questoes.filter((q) => !respondidas.includes(q.id));
-  const questao = pendentes[0];
+  // Bloqueados ("aguarde o debate"): visíveis, mas não votáveis até liberar.
+  const bloqueadasPendentes = pendentes.filter((q) => q.liberada === false);
+  // A questão atual é a primeira pendente que já esteja liberada para votação.
+  const questao = pendentes.find((q) => q.liberada !== false);
   const indiceAtual = questoes.length - pendentes.length;
   // Em voto por procuração cada unidade tem direito a 1 voto; a cota de
   // múltiplas unidades (votos_permitidos) vale só para o voto próprio.
@@ -644,6 +647,26 @@ export default function VotacaoPage() {
     );
   }
 
+  // Nenhum item liberado no momento, mas ainda há itens pendentes (bloqueados
+  // pela administração). Aguarda a liberação do próximo item — a tela se
+  // atualiza sozinha a cada 6s. NÃO mostra a tela final para o eleitor não
+  // pensar que a votação acabou e fechar a página.
+  if (!done && !questao && bloqueadasPendentes.length > 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
+        <div className="card w-full max-w-md text-center">
+          <Clock className="w-16 h-16 text-primary-400 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Aguarde o próximo item</h1>
+          <p className="text-gray-600">
+            O próximo item será liberado para votação assim que o assunto for
+            debatido. Mantenha esta página aberta — ela abrirá automaticamente
+            quando a votação for liberada.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   async function handleVotar() {
     if (!selectedOpcao || !questao || !authToken) return;
     setVotando(true);
@@ -692,8 +715,11 @@ export default function VotacaoPage() {
       setVotosNestaQuestao(0);
       setRespondidas((prev) => [...prev, questao.id]);
 
-      // Era a última pendente? (pendentes[0] é a atual; resta o resto da lista)
-      const ultima = pendentes.length <= 1;
+      // Só conclui de fato quando não sobra NENHUM item pendente (nem votável
+      // nem bloqueado). Se restarem itens bloqueados, cai na tela "Aguarde o
+      // próximo item" em vez da tela final.
+      const restantes = pendentes.filter((q) => q.id !== questao.id);
+      const ultima = restantes.length === 0;
       if (ultima) {
         if (ehProcuracao) {
           if (unidadeProc) setProcFeitas((p) => [...p, unidadeProc.id]);
@@ -718,6 +744,10 @@ export default function VotacaoPage() {
       setVotando(false);
     }
   }
+
+  // Neste ponto os casos sem questão votável (concluído / aguardando / bloqueado)
+  // já retornaram acima; a guarda satisfaz o TypeScript e é defensiva.
+  if (!questao) return null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center px-4">
@@ -850,6 +880,28 @@ export default function VotacaoPage() {
             }}
           />
         </div>
+
+        {bloqueadasPendentes.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-gray-100">
+            <p className="text-xs font-medium text-gray-400 mb-2">
+              Próximos itens
+            </p>
+            <div className="space-y-2">
+              {bloqueadasPendentes.map((q) => (
+                <div
+                  key={q.id}
+                  className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-gray-400"
+                >
+                  <Lock className="w-4 h-4 shrink-0" />
+                  <span className="flex-1 text-sm">{q.titulo}</span>
+                  <span className="text-[11px] font-medium whitespace-nowrap">
+                    Aguarde o debate
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Floating copy link button */}

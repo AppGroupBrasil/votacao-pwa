@@ -123,6 +123,13 @@ class Questao(models.Model):
         default=False,
         help_text="Se True, a votação deste item foi encerrada e não aceita novos votos.",
     )
+    liberada = models.BooleanField(
+        default=True,
+        help_text=(
+            "Se False, a votação deste item está bloqueada: o morador vê o item "
+            "como 'aguarde o debate' e não pode votar até a administração liberar."
+        ),
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:

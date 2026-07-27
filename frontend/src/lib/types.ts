@@ -48,6 +48,7 @@ export interface Questao {
   descricao: string;
   ordem: number;
   encerrada?: boolean;
+  liberada?: boolean;
   opcoes: OpcaoVoto[];
 }
 

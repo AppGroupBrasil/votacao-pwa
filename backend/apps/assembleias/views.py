@@ -505,3 +505,21 @@ class QuestaoViewSet(viewsets.ModelViewSet):
             + ("encerrada." if questao.encerrada else "reaberta."),
         )
         return Response(QuestaoSerializer(questao).data)
+
+    @action(detail=True, methods=["post"], url_path="liberar")
+    def liberar(self, request, assembleia_pk=None, pk=None):
+        """Libera (ou bloqueia) a votação de um item específico, sem afetar os
+        demais. Item bloqueado aparece como 'aguarde o debate' e não aceita
+        votos até a liberação — usado para votar um item de cada vez."""
+        questao = self.get_object()
+        liberar = request.data.get("liberar", True)
+        questao.liberada = bool(liberar)
+        questao.save(update_fields=["liberada"])
+        registrar_log(
+            request,
+            questao.assembleia,
+            LogAuditoria.Acao.ABRIR if questao.liberada else LogAuditoria.Acao.ENCERRAR,
+            f"Item '{questao.titulo}' "
+            + ("liberado para votação." if questao.liberada else "bloqueado para votação."),
+        )
+        return Response(QuestaoSerializer(questao).data)
