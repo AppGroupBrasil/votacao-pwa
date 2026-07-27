@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import ComoFunciona from "@/components/ComoFunciona";
-import type { ListaPresenca } from "@/lib/types";
+import type { ListaPresenca, Condominio } from "@/lib/types";
 
 export default function ListasPresencaPage() {
   const [listas, setListas] = useState<ListaPresenca[]>([]);
@@ -25,6 +25,8 @@ export default function ListasPresencaPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [titulo, setTitulo] = useState("");
   const [nomeCondominio, setNomeCondominio] = useState("");
+  const [condominios, setCondominios] = useState<Condominio[]>([]);
+  const [modoNovoCond, setModoNovoCond] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [copiado, setCopiado] = useState<string>("");
 
@@ -38,12 +40,27 @@ export default function ListasPresencaPage() {
 
   useEffect(() => {
     carregar();
+    api
+      .getCondominios()
+      .then((d) => setCondominios(d.results || (d as any)))
+      .catch(() => {});
   }, []);
 
   function abrirModal() {
-    // Reaproveita o nome do condomínio de uma lista já criada, se houver.
+    // Pré-seleciona o condomínio de uma lista já criada, se houver; senão o
+    // primeiro da conta. Escolher da lista evita erro de digitação e garante
+    // que a lista aponte para o MESMO condomínio dos eleitores importados.
     const anterior = listas.find((l) => l.condominio_nome)?.condominio_nome;
-    if (anterior) setNomeCondominio(anterior);
+    if (anterior) {
+      setNomeCondominio(anterior);
+      setModoNovoCond(false);
+    } else if (condominios.length > 0) {
+      setNomeCondominio(condominios[0].nome);
+      setModoNovoCond(false);
+    } else {
+      setNomeCondominio("");
+      setModoNovoCond(true);
+    }
     setModalOpen(true);
   }
 
@@ -234,17 +251,41 @@ export default function ListasPresencaPage() {
               </button>
             </div>
             <label className="block text-sm font-medium mb-1">
-              Nome do condomínio
+              Condomínio
             </label>
-            <input
-              value={nomeCondominio}
-              onChange={(e) => setNomeCondominio(e.target.value)}
-              placeholder="Ex.: Edifício Vendeiros"
-              className="input-field w-full mb-1"
-            />
+            {condominios.length > 0 && !modoNovoCond ? (
+              <select
+                value={nomeCondominio}
+                onChange={(e) => {
+                  if (e.target.value === "__novo__") {
+                    setModoNovoCond(true);
+                    setNomeCondominio("");
+                  } else {
+                    setNomeCondominio(e.target.value);
+                  }
+                }}
+                className="input-field w-full mb-1"
+              >
+                {condominios.map((c) => (
+                  <option key={c.id} value={c.nome}>
+                    {c.nome}
+                  </option>
+                ))}
+                <option value="__novo__">+ Novo condomínio…</option>
+              </select>
+            ) : (
+              <input
+                value={nomeCondominio}
+                onChange={(e) => setNomeCondominio(e.target.value)}
+                placeholder="Ex.: San Residence"
+                className="input-field w-full mb-1"
+                autoFocus
+              />
+            )}
             <p className="text-xs text-gray-500 mb-4">
-              Aparece na lista e vincula o reconhecimento facial dos moradores
-              deste condomínio.
+              {condominios.length > 0 && !modoNovoCond
+                ? "Escolha o condomínio para vincular a lista aos eleitores e ao reconhecimento facial deste condomínio."
+                : "Aparece na lista e vincula o reconhecimento facial dos moradores deste condomínio."}
             </p>
             <label className="block text-sm font-medium mb-1">Título</label>
             <input

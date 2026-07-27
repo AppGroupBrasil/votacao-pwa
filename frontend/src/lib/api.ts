@@ -217,7 +217,7 @@ export const api = {
     condominio: string,
     eleitores: { nome: string; cpf_hash: string; bloco?: string; apartamento: string; email: string }[]
   ) =>
-    request<{ criados: number; erros: { linha: number; erros: Record<string, string[]> }[] }>(
+    request<{ criados: number; pulados: number; erros: { linha: number; erros: Record<string, string[]> }[] }>(
       "/eleitores/bulk/",
       {
         method: "POST",
@@ -783,7 +783,7 @@ export const api = {
     ),
 
   getListaPresencaPublica: (id: string) =>
-    request<{ id: string; titulo: string; ativa: boolean }>(
+    request<{ id: string; titulo: string; ativa: boolean; tem_cpf?: boolean }>(
       `/enquetes/listas-presenca/${id}/publica/`
     ),
 

@@ -57,10 +57,25 @@ class EleitorViewSet(viewsets.ModelViewSet):
             )
 
         criados = 0
+        pulados = 0
         erros = []
         for i, row in enumerate(rows, start=2):  # linha 2 = primeira linha de dados
             serializer = EleitorSerializer(data={**row, "condominio": condominio_id})
             if serializer.is_valid():
+                v = serializer.validated_data
+                # Evita duplicar em re-importação: a mesma unidade
+                # (condomínio + bloco + apartamento) com o mesmo CPF já cadastrado
+                # é ignorada. Como o CPF deixou de ser único, sem isto reimportar
+                # a planilha criaria tudo de novo.
+                ja_existe = Eleitor.objects.filter(
+                    condominio_id=condominio_id,
+                    bloco=v.get("bloco", "") or "",
+                    apartamento=v.get("apartamento", ""),
+                    cpf_hash=v.get("cpf_hash"),
+                ).exists()
+                if ja_existe:
+                    pulados += 1
+                    continue
                 serializer.save(
                     convite_token=secrets.token_urlsafe(48),
                     convite_expira_em=timezone.now() + timedelta(days=7),
@@ -69,7 +84,7 @@ class EleitorViewSet(viewsets.ModelViewSet):
             else:
                 erros.append({"linha": i, "erros": serializer.errors})
 
-        return Response({"criados": criados, "erros": erros})
+        return Response({"criados": criados, "pulados": pulados, "erros": erros})
 
     @action(detail=True, methods=["post"], url_path="bloqueio")
     def set_bloqueio(self, request, pk=None):

@@ -130,6 +130,7 @@ export default function EleitoresPage() {
       const linhasErro = res.erros.map((x) => `linha ${x.linha}`).join(", ");
       alert(
         `${res.criados} morador(es) importado(s).` +
+          (res.pulados ? `\n${res.pulados} já existiam e foram ignorados.` : "") +
           (res.erros.length ? `\n${res.erros.length} com erro: ${linhasErro}` : "")
       );
     } catch {

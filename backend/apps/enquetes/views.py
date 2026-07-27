@@ -192,11 +192,20 @@ def lista_presenca_publica(request, lista_id):
             {"error": "Lista não encontrada."},
             status=status.HTTP_404_NOT_FOUND,
         )
+    # Só faz sentido pedir o CPF quando este condomínio tem moradores
+    # importados (com CPF). Nas demais listas, a tela vai direto para a facial.
+    tem_cpf = bool(
+        lista.condominio_id
+        and Eleitor.objects.filter(
+            condominio_id=lista.condominio_id, cpf_hash__isnull=False
+        ).exists()
+    )
     return Response(
         {
             "id": str(lista.id),
             "titulo": lista.titulo,
             "ativa": lista.ativa,
+            "tem_cpf": tem_cpf,
         }
     )
 

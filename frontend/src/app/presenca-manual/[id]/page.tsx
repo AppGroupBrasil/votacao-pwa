@@ -55,9 +55,11 @@ export default function PresencaManualPublicaPage() {
   const params = useParams();
   const id = params.id as string;
 
-  const [lista, setLista] = useState<{ titulo: string; ativa: boolean } | null>(
-    null
-  );
+  const [lista, setLista] = useState<{
+    titulo: string;
+    ativa: boolean;
+    tem_cpf?: boolean;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -558,7 +560,7 @@ export default function PresencaManualPublicaPage() {
 
   // Portão de CPF: primeiro passo. O morador digita o CPF e o sistema já traz
   // nome/bloco/apartamento; depois segue para a facial e a assinatura.
-  if (lista && lista.ativa && !cpfConfirmado) {
+  if (lista && lista.ativa && lista.tem_cpf && !cpfConfirmado) {
     const digitos = cpf.replace(/\D/g, "");
     const cpfValido = digitos.length === 11 || digitos.length === 14;
     return (
