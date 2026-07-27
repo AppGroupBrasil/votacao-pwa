@@ -530,11 +530,18 @@ def registrar_presenca_facial(request, lista_id):
         nome_reg, bloco_reg, apto_reg, perfil_reg = nome, bloco, apartamento, perfil
         novo = True
     else:
-        # Rosto já conhecido: usa os dados cadastrados.
+        # Rosto já conhecido: reusa nome/unidade do cadastro, mas o perfil é o
+        # que o morador declara agora — pode participar como procurador/cônjuge
+        # nesta assembleia mesmo tendo cadastro como proprietário.
         nome_reg = ident.nome
         bloco_reg = ident.bloco
         apto_reg = ident.apartamento
-        perfil_reg = ident.perfil if ident.perfil in perfis_validos else "proprietario"
+        perfil_req = str(request.data.get("perfil", "")).strip().lower()
+        perfil_reg = (
+            perfil_req
+            if perfil_req in perfis_validos
+            else (ident.perfil if ident.perfil in perfis_validos else "proprietario")
+        )
         novo = False
 
     # Evita presença duplicada na mesma lista.

@@ -930,52 +930,60 @@ export default function PresencaManualPublicaPage() {
               </span>
             </div>
           )}
-          {/* Rosto já reconhecido não digita nada: o servidor reusa o cadastro. */}
+          {/* Nome, bloco e apartamento: só no primeiro acesso. Rosto já
+              reconhecido reusa o cadastro do condomínio. */}
           {!(metodo === "facial" && reconhecido) && (
-            <>
+            <div>
+              <label className="block text-sm font-medium mb-1">Nome</label>
+              <input
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                className="input-field w-full"
+              />
+            </div>
+          )}
+
+          {/* Perfil: o morador declara sempre como está participando nesta
+              assembleia (proprietário, procurador, cônjuge...), mesmo quando o
+              rosto já é reconhecido — pode variar de uma reunião para outra. */}
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Como você está participando?
+            </label>
+            <select
+              value={perfil}
+              onChange={(e) => setPerfil(e.target.value as Perfil)}
+              className="input-field w-full"
+            >
+              {PERFIS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {!(metodo === "facial" && reconhecido) && (
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium mb-1">Nome</label>
+                <label className="block text-sm font-medium mb-1">Bloco</label>
                 <input
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
+                  value={bloco}
+                  onChange={(e) => setBloco(e.target.value)}
                   className="input-field w-full"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Perfil</label>
-                <select
-                  value={perfil}
-                  onChange={(e) => setPerfil(e.target.value as Perfil)}
+                <label className="block text-sm font-medium mb-1">
+                  Apartamento
+                </label>
+                <input
+                  value={apartamento}
+                  onChange={(e) => setApartamento(e.target.value)}
                   className="input-field w-full"
-                >
-                  {PERFIS.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Bloco</label>
-                  <input
-                    value={bloco}
-                    onChange={(e) => setBloco(e.target.value)}
-                    className="input-field w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Apartamento
-                  </label>
-                  <input
-                    value={apartamento}
-                    onChange={(e) => setApartamento(e.target.value)}
-                    className="input-field w-full"
-                  />
-                </div>
-              </div>
-            </>
+            </div>
           )}
         </div>
 
