@@ -6,17 +6,83 @@ from django.core.cache import cache
 from django.core.mail import send_mail
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django_ratelimit.decorators import ratelimit
 from rest_framework import status, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.condominios.models import Condominio
 from core.otp import gerar_otp, validar_otp
 from core.permissions import IsAdminWithRole, get_user_condominios
+from core.request_info import get_client_user_agent
 
-from .models import Eleitor
-from .serializers import EleitorOnboardingSerializer, EleitorSerializer
+from .models import Eleitor, SolicitacaoExclusao
+from .serializers import (
+    EleitorOnboardingSerializer,
+    EleitorSerializer,
+    SolicitacaoExclusaoSerializer,
+)
+
+
+def _get_client_ip(request):
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR")
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@ratelimit(key="ip", rate="8/h", block=True)
+def criar_solicitacao_exclusao(request):
+    """Endpoint público (/excluir): registra um pedido de exclusão de cadastro."""
+    nome = str(request.data.get("nome") or "").strip()
+    cpf = "".join(ch for ch in str(request.data.get("cpf") or "") if ch.isdigit())
+    email = str(request.data.get("email") or "").strip().lower()
+    condominio = str(request.data.get("condominio") or "").strip()
+    motivo = str(request.data.get("motivo") or "").strip()
+
+    if not nome:
+        return Response(
+            {"error": "Informe seu nome."}, status=status.HTTP_400_BAD_REQUEST
+        )
+    if not cpf and not email:
+        return Response(
+            {"error": "Informe o CPF ou o e-mail para localizarmos seu cadastro."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    SolicitacaoExclusao.objects.create(
+        nome=nome[:200],
+        cpf=cpf[:20],
+        email=email[:200],
+        condominio=condominio[:200],
+        motivo=motivo,
+        ip_address=_get_client_ip(request),
+        user_agent=get_client_user_agent(request),
+    )
+    return Response(
+        {"message": "Pedido registrado."}, status=status.HTTP_201_CREATED
+    )
+
+
+class SolicitacaoExclusaoViewSet(viewsets.ModelViewSet):
+    """Painel admin: lista e atualiza o status dos pedidos de exclusão."""
+
+    serializer_class = SolicitacaoExclusaoSerializer
+    permission_classes = [IsAdminWithRole]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
+    queryset = SolicitacaoExclusao.objects.all()
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        if obj.status in ("concluida", "recusada") and obj.processada_em is None:
+            obj.processada_em = timezone.now()
+            obj.save(update_fields=["processada_em"])
+        elif obj.status == "pendente" and obj.processada_em is not None:
+            obj.processada_em = None
+            obj.save(update_fields=["processada_em"])
 
 
 class EleitorViewSet(viewsets.ModelViewSet):

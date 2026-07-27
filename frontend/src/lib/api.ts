@@ -777,6 +777,40 @@ export const api = {
       `/assembleias/${assembleiaId}/controle-votacao/`
     ),
 
+  // Exclusão de cadastro (LGPD)
+  solicitarExclusao: (data: {
+    nome: string;
+    cpf?: string;
+    email?: string;
+    condominio?: string;
+    motivo?: string;
+  }) =>
+    request<{ message: string }>("/eleitores/exclusao/solicitar/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getSolicitacoesExclusao: () =>
+    request<
+      import("./types").PaginatedResponse<
+        import("./types").SolicitacaoExclusao
+      >
+    >("/eleitores/solicitacoes-exclusao/"),
+
+  updateSolicitacaoExclusao: (
+    id: string,
+    data: Partial<{ status: string; observacao_admin: string }>
+  ) =>
+    request<import("./types").SolicitacaoExclusao>(
+      `/eleitores/solicitacoes-exclusao/${id}/`,
+      { method: "PATCH", body: JSON.stringify(data) }
+    ),
+
+  deleteSolicitacaoExclusao: (id: string) =>
+    request<void>(`/eleitores/solicitacoes-exclusao/${id}/`, {
+      method: "DELETE",
+    }),
+
   // Listas de presença manual (Votação Simples)
   getListasPresenca: () =>
     request<

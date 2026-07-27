@@ -11,6 +11,7 @@ import {
   Shield,
   ChevronRight,
   Check,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
@@ -149,17 +150,23 @@ export default function PainelPage() {
         <ChevronRight className="w-5 h-5 shrink-0 text-gray-400 opacity-0 group-hover:opacity-100 transition" />
       </Link>
 
-      {/* Acesso discreto — só para o dono do sistema */}
-      {user.is_superuser && (
-        <div className="mt-8 border-t border-gray-100 pt-5 text-sm">
+      {/* Acessos discretos */}
+      <div className="mt-8 flex items-center gap-5 border-t border-gray-100 pt-5 text-sm">
+        <Link
+          href="/admin/exclusoes"
+          className="text-gray-400 hover:text-gray-600 inline-flex items-center gap-1.5 transition-colors"
+        >
+          <Trash2 className="w-4 h-4" /> Pedidos de exclusão (LGPD)
+        </Link>
+        {user.is_superuser && (
           <Link
             href="/admin/master"
             className="text-gray-400 hover:text-gray-600 inline-flex items-center gap-1.5 transition-colors"
           >
             <Shield className="w-4 h-4" /> Master
           </Link>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

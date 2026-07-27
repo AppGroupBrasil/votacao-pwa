@@ -374,6 +374,21 @@ export interface EnqueteResultado {
   vencedor: EnqueteResultadoOpcao | null;
 }
 
+// === Exclusão de cadastro (LGPD) ===
+export interface SolicitacaoExclusao {
+  id: string;
+  nome: string;
+  cpf: string;
+  email: string;
+  condominio: string;
+  motivo: string;
+  status: "pendente" | "concluida" | "recusada";
+  status_display: string;
+  observacao_admin: string;
+  criado_em: string;
+  processada_em: string | null;
+}
+
 // === Auth ===
 export interface LoginResponse {
   access: string;

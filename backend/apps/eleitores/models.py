@@ -115,3 +115,43 @@ class IdentidadeFacial(models.Model):
 
     def __str__(self):
         return f"{self.nome} - {self.apartamento}"
+
+
+class SolicitacaoExclusao(models.Model):
+    """Pedido de exclusão de cadastro feito pelo morador (LGPD / Google Play).
+
+    A página pública /excluir apenas registra o pedido; a remoção efetiva dos
+    dados é feita pelo administrador/síndico após localizar a pessoa.
+    """
+
+    STATUS = [
+        ("pendente", "Pendente"),
+        ("concluida", "Concluída"),
+        ("recusada", "Recusada"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nome = models.CharField(max_length=200)
+    cpf = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="CPF informado pelo morador para localizar o cadastro.",
+    )
+    email = models.EmailField(max_length=200, blank=True, default="")
+    condominio = models.CharField(max_length=200, blank=True, default="")
+    motivo = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=20, choices=STATUS, default="pendente")
+    observacao_admin = models.TextField(blank=True, default="")
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True, default="")
+    criado_em = models.DateTimeField(auto_now_add=True)
+    processada_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+        verbose_name = "Solicitação de exclusão"
+        verbose_name_plural = "Solicitações de exclusão"
+
+    def __str__(self):
+        return f"{self.nome} ({self.get_status_display()})"

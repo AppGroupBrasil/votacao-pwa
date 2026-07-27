@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Eleitor
+from .models import Eleitor, SolicitacaoExclusao
 
 
 class EleitorSerializer(serializers.ModelSerializer):
@@ -41,3 +41,26 @@ class EleitorSerializer(serializers.ModelSerializer):
 class EleitorOnboardingSerializer(serializers.Serializer):
     biometria_hash = serializers.CharField(max_length=64)
     webauthn_credential = serializers.JSONField(required=False)
+
+
+class SolicitacaoExclusaoSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(
+        source="get_status_display", read_only=True
+    )
+
+    class Meta:
+        model = SolicitacaoExclusao
+        fields = [
+            "id",
+            "nome",
+            "cpf",
+            "email",
+            "condominio",
+            "motivo",
+            "status",
+            "status_display",
+            "observacao_admin",
+            "criado_em",
+            "processada_em",
+        ]
+        read_only_fields = ["id", "criado_em", "processada_em", "status_display"]
