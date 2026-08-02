@@ -6,7 +6,7 @@ import { api, getDeviceId } from "@/lib/api";
 
 interface IdentificacaoManualProps {
   assembleiaId: string;
-  onSuccess: (token: string, votanteManualId: string) => void;
+  onSuccess: (token: string, votanteManualId: string, avisoUnidade?: string) => void;
   onBack: () => void;
 }
 
@@ -105,7 +105,7 @@ export default function IdentificacaoManual({
         device_id: getDeviceId(),
       });
       setSucesso(true);
-      setTimeout(() => onSuccess(result.token, result.votante_manual_id), 800);
+      setTimeout(() => onSuccess(result.token, result.votante_manual_id, result.aviso_unidade || ""), 800);
     } catch (err: any) {
       setErro(
         err?.response?.data?.error || "Não foi possível entrar. Tente novamente."

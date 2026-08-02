@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Pencil, Printer, Trash2, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Loader2, Pencil, Printer, Trash2, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import LinkDestaque from "@/components/LinkDestaque";
 import type { ListaPresenca, PresencaManualRegistro } from "@/lib/types";
@@ -12,6 +12,23 @@ const FUSO_BRASILIA = "America/Sao_Paulo";
 
 function dataHoraBrasilia(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", { timeZone: FUSO_BRASILIA });
+}
+
+function horaBrasilia(iso: string) {
+  return new Date(iso).toLocaleTimeString("pt-BR", {
+    timeZone: FUSO_BRASILIA,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function normalizar(s: string | null | undefined) {
+  return (s || "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 const PERFIL_LABEL: Record<string, string> = {
@@ -35,6 +52,64 @@ export default function RegistrosPresencaPage() {
   const [lista, setLista] = useState<ListaPresenca | null>(null);
   const [registros, setRegistros] = useState<PresencaManualRegistro[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Detecta a mesma pessoa marcando presença mais de uma vez. Consideramos
+  // duplicado quando coincide: rosto (biometria), nome + unidade ou e-mail.
+  const analiseDuplicados = useMemo(() => {
+    const n = registros.length;
+    const parent = Array.from({ length: n }, (_, i) => i);
+    const find = (i: number): number => {
+      while (parent[i] !== i) {
+        parent[i] = parent[parent[i]];
+        i = parent[i];
+      }
+      return i;
+    };
+    const union = (a: number, b: number) => {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) parent[ra] = rb;
+    };
+
+    const chaveDono = new Map<string, number>();
+    registros.forEach((r, i) => {
+      const chaves: string[] = [];
+      if (r.assinatura_facial) chaves.push(`f:${r.assinatura_facial}`);
+      const nome = normalizar(r.nome);
+      if (nome) chaves.push(`n:${nome}|${normalizar(r.bloco)}|${normalizar(r.apartamento)}`);
+      const email = normalizar(r.email);
+      if (email) chaves.push(`e:${email}`);
+      for (const c of chaves) {
+        const dono = chaveDono.get(c);
+        if (dono !== undefined) union(i, dono);
+        else chaveDono.set(c, i);
+      }
+    });
+
+    const gruposMap = new Map<number, number[]>();
+    registros.forEach((_, i) => {
+      const raiz = find(i);
+      const lista = gruposMap.get(raiz);
+      if (lista) lista.push(i);
+      else gruposMap.set(raiz, [i]);
+    });
+
+    const posicaoPorId = new Map<string, { ord: number; total: number }>();
+    const grupos = [...gruposMap.values()]
+      .filter((idxs) => idxs.length > 1)
+      .map((idxs) => {
+        const ordenado = [...idxs].sort((a, b) =>
+          registros[a].criado_em.localeCompare(registros[b].criado_em)
+        );
+        ordenado.forEach((idx, k) =>
+          posicaoPorId.set(registros[idx].id, { ord: k + 1, total: ordenado.length })
+        );
+        return ordenado.map((idx) => registros[idx]);
+      })
+      .sort((a, b) => a[0].nome.localeCompare(b[0].nome));
+
+    return { grupos, posicaoPorId };
+  }, [registros]);
 
   const [editando, setEditando] = useState(false);
   const [tituloEdit, setTituloEdit] = useState("");
@@ -140,6 +215,37 @@ export default function RegistrosPresencaPage() {
         </div>
       )}
 
+      {analiseDuplicados.grupos.length > 0 && (
+        <div className="card mb-4 border border-amber-300 bg-amber-50 print:hidden">
+          <p className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            {analiseDuplicados.grupos.length}{" "}
+            {analiseDuplicados.grupos.length === 1
+              ? "pessoa marcou presença mais de uma vez"
+              : "pessoas marcaram presença mais de uma vez"}
+          </p>
+          <p className="text-xs text-amber-800/80 mt-1 mb-2">
+            Consideramos a mesma pessoa quando coincide o rosto (biometria), o nome
+            + unidade ou o e-mail. Confira abaixo e use a lixeira para remover as
+            marcações repetidas.
+          </p>
+          <ul className="space-y-1 text-sm text-amber-900">
+            {analiseDuplicados.grupos.map((grupo, gi) => (
+              <li key={gi}>
+                <span className="font-medium">{grupo[0].nome}</span>
+                {grupo[0].apartamento
+                  ? ` (${grupo[0].bloco ? `Bloco ${grupo[0].bloco} · ` : ""}Ap. ${grupo[0].apartamento})`
+                  : ""}{" "}
+                — {grupo.length}×{" "}
+                <span className="text-amber-700">
+                  ({grupo.map((g) => horaBrasilia(g.criado_em)).join(", ")})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {editando && (
         <div className="card mb-4 space-y-3 print:hidden">
           <div>
@@ -206,10 +312,14 @@ export default function RegistrosPresencaPage() {
             </div>
           ) : (
             <div className="divide-y divide-blue-100">
-              {registros.map((r, i) => (
+              {registros.map((r, i) => {
+                const dup = analiseDuplicados.posicaoPorId.get(r.id);
+                return (
                 <div
                   key={r.id}
-                  className="flex items-center gap-4 py-3 break-inside-avoid"
+                  className={`flex items-center gap-4 py-3 break-inside-avoid ${
+                    dup ? "bg-amber-50 rounded-lg px-2 ring-1 ring-amber-200" : ""
+                  }`}
                 >
                   <span className="w-8 text-sm font-semibold text-blue-700 shrink-0 text-right">
                     {i + 1}.
@@ -225,7 +335,14 @@ export default function RegistrosPresencaPage() {
                     <div className="w-16 h-16 rounded-lg bg-gray-100 shrink-0" />
                   )}
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold truncate">{r.nome}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold truncate">{r.nome}</h3>
+                      {dup && dup.total > 1 && (
+                        <span className="shrink-0 inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-300">
+                          {dup.ord}ª de {dup.total}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-500">
                       {r.perfil ? `${PERFIL_LABEL[r.perfil] || r.perfil} · ` : ""}
                       {r.bloco ? `Bloco ${r.bloco} · ` : ""}Ap. {r.apartamento}
@@ -267,7 +384,8 @@ export default function RegistrosPresencaPage() {
                     <Trash2 className="w-5 h-5" />
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

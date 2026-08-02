@@ -68,6 +68,14 @@ class Assembleia(models.Model):
         default=False,
         help_text="Se False, a assembleia está aberta para presença mas os votos ficam travados até a liberação.",
     )
+    link_reuniao = models.URLField(
+        blank=True,
+        default="",
+        help_text=(
+            "Link da sala de vídeo (Meet, Zoom, YouTube ao vivo, etc.). "
+            "Só é revelado ao morador depois que ele registra presença."
+        ),
+    )
     modo_multiplas_unidades = models.CharField(
         max_length=10,
         choices=ModoMultiplasUnidades.choices,

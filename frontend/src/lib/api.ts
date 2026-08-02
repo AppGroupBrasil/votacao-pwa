@@ -477,6 +477,7 @@ export const api = {
       authenticated: boolean;
       method: string;
       votante_manual_id: string;
+      aviso_unidade?: string;
       token: string;
     }>(`/votos/${assembleiaId}/acesso-manual/`, {
       method: "POST",
@@ -503,6 +504,7 @@ export const api = {
       novo?: boolean;
       nome?: string;
       votante_manual_id?: string;
+      aviso_unidade?: string;
       token?: string;
     }>(`/votos/${assembleiaId}/acesso-facial/`, {
       method: "POST",
@@ -834,7 +836,8 @@ export const api = {
       bloco: string;
       apartamento: string;
       email: string;
-    }[]
+    }[],
+    inadimplentes: { bloco: string; apartamento: string }[] = []
   ) =>
     request<{
       condominio_id: string;
@@ -844,6 +847,7 @@ export const api = {
       assembleia_codigo: string | null;
       criados: number;
       pulados: number;
+      inadimplentes_marcados: number;
       erros: { linha: number; erros: Record<string, unknown> }[];
     }>("/enquetes/listas-presenca/importar-planilha/", {
       method: "POST",
@@ -851,6 +855,7 @@ export const api = {
         nome_condominio: nomeCondominio,
         titulo,
         eleitores,
+        inadimplentes,
       }),
     }),
 
@@ -917,7 +922,7 @@ export const api = {
       declaracao_veracidade?: boolean;
     }
   ) =>
-    request<{ ok: boolean }>(
+    request<{ ok: boolean; inadimplente?: boolean; aviso?: string }>(
       `/enquetes/listas-presenca/${id}/registrar/`,
       { method: "POST", body: JSON.stringify(data) }
     ),

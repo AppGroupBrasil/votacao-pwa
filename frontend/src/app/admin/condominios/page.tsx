@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Plus, Pencil } from "lucide-react";
+import { Plus, Pencil, Wand2 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Condominio } from "@/lib/types";
 import BlocosEditor from "@/components/BlocosEditor";
@@ -67,13 +67,22 @@ export default function CondominiosPage() {
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <h1 className="text-2xl font-bold">Condomínios</h1>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Condomínio
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/admin/condominios/montar"
+            className="btn-primary flex items-center gap-2"
+          >
+            <Wand2 className="w-4 h-4" />
+            Montar condomínio (guiado)
+          </Link>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Cadastro rápido
+          </button>
+        </div>
       </div>
 
       {msg && (

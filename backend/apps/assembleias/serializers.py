@@ -39,6 +39,10 @@ class AtaSerializer(serializers.ModelSerializer):
 
 
 class PresencaSerializer(serializers.ModelSerializer):
+    # E-mail do eleitor cadastrado (vazio na presença avulsa). Serve à busca
+    # da lista de presença por e-mail — a Presenca não guarda e-mail próprio.
+    email = serializers.SerializerMethodField()
+
     class Meta:
         model = Presenca
         # selfie/assinatura (base64, até ~MB cada) NÃO entram aqui: este
@@ -46,7 +50,7 @@ class PresencaSerializer(serializers.ModelSerializer):
         # repuxa a cada 15s. As fotos vêm à parte, sob demanda, em
         # /votos/<id>/presencas-captura/ (view presencas_captura).
         fields = [
-            "id", "eleitor", "nome", "bloco", "apartamento",
+            "id", "eleitor", "nome", "bloco", "apartamento", "email",
             "perfil", "metodo_auth", "assinatura_facial",
             "ip_address", "device_info", "user_agent", "inadimplente",
             "marca_aparelho", "modo_participacao",
@@ -55,6 +59,9 @@ class PresencaSerializer(serializers.ModelSerializer):
             "horario_entrada",
         ]
         read_only_fields = fields
+
+    def get_email(self, obj):
+        return getattr(obj.eleitor, "email", "") or ""
 
 
 class OpcaoVotoSerializer(serializers.ModelSerializer):
@@ -195,6 +202,7 @@ class AssembleiaSerializer(serializers.ModelSerializer):
             "data_fim",
             "status",
             "votacao_liberada",
+            "link_reuniao",
             "modo_multiplas_unidades",
             "quorum_minimo",
             "primeira_chamada_50_mais_1",

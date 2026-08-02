@@ -12,6 +12,8 @@ import {
   X,
   Search,
   Check,
+  ArrowDownUp,
+  Building2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Assembleia, Eleitor, Presenca } from "@/lib/types";
@@ -43,6 +45,8 @@ export default function ListaPresencaPage() {
     Record<string, { selfie: string; assinatura: string }>
   >({});
   const pedidosRef = useRef<Set<string>>(new Set());
+  const [busca, setBusca] = useState("");
+  const [ordem, setOrdem] = useState<"unidade" | "nome" | "chegada">("unidade");
 
   async function carregar() {
     const a = await api.getAssembleia(assembleiaId);
@@ -86,9 +90,12 @@ export default function ListaPresencaPage() {
 
   function exportarCsv() {
     if (!assembleia) return;
+    // Exporta SEMPRE a lista completa (ignora busca/filtro da tela): é o
+    // documento oficial de presença. Ordena por unidade para estabilidade.
+    const todas = [...(assembleia.presencas || [])].sort(cmpUnidade);
     const linhas = [
       ["Nome", "Bloco", "Apartamento", "Inadimplente", "Perfil", "Método", "Registro facial", "IP", "Aparelho", "Horário de entrada"],
-      ...presencas.map((p) => [
+      ...todas.map((p) => [
         p.nome,
         p.bloco || "",
         p.apartamento || "",
@@ -145,7 +152,9 @@ export default function ListaPresencaPage() {
   if (!assembleia)
     return <p className="text-gray-500">Assembleia não encontrada.</p>;
 
-  const presencas = [...(assembleia.presencas || [])].sort((a, b) => {
+  const todasPresencas = assembleia.presencas || [];
+
+  function cmpUnidade(a: Presenca, b: Presenca) {
     const porBloco = (a.bloco || "").localeCompare(b.bloco || "", "pt-BR", {
       numeric: true,
       sensitivity: "base",
@@ -155,7 +164,51 @@ export default function ListaPresencaPage() {
       numeric: true,
       sensitivity: "base",
     });
+  }
+
+  const termo = busca.trim().toLowerCase();
+  const filtradas = todasPresencas.filter((p) => {
+    if (!termo) return true;
+    const unidade = `${p.bloco || ""} ${p.apartamento || ""}`.toLowerCase();
+    return (
+      (p.nome || "").toLowerCase().includes(termo) ||
+      unidade.includes(termo) ||
+      (p.email || "").toLowerCase().includes(termo)
+    );
   });
+  const presencas = [...filtradas].sort((a, b) => {
+    if (ordem === "nome")
+      return (a.nome || "").localeCompare(b.nome || "", "pt-BR", {
+        sensitivity: "base",
+      });
+    if (ordem === "chegada")
+      return (
+        new Date(a.horario_entrada).getTime() -
+        new Date(b.horario_entrada).getTime()
+      );
+    return cmpUnidade(a, b);
+  });
+
+  // Multi-unidade: agrupa por pessoa (eleitor cadastrado, ou nome normalizado
+  // no avulso) e destaca quem está presente por mais de uma unidade — cada
+  // unidade conta separado para o quórum.
+  const porPessoa = new Map<
+    string,
+    { nome: string; unidades: string[] }
+  >();
+  for (const p of todasPresencas) {
+    const chave = p.eleitor || `nome:${(p.nome || "").trim().toLowerCase()}`;
+    const unidade = `${p.bloco ? p.bloco + " / " : ""}${
+      p.apartamento || ""
+    }`.trim();
+    const g = porPessoa.get(chave) || { nome: p.nome, unidades: [] };
+    if (unidade && !g.unidades.includes(unidade)) g.unidades.push(unidade);
+    porPessoa.set(chave, g);
+  }
+  const multiUnidade = [...porPessoa.values()].filter(
+    (g) => g.unidades.length > 1
+  );
+
   const encerrada = assembleia.status === "encerrada";
 
   return (
@@ -200,7 +253,8 @@ export default function ListaPresencaPage() {
         <p className="text-gray-500">{assembleia.titulo}</p>
         <p className="text-sm text-gray-500 mt-1 flex items-center gap-1">
           <Users className="w-4 h-4" />
-          {presencas.length} presente{presencas.length !== 1 ? "s" : ""}
+          {todasPresencas.length} presente{todasPresencas.length !== 1 ? "s" : ""}
+          {termo && ` · ${presencas.length} no filtro`}
         </p>
       </div>
 
@@ -208,10 +262,66 @@ export default function ListaPresencaPage() {
         <QuorumCard q={assembleia.quorum} />
       )}
 
-      {presencas.length === 0 ? (
+      {multiUnidade.length > 0 && (
+        <div className="card mb-4 border border-primary-200 bg-primary-50 print:hidden">
+          <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary-900">
+            <Building2 className="w-4 h-4" />
+            Presentes com mais de uma unidade
+          </p>
+          <p className="mb-3 text-xs text-primary-800/80">
+            Cada unidade conta separadamente para o quórum.
+          </p>
+          <ul className="space-y-1 text-sm text-primary-900">
+            {multiUnidade.map((g, i) => (
+              <li key={i} className="flex flex-wrap items-center gap-x-2">
+                <span className="font-medium">{g.nome}</span>
+                <span className="text-primary-700/80">
+                  — {g.unidades.length} unidades: {g.unidades.join(", ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {todasPresencas.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por nome, unidade ou e-mail"
+              className="input-field w-full pl-9"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <ArrowDownUp className="w-4 h-4 text-gray-400" />
+            <select
+              value={ordem}
+              onChange={(e) =>
+                setOrdem(e.target.value as "unidade" | "nome" | "chegada")
+              }
+              className="input-field py-2"
+            >
+              <option value="unidade">Ordenar por unidade</option>
+              <option value="nome">Ordenar por nome</option>
+              <option value="chegada">Ordenar por chegada</option>
+            </select>
+          </div>
+        </div>
+      )}
+
+      {todasPresencas.length === 0 ? (
         <div className="card text-center py-12">
           <p className="text-gray-500">
             Nenhum morador acessou o sistema ainda.
+          </p>
+        </div>
+      ) : presencas.length === 0 ? (
+        <div className="card text-center py-12">
+          <p className="text-gray-500">
+            Nenhum presente encontrado para &quot;{busca}&quot;.
           </p>
         </div>
       ) : (

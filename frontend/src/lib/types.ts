@@ -71,6 +71,7 @@ export interface Presenca {
   nome: string;
   bloco: string;
   apartamento: string;
+  email?: string;
   perfil: "proprietario" | "procurador";
   metodo_auth: string;
   assinatura_facial: string;
@@ -123,6 +124,7 @@ export interface Assembleia {
   data_fim: string;
   status: "rascunho" | "aberta" | "encerrada";
   votacao_liberada?: boolean;
+  link_reuniao?: string;
   modo_multiplas_unidades?: "sindico" | "morador";
   quorum_minimo: number;
   primeira_chamada_50_mais_1: boolean;
@@ -207,17 +209,28 @@ export interface VotanteManualAdmin {
   votos: { questao: string; status: string }[];
 }
 
+export interface ResultadoVotante {
+  nome: string;
+  bloco: string;
+  apartamento: string;
+}
+
 export interface OpcaoResultado {
   id: string;
   texto: string;
   votos: number;
+  // Quem votou nesta opção — só vem no endpoint admin (resultados), nunca no público.
+  votantes?: ResultadoVotante[];
 }
 
 export interface Resultado {
   questao_id: string;
   questao_titulo: string;
+  encerrada?: boolean;
   total_votos: number;
+  total_pessoas?: number;
   total_votantes: number;
+  abstencoes?: number;
   percentual_participacao: number;
   opcoes: OpcaoResultado[];
   procuracoes_pendentes: number;

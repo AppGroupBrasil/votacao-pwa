@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from django.contrib.auth.hashers import check_password, make_password
@@ -155,3 +156,38 @@ class SolicitacaoExclusao(models.Model):
 
     def __str__(self):
         return f"{self.nome} ({self.get_status_display()})"
+
+
+# Texto único do bloqueio por inadimplência (usado em presença e votação).
+MENSAGEM_INADIMPLENTE = (
+    "Entre em contato com sua administradora para votar no sistema. "
+    "Você poderá ver a assembleia sem problemas, mas não conseguirá votar."
+)
+
+
+def normalizar_unidade(valor):
+    """Normaliza bloco/apartamento para comparar unidades entre listas.
+    Tira prefixos que o morador repete ("Apto 319" -> "319", "Bloco A" -> "a")
+    e mantém só letras/números em minúsculas, para casar formatos diferentes."""
+    s = (valor or "").strip().lower()
+    s = re.sub(r"^(apto|apart(amento)?|apt|ap|bloco|bl|torre|casa|lote|qd|quadra)\.?\s*", "", s)
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def unidade_inadimplente(condominio_id, bloco, apartamento):
+    """True se a unidade (condomínio + bloco + apartamento) tem algum eleitor
+    marcado como inadimplente. Comparação tolerante a formatação, para que o
+    bloqueio valha mesmo quando o morador digita o apartamento de outro jeito."""
+    if not condominio_id:
+        return False
+    na = normalizar_unidade(apartamento)
+    if not na:
+        return False
+    nb = normalizar_unidade(bloco)
+    for e in (
+        Eleitor.objects.filter(condominio_id=condominio_id, inadimplente=True)
+        .only("bloco", "apartamento")
+    ):
+        if normalizar_unidade(e.apartamento) == na and normalizar_unidade(e.bloco) == nb:
+            return True
+    return False

@@ -161,7 +161,10 @@ class VotoReportTests(APITestCase):
         self.assertEqual(registro["questao_titulo"], self.questao.titulo)
         self.assertEqual(registro["opcao_texto"], self.opcao.texto)
 
-    def test_voto_rejeita_dupla_votacao_na_mesma_questao(self):
+    def test_voto_duplo_mesma_questao_e_idempotente(self):
+        # Retry no 4G / duplo-clique do MESMO eleitor na mesma questão: em vez
+        # de erro (que assusta e leva a re-voto), devolve o 1º voto como sucesso
+        # (ja_registrado) e NÃO cria um segundo voto — a apuração continua com 1.
         Voto.objects.create(
             assembleia=self.assembleia,
             eleitor=self.eleitor,
@@ -180,7 +183,14 @@ class VotoReportTests(APITestCase):
             },
             format="json",
         )
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data.get("ja_registrado"))
+        self.assertEqual(
+            Voto.objects.filter(
+                eleitor=self.eleitor, questao=self.questao
+            ).count(),
+            1,
+        )
 
     def test_voto_rejeitado_em_questao_encerrada(self):
         self.questao.encerrada = True

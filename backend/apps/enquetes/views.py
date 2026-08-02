@@ -17,7 +17,13 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.eleitores.facial import melhor_correspondencia, validar_descriptor
-from apps.eleitores.models import Eleitor, IdentidadeFacial
+from apps.eleitores.models import (
+    Eleitor,
+    IdentidadeFacial,
+    MENSAGEM_INADIMPLENTE,
+    normalizar_unidade,
+    unidade_inadimplente,
+)
 from apps.eleitores.serializers import EleitorSerializer
 from core.otp import gerar_otp, validar_otp
 from core.permissions import (
@@ -156,6 +162,7 @@ def importar_planilha_completa(request):
     nome_cond = str(request.data.get("nome_condominio") or "").strip()
     titulo = str(request.data.get("titulo") or "").strip()
     rows = request.data.get("eleitores") or []
+    inadimplentes = request.data.get("inadimplentes") or []
     if not nome_cond or not titulo:
         return Response(
             {"error": "Informe o nome do condomínio e o título da reunião."},
@@ -212,6 +219,26 @@ def importar_planilha_completa(request):
         condominio.total_unidades = total_unidades
         condominio.save(update_fields=["blocos", "total_unidades", "atualizado_em"])
 
+        # Lista de inadimplentes: marca as unidades correspondentes. É o canal
+        # que informa quem não pode votar — o bloqueio no voto já existe, aqui
+        # dizemos QUEM. Casa por bloco+apartamento tolerando formatação.
+        inad_marcados = 0
+        if isinstance(inadimplentes, list) and inadimplentes:
+            alvo = set()
+            for r in inadimplentes:
+                if not isinstance(r, dict):
+                    continue
+                na = normalizar_unidade(r.get("apartamento"))
+                if na:
+                    alvo.add((normalizar_unidade(r.get("bloco")), na))
+            if alvo:
+                for e in eleitores_cond:
+                    chave = (normalizar_unidade(e.bloco), normalizar_unidade(e.apartamento))
+                    if chave in alvo and not e.inadimplente:
+                        e.inadimplente = True
+                        e.save(update_fields=["inadimplente", "atualizado_em"])
+                        inad_marcados += 1
+
         lista = ListaPresenca.objects.create(condominio=condominio, titulo=titulo)
 
         agora = timezone.now()
@@ -234,6 +261,7 @@ def importar_planilha_completa(request):
             "assembleia_codigo": assembleia.codigo_curto,
             "criados": criados,
             "pulados": pulados,
+            "inadimplentes_marcados": inad_marcados,
             "erros": erros,
         },
         status=status.HTTP_201_CREATED,
@@ -412,7 +440,17 @@ def registrar_presenca_manual(request, lista_id):
         declaracao_veracidade=declaracao_veracidade,
         ip_address=get_client_ip(request),
     )
-    return Response({"ok": True}, status=status.HTTP_201_CREATED)
+    # Presença é sempre permitida (o inadimplente pode participar e assistir);
+    # só avisamos, na hora do cadastro, que ele não conseguirá votar.
+    inadimplente = unidade_inadimplente(lista.condominio_id, bloco, apartamento)
+    return Response(
+        {
+            "ok": True,
+            "inadimplente": inadimplente,
+            "aviso": MENSAGEM_INADIMPLENTE if inadimplente else "",
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["POST"])

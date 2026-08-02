@@ -30,15 +30,31 @@ async function sha256Hex(value: string): Promise<string> {
     .join("");
 }
 
+function normCol(r: Record<string, any>, ...keys: string[]) {
+  for (const k of Object.keys(r)) {
+    if (keys.includes(k.trim().toLowerCase())) return String(r[k]).trim();
+  }
+  return "";
+}
+
+async function lerLinhas(file: File): Promise<Record<string, any>[]> {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf);
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: "" });
+}
+
 export default function ListasPresencaPage() {
   const [listas, setListas] = useState<ListaPresenca[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalPlanilhaOpen, setModalPlanilhaOpen] = useState(false);
   const [titulo, setTitulo] = useState("");
   const [nomeCondominio, setNomeCondominio] = useState("");
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [modoNovoCond, setModoNovoCond] = useState(false);
-  const [modoPlanilha, setModoPlanilha] = useState(false);
+  const [arqMoradores, setArqMoradores] = useState<File | null>(null);
+  const [arqInadimplentes, setArqInadimplentes] = useState<File | null>(null);
   const [importandoPlanilha, setImportandoPlanilha] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [copiado, setCopiado] = useState<string>("");
@@ -60,11 +76,10 @@ export default function ListasPresencaPage() {
       .catch(() => {});
   }, []);
 
-  function abrirModal() {
-    setModoPlanilha(false);
-    // Pré-seleciona o condomínio de uma lista já criada, se houver; senão o
-    // primeiro da conta. Escolher da lista evita erro de digitação e garante
-    // que a lista aponte para o MESMO condomínio dos eleitores importados.
+  // Pré-seleciona o condomínio de uma lista já criada, se houver; senão o
+  // primeiro da conta. Escolher da lista evita erro de digitação e garante
+  // que a lista aponte para o MESMO condomínio dos eleitores importados.
+  function preselecionarCondominio() {
     const anterior = listas.find((l) => l.condominio_nome)?.condominio_nome;
     if (anterior) {
       setNomeCondominio(anterior);
@@ -76,64 +91,81 @@ export default function ListasPresencaPage() {
       setNomeCondominio("");
       setModoNovoCond(true);
     }
+  }
+
+  function abrirModal() {
+    setTitulo("");
+    preselecionarCondominio();
     setModalOpen(true);
   }
 
-  async function importarPlanilha(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  function abrirModalPlanilha() {
+    setTitulo("");
+    setArqMoradores(null);
+    setArqInadimplentes(null);
+    preselecionarCondominio();
+    setModalPlanilhaOpen(true);
+  }
+
+  async function importarComPlanilha() {
     if (!nomeCondominio.trim() || !titulo.trim()) {
       alert(
-        "Informe o nome do condomínio e o título da reunião antes de escolher a planilha."
+        "Informe o condomínio e o título da reunião antes de enviar a planilha."
       );
+      return;
+    }
+    if (!arqMoradores) {
+      alert("Anexe a lista de moradores.");
       return;
     }
     setImportandoPlanilha(true);
     try {
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf);
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
-        defval: "",
-      });
-      const norm = (r: Record<string, any>, ...keys: string[]) => {
-        for (const k of Object.keys(r)) {
-          if (keys.includes(k.trim().toLowerCase())) return String(r[k]).trim();
-        }
-        return "";
-      };
+      const linhasM = await lerLinhas(arqMoradores);
       const eleitores = [];
-      for (const r of rows) {
-        const cpf = norm(r, "cpf");
+      for (const r of linhasM) {
+        const cpf = normCol(r, "cpf");
         eleitores.push({
-          nome: norm(r, "nome"),
+          nome: normCol(r, "nome"),
           cpf_hash: cpf ? await sha256Hex(cpf) : "",
-          bloco: norm(r, "bloco"),
-          apartamento: norm(r, "apartamento", "apto", "ap"),
-          email: norm(r, "email", "e-mail"),
+          bloco: normCol(r, "bloco"),
+          apartamento: normCol(r, "apartamento", "apto", "ap"),
+          email: normCol(r, "email", "e-mail"),
         });
       }
       if (eleitores.length === 0) {
-        alert("Planilha vazia ou sem dados válidos.");
+        alert("A lista de moradores está vazia ou sem dados válidos.");
         return;
       }
+
+      const inadimplentes: { bloco: string; apartamento: string }[] = [];
+      if (arqInadimplentes) {
+        const linhasI = await lerLinhas(arqInadimplentes);
+        for (const r of linhasI) {
+          const ap = normCol(r, "apartamento", "apto", "ap");
+          if (ap) inadimplentes.push({ bloco: normCol(r, "bloco"), apartamento: ap });
+        }
+      }
+
       const res = await api.importarPlanilhaCompleta(
         nomeCondominio.trim(),
         titulo.trim(),
-        eleitores
+        eleitores,
+        inadimplentes
       );
-      setModalOpen(false);
+      setModalPlanilhaOpen(false);
       alert(
         `Pronto! ${res.criados} morador(es) importado(s)` +
           (res.pulados ? `, ${res.pulados} já existiam` : "") +
+          (res.inadimplentes_marcados
+            ? `.\n${res.inadimplentes_marcados} unidade(s) marcada(s) como inadimplente — poderão participar, mas não votar`
+            : "") +
           `.\nCondomínio, lista de presença e votação foram criados. ` +
           `Agora é só adicionar as perguntas da votação.`
       );
       router.push(`/admin/assembleias/${res.assembleia_id}`);
     } catch {
       alert(
-        "Não foi possível importar agora. Confira a planilha (colunas: nome, cpf, bloco, apartamento) e tente novamente."
+        "Não foi possível importar agora. Confira as planilhas (colunas: nome, cpf, bloco, apartamento) e tente novamente."
       );
     } finally {
       setImportandoPlanilha(false);
@@ -160,6 +192,47 @@ export default function ListasPresencaPage() {
       setSalvando(false);
     }
   }
+
+  // JSX calculado (não um componente aninhado): usar <CondominioPicker/> aqui
+  // remontaria o input a cada render e faria ele perder o foco ao digitar.
+  const condominioPicker = (
+    <>
+      <label className="block text-sm font-medium mb-1">Condomínio</label>
+        {condominios.length > 0 && !modoNovoCond ? (
+          <select
+            value={nomeCondominio}
+            onChange={(e) => {
+              if (e.target.value === "__novo__") {
+                setModoNovoCond(true);
+                setNomeCondominio("");
+              } else {
+                setNomeCondominio(e.target.value);
+              }
+            }}
+            className="input-field w-full mb-1"
+          >
+            {condominios.map((c) => (
+              <option key={c.id} value={c.nome}>
+                {c.nome}
+              </option>
+            ))}
+            <option value="__novo__">+ Novo condomínio…</option>
+          </select>
+        ) : (
+          <input
+            value={nomeCondominio}
+            onChange={(e) => setNomeCondominio(e.target.value)}
+            placeholder="Ex.: San Residence"
+            className="input-field w-full mb-1"
+          />
+        )}
+        <p className="text-xs text-gray-500 mb-4">
+          {condominios.length > 0 && !modoNovoCond
+            ? "Escolha o condomínio para vincular a lista aos eleitores e ao reconhecimento facial deste condomínio."
+            : "Aparece na lista e vincula o reconhecimento facial dos moradores deste condomínio."}
+        </p>
+      </>
+  );
 
   function linkPublico(lista: ListaPresenca) {
     if (typeof window === "undefined") return "";
@@ -228,10 +301,13 @@ export default function ListasPresencaPage() {
             <Eye className="w-4 h-4" /> Ver exemplo da lista
           </NextLink>
           <button
-            onClick={() => {
-              setTitulo("");
-              abrirModal();
-            }}
+            onClick={abrirModalPlanilha}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" /> Importar planilha
+          </button>
+          <button
+            onClick={abrirModal}
             className="btn-primary flex items-center gap-2"
           >
             <Plus className="w-4 h-4" /> Nova lista
@@ -317,6 +393,93 @@ export default function ListasPresencaPage() {
         ))}
       </div>
 
+      {/* Modal: importar planilha (moradores + inadimplentes) */}
+      {modalPlanilhaOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-indigo-600" /> Importar
+                planilha
+              </h2>
+              <button onClick={() => setModalPlanilhaOpen(false)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <p className="mb-4 rounded-lg bg-indigo-50 p-3 text-xs text-indigo-900">
+              O sistema compara a <b>lista de moradores</b> com a{" "}
+              <b>lista de inadimplentes</b> e, à medida que as pessoas se
+              cadastram na presença, marca <b>automaticamente</b> as unidades
+              inadimplentes. Elas podem participar e assistir à assembleia, mas
+              ficam <b>impedidas de votar</b>.
+            </p>
+
+            {condominioPicker}
+
+            <label className="block text-sm font-medium mb-1">
+              Título da reunião
+            </label>
+            <input
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder="Ex.: Assembleia ordinária 06/2026"
+              className="input-field w-full mb-4"
+            />
+
+            <label className="block text-sm font-medium mb-1">
+              Lista de moradores
+            </label>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={(e) => setArqMoradores(e.target.files?.[0] || null)}
+              disabled={importandoPlanilha}
+              className="input-field w-full mb-1 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-indigo-700 disabled:opacity-50"
+            />
+            <p className="text-xs text-gray-500 mb-4">
+              Colunas: <b>nome</b>, <b>cpf</b>, <b>bloco</b>,{" "}
+              <b>apartamento</b> (e-mail opcional).
+            </p>
+
+            <label className="block text-sm font-medium mb-1">
+              Lista de inadimplentes{" "}
+              <span className="font-normal text-gray-400">(opcional)</span>
+            </label>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={(e) => setArqInadimplentes(e.target.files?.[0] || null)}
+              disabled={importandoPlanilha}
+              className="input-field w-full mb-1 file:mr-3 file:rounded-md file:border-0 file:bg-red-50 file:px-3 file:py-1.5 file:text-red-700 disabled:opacity-50"
+            />
+            <p className="text-xs text-gray-500 mb-4">
+              Colunas: <b>bloco</b> e <b>apartamento</b>. Essas unidades poderão
+              se cadastrar e assistir à assembleia, mas ficarão{" "}
+              <b>impedidas de votar</b>.
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setModalPlanilhaOpen(false)}
+                className="btn-secondary"
+                disabled={importandoPlanilha}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={importarComPlanilha}
+                disabled={importandoPlanilha}
+                className="btn-primary disabled:opacity-50"
+              >
+                {importandoPlanilha ? "Importando…" : "Importar e criar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: nova lista sem planilha (moradores se cadastram na hora) */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
@@ -327,79 +490,9 @@ export default function ListasPresencaPage() {
               </button>
             </div>
 
-            <div className="mb-4 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setModoPlanilha(true)}
-                className={`rounded-lg border p-3 text-left text-sm ${
-                  modoPlanilha
-                    ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-400"
-                    : "border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                <FileSpreadsheet className="mb-1 h-5 w-5 text-indigo-600" />
-                <span className="block font-semibold">Com planilha</span>
-                <span className="block text-xs text-gray-500">
-                  Cadastra moradores e já cria a votação
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setModoPlanilha(false)}
-                className={`rounded-lg border p-3 text-left text-sm ${
-                  !modoPlanilha
-                    ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-400"
-                    : "border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                <Users className="mb-1 h-5 w-5 text-indigo-600" />
-                <span className="block font-semibold">Sem planilha</span>
-                <span className="block text-xs text-gray-500">
-                  Moradores se cadastram na hora
-                </span>
-              </button>
-            </div>
+            {condominioPicker}
 
-            <label className="block text-sm font-medium mb-1">
-              Condomínio
-            </label>
-            {condominios.length > 0 && !modoNovoCond ? (
-              <select
-                value={nomeCondominio}
-                onChange={(e) => {
-                  if (e.target.value === "__novo__") {
-                    setModoNovoCond(true);
-                    setNomeCondominio("");
-                  } else {
-                    setNomeCondominio(e.target.value);
-                  }
-                }}
-                className="input-field w-full mb-1"
-              >
-                {condominios.map((c) => (
-                  <option key={c.id} value={c.nome}>
-                    {c.nome}
-                  </option>
-                ))}
-                <option value="__novo__">+ Novo condomínio…</option>
-              </select>
-            ) : (
-              <input
-                value={nomeCondominio}
-                onChange={(e) => setNomeCondominio(e.target.value)}
-                placeholder="Ex.: San Residence"
-                className="input-field w-full mb-1"
-                autoFocus
-              />
-            )}
-            <p className="text-xs text-gray-500 mb-4">
-              {condominios.length > 0 && !modoNovoCond
-                ? "Escolha o condomínio para vincular a lista aos eleitores e ao reconhecimento facial deste condomínio."
-                : "Aparece na lista e vincula o reconhecimento facial dos moradores deste condomínio."}
-            </p>
-            <label className="block text-sm font-medium mb-1">
-              {modoPlanilha ? "Título da reunião" : "Título"}
-            </label>
+            <label className="block text-sm font-medium mb-1">Título</label>
             <input
               value={titulo}
               onChange={(e) => setTitulo(e.target.value)}
@@ -407,57 +500,21 @@ export default function ListasPresencaPage() {
               className="input-field w-full mb-4"
             />
 
-            {modoPlanilha ? (
-              <>
-                <label className="block text-sm font-medium mb-1">
-                  Planilha dos moradores
-                </label>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={importarPlanilha}
-                  disabled={importandoPlanilha}
-                  className="input-field w-full mb-2 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-indigo-700 disabled:opacity-50"
-                />
-                <p className="text-xs text-gray-500 mb-4">
-                  Colunas aceitas: <b>nome</b>, <b>cpf</b>, <b>bloco</b>,{" "}
-                  <b>apartamento</b> (e-mail opcional). Ao enviar, o sistema
-                  cria o condomínio, cadastra os moradores, gera a lista de
-                  presença e já prepara a votação vinculada. Depois é só
-                  adicionar as pautas.
-                </p>
-                <div className="flex justify-end gap-2">
-                  <button
-                    onClick={() => setModalOpen(false)}
-                    className="btn-secondary"
-                    disabled={importandoPlanilha}
-                  >
-                    Cancelar
-                  </button>
-                  {importandoPlanilha && (
-                    <span className="inline-flex items-center text-sm text-gray-500">
-                      Importando e preparando tudo…
-                    </span>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setModalOpen(false)}
-                  className="btn-secondary"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={salvar}
-                  disabled={salvando}
-                  className="btn-primary disabled:opacity-50"
-                >
-                  {salvando ? "Criando..." : "Criar e gerar link"}
-                </button>
-              </div>
-            )}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvar}
+                disabled={salvando}
+                className="btn-primary disabled:opacity-50"
+              >
+                {salvando ? "Criando..." : "Criar e gerar link"}
+              </button>
+            </div>
           </div>
         </div>
       )}

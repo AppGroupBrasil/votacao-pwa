@@ -26,7 +26,7 @@ export default function AcessoFacialVotacao({
   onManual,
 }: {
   assembleiaId: string;
-  onSuccess: (token: string, votanteId: string) => void;
+  onSuccess: (token: string, votanteId: string, avisoUnidade?: string) => void;
   onEmail: () => void;
   onManual: () => void;
 }) {
@@ -125,7 +125,7 @@ export default function AcessoFacialVotacao({
       });
       if (r.encontrado && r.token) {
         pararCamera();
-        onSuccess(r.token, r.votante_manual_id || "");
+        onSuccess(r.token, r.votante_manual_id || "", r.aviso_unidade || "");
         return;
       }
       // Rosto novo: pede nome/unidade uma única vez, depois entra e vota.
@@ -162,7 +162,7 @@ export default function AcessoFacialVotacao({
         device_id: getDeviceId(),
       });
       if (r.encontrado && r.token) {
-        onSuccess(r.token, r.votante_manual_id || "");
+        onSuccess(r.token, r.votante_manual_id || "", r.aviso_unidade || "");
         return;
       }
       setErro("Não foi possível concluir. Tente novamente.");

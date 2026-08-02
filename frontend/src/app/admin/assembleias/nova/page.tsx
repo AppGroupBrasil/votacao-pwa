@@ -45,6 +45,7 @@ export default function NovaAssembleiaPage() {
   const [avancadasOpen, setAvancadasOpen] = useState(false);
   const [avancadas, setAvancadas] = useState({
     descricao: "",
+    link_reuniao: "",
     data_inicio: fmtDatetimeLocal(agora),
     data_fim: fmtDatetimeLocal(new Date(agora.getTime() + 4 * 60 * 60 * 1000)),
     quorum_minimo: 50,
@@ -124,6 +125,7 @@ export default function NovaAssembleiaPage() {
         condominio: condominio.id,
         titulo,
         descricao: avancadas.descricao,
+        link_reuniao: avancadas.link_reuniao.trim(),
         data_inicio: new Date(avancadas.data_inicio).toISOString(),
         data_fim: new Date(avancadas.data_fim).toISOString(),
         quorum_minimo: avancadas.quorum_minimo,
@@ -489,6 +491,23 @@ export default function NovaAssembleiaPage() {
                     className="input-field"
                     rows={2}
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Link da reunião (vídeo)
+                  </label>
+                  <input
+                    type="url"
+                    value={avancadas.link_reuniao}
+                    onChange={(e) =>
+                      setAvancadas({ ...avancadas, link_reuniao: e.target.value })
+                    }
+                    className="input-field"
+                    placeholder="https://meet.google.com/... ou Zoom, YouTube ao vivo"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Só aparece para o morador depois que ele registra presença.
+                  </p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>

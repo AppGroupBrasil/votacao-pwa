@@ -52,6 +52,7 @@ export default function AssembleiaDetailPage() {
   const [editForm, setEditForm] = useState({
     titulo: "",
     descricao: "",
+    link_reuniao: "",
     condominio: "",
     data_inicio: "",
     data_fim: "",
@@ -107,6 +108,7 @@ export default function AssembleiaDetailPage() {
     setEditForm({
       titulo: assembleia.titulo,
       descricao: assembleia.descricao || "",
+      link_reuniao: assembleia.link_reuniao || "",
       condominio: assembleia.condominio,
       data_inicio: assembleia.data_inicio.slice(0, 16),
       data_fim: assembleia.data_fim.slice(0, 16),
@@ -496,6 +498,21 @@ export default function AssembleiaDetailPage() {
               className="input-field"
               rows={2}
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Link da reunião (vídeo)
+            </label>
+            <input
+              type="url"
+              value={editForm.link_reuniao}
+              onChange={(e) => setEditForm({ ...editForm, link_reuniao: e.target.value })}
+              className="input-field"
+              placeholder="https://meet.google.com/... ou Zoom, YouTube ao vivo"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Só aparece para o morador depois que ele registra presença.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1183,6 +1200,32 @@ export default function AssembleiaDetailPage() {
             morador&quot; para conferir como a votação aparece para eles.
           </p>
           <LinkDestaque url={votingLink()} />
+        </div>
+      )}
+
+      {/* Link da reunião (vídeo) */}
+      {assembleia.link_reuniao && (
+        <div className="card border border-primary-200 bg-primary-50">
+          <p className="text-sm font-semibold text-primary-900">
+            Sala da reunião (vídeo)
+          </p>
+          <p className="mb-3 text-xs text-primary-800/80">
+            O morador só vê este link depois de registrar presença. Você pode
+            entrar por aqui.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={assembleia.link_reuniao}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary inline-flex items-center gap-2 text-sm"
+            >
+              <ExternalLink className="w-4 h-4" /> Entrar na reunião
+            </a>
+            <span className="text-xs text-primary-800/70 break-all">
+              {assembleia.link_reuniao}
+            </span>
+          </div>
         </div>
       )}
     </div>

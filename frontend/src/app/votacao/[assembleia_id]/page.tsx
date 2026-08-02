@@ -26,6 +26,8 @@ export default function VotacaoPage() {
   );
   const [manualId, setManualId] = useState("");
   const [votoPendente, setVotoPendente] = useState(false);
+  // Aviso "1 voto por unidade" (2ª pessoa da mesma unidade). Não bloqueia — só informa.
+  const [avisoUnidade, setAvisoUnidade] = useState("");
   const [authMethod, setAuthMethod] = useState<"facial" | "selfie" | "webauthn" | "otp">("facial");
   // Consentimento LGPD + assinatura + geo/marca capturados na tela inicial,
   // enviados junto da presença após a autenticação.
@@ -39,6 +41,10 @@ export default function VotacaoPage() {
     { questao: string; hash: string }[]
   >([]);
   const [votando, setVotando] = useState(false);
+  // Reenvio automático em conexão oscilante (4G): mostra "Reenviando..." e,
+  // se esgotar as tentativas, libera reenvio manual seguro (backend idempotente).
+  const [reenviando, setReenviando] = useState(false);
+  const [falhaRede, setFalhaRede] = useState(false);
   const [done, setDone] = useState(false);
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -179,9 +185,10 @@ export default function VotacaoPage() {
           {entryMode === "facial" && (
             <AcessoFacialVotacao
               assembleiaId={assembleiaId}
-              onSuccess={(token, id) => {
+              onSuccess={(token, id, aviso) => {
                 setManualId(id);
                 setVotosPermitidos(1);
+                setAvisoUnidade(aviso || "");
                 setAuthToken(token);
               }}
               onEmail={() => setEntryMode("email")}
@@ -191,9 +198,10 @@ export default function VotacaoPage() {
           {entryMode === "manual" && (
             <IdentificacaoManual
               assembleiaId={assembleiaId}
-              onSuccess={(token, id) => {
+              onSuccess={(token, id, aviso) => {
                 setManualId(id);
                 setVotosPermitidos(1);
+                setAvisoUnidade(aviso || "");
                 setAuthToken(token);
               }}
               onBack={() => setEntryMode("facial")}
@@ -302,6 +310,19 @@ export default function VotacaoPage() {
   // Em voto por procuração cada unidade tem direito a 1 voto; a cota de
   // múltiplas unidades (votos_permitidos) vale só para o voto próprio.
   const cotaQuestao = ehProcuracao || ehDeclaracao ? 1 : votosPermitidos;
+
+  // Link da sala de vídeo — só é mostrado aqui, depois da presença registrada
+  // (chegamos a este ponto do render apenas com o morador já identificado).
+  const salaBanner = assembleia.link_reuniao ? (
+    <a
+      href={assembleia.link_reuniao}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center justify-center gap-2 w-full mb-4 rounded-lg bg-primary-600 text-white px-4 py-3 font-medium hover:bg-primary-700 transition-colors"
+    >
+      <ExternalLink className="w-4 h-4" /> Entrar na reunião (vídeo)
+    </a>
+  ) : null;
 
   // Seletor de unidade para voto por procuração
   if (pickerOpen) {
@@ -517,9 +538,10 @@ export default function VotacaoPage() {
         <div className="card w-full max-w-md text-center">
           <Clock className="w-16 h-16 text-primary-400 mx-auto mb-4" />
           <h1 className="text-2xl font-bold mb-2">Aguardando liberação</h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 mb-4">
             Sua presença está registrada. A votação será liberada pela administração em instantes — esta tela abre automaticamente.
           </p>
+          {salaBanner}
         </div>
       </div>
     );
@@ -657,11 +679,12 @@ export default function VotacaoPage() {
         <div className="card w-full max-w-md text-center">
           <Clock className="w-16 h-16 text-primary-400 mx-auto mb-4" />
           <h1 className="text-2xl font-bold mb-2">Aguarde o próximo item</h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 mb-4">
             O próximo item será liberado para votação assim que o assunto for
             debatido. Mantenha esta página aberta — ela abrirá automaticamente
             quando a votação for liberada.
           </p>
+          {salaBanner}
         </div>
       </div>
     );
@@ -670,30 +693,60 @@ export default function VotacaoPage() {
   async function handleVotar() {
     if (!selectedOpcao || !questao || !authToken) return;
     setVotando(true);
+    setFalhaRede(false);
+
+    const payload = {
+      ...(manualId
+        ? {}
+        : {
+            eleitor_id:
+              ehProcuracao && unidadeProc ? unidadeProc.id : eleitorId,
+          }),
+      questao_id: questao.id,
+      opcao_id: selectedOpcao,
+      auth_token: authToken,
+      device_id: getDeviceId(),
+      por_procuracao: manualId ? false : ehProcuracao,
+      unidade_declarada: manualId ? false : ehDeclaracao,
+      ...(ehDeclaracao && declUnidade && !manualId
+        ? {
+            decl_bloco: declUnidade.bloco,
+            decl_apartamento: declUnidade.apartamento,
+            decl_nome: declUnidade.nome,
+            grupo_declaracao: grupoDecl,
+          }
+        : {}),
+    };
+
+    // Reenvio automático quando a REDE cai (sem resposta do servidor: 4G que
+    // oscila, timeout, offline). O backend é idempotente — um retry devolve o
+    // mesmo voto (ja_registrado), nunca duplica — então tentar de novo é seguro.
+    // Erro de aplicação (o servidor respondeu 4xx) NÃO é reenviado: cai no catch.
+    async function votarComReenvio() {
+      const maxTentativas = 4;
+      for (let tentativa = 1; ; tentativa++) {
+        try {
+          return await api.votar(assembleiaId, payload);
+        } catch (err: any) {
+          const semResposta = !err?.response; // fetch rejeitou (rede), sem HTTP
+          if (semResposta && tentativa < maxTentativas) {
+            setReenviando(true);
+            await new Promise((r) => setTimeout(r, 1200 * tentativa));
+            continue;
+          }
+          if (semResposta) {
+            const e: any = new Error("network-exhausted");
+            e.redeEsgotada = true;
+            throw e;
+          }
+          throw err;
+        }
+      }
+    }
 
     try {
-      const result = await api.votar(assembleiaId, {
-        ...(manualId
-          ? {}
-          : {
-              eleitor_id:
-                ehProcuracao && unidadeProc ? unidadeProc.id : eleitorId,
-            }),
-        questao_id: questao.id,
-        opcao_id: selectedOpcao,
-        auth_token: authToken,
-        device_id: getDeviceId(),
-        por_procuracao: manualId ? false : ehProcuracao,
-        unidade_declarada: manualId ? false : ehDeclaracao,
-        ...(ehDeclaracao && declUnidade && !manualId
-          ? {
-              decl_bloco: declUnidade.bloco,
-              decl_apartamento: declUnidade.apartamento,
-              decl_nome: declUnidade.nome,
-              grupo_declaracao: grupoDecl,
-            }
-          : {}),
-      });
+      const result = await votarComReenvio();
+      setReenviando(false);
 
       if (manualId && result.status === "pendente") setVotoPendente(true);
 
@@ -731,16 +784,23 @@ export default function VotacaoPage() {
         }
       }
     } catch (err: any) {
-      const data = err?.response?.data;
-      if (data?.code === "inadimplente") {
-        setInadModal({
-          msg: data.error || "Entre em contato com sua administradora.",
-          whatsapp: (data.whatsapp || "").replace(/\D/g, ""),
-        });
+      if (err?.redeEsgotada) {
+        // Não perdeu o voto necessariamente — só não deu para confirmar.
+        // Mantém a opção selecionada para reenvio manual seguro (idempotente).
+        setFalhaRede(true);
       } else {
-        alert(data?.error || "Erro ao registrar voto.");
+        const data = err?.response?.data;
+        if (data?.code === "inadimplente") {
+          setInadModal({
+            msg: data.error || "Entre em contato com sua administradora.",
+            whatsapp: (data.whatsapp || "").replace(/\D/g, ""),
+          });
+        } else {
+          alert(data?.error || "Erro ao registrar voto.");
+        }
       }
     } finally {
+      setReenviando(false);
       setVotando(false);
     }
   }
@@ -789,6 +849,7 @@ export default function VotacaoPage() {
         </div>
       )}
       <div className="card w-full max-w-md">
+        {salaBanner}
         {ehProcuracao && unidadeProc && (
           <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800 flex items-center gap-2">
             <Users className="w-4 h-4 shrink-0" />
@@ -809,6 +870,20 @@ export default function VotacaoPage() {
             Questão {indiceAtual + 1} de {questoes.length}
           </span>
         </div>
+
+        {avisoUnidade && (
+          <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800 flex items-start gap-2">
+            <Shield className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="flex-1">{avisoUnidade}</span>
+            <button
+              onClick={() => setAvisoUnidade("")}
+              className="text-amber-500 hover:text-amber-700 shrink-0"
+              aria-label="Fechar aviso"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {cotaQuestao > 1 && (
           <div className="mb-4 rounded-lg bg-primary-50 border border-primary-200 px-3 py-2 text-sm text-primary-800">
@@ -863,12 +938,29 @@ export default function VotacaoPage() {
           ))}
         </div>
 
+        {falhaRede && (
+          <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-3 text-sm text-amber-800">
+            <p className="font-medium mb-1">Sua conexão oscilou.</p>
+            <p>
+              Não conseguimos confirmar seu voto. Toque em{" "}
+              <strong>Confirmar Voto</strong> de novo — se ele já tiver sido
+              registrado, o sistema reconhece e não conta duas vezes.
+            </p>
+          </div>
+        )}
+
         <button
           onClick={handleVotar}
           disabled={!selectedOpcao || votando}
           className="btn-primary w-full"
         >
-          {votando ? "Registrando..." : "Confirmar Voto"}
+          {votando
+            ? reenviando
+              ? "Reenviando..."
+              : "Registrando..."
+            : falhaRede
+            ? "Tentar reenviar"
+            : "Confirmar Voto"}
         </button>
 
         {/* Progress bar */}

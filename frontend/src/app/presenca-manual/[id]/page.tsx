@@ -50,6 +50,7 @@ export default function PresencaManualPublicaPage() {
   const [enviando, setEnviando] = useState(false);
   const [enviado, setEnviado] = useState(false);
   const [jaPresente, setJaPresente] = useState(false);
+  const [avisoInadimplente, setAvisoInadimplente] = useState("");
 
   const [nome, setNome] = useState("");
   const [bloco, setBloco] = useState("");
@@ -261,6 +262,7 @@ export default function PresencaManualPublicaPage() {
         declaracao_veracidade: consentimento,
       });
       if ((r as any)?.ja_presente) setJaPresente(true);
+      if (r?.inadimplente) setAvisoInadimplente(r.aviso || "");
       setEnviado(true);
     } catch (e: any) {
       setErro(
@@ -303,6 +305,11 @@ export default function PresencaManualPublicaPage() {
               }.`
             : `Obrigado${nome.trim() ? `, ${nome.trim()}` : ""}.`}
         </p>
+        {avisoInadimplente && (
+          <div className="mt-5 max-w-sm rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+            {avisoInadimplente}
+          </div>
+        )}
       </div>
     );
   }

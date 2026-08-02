@@ -58,6 +58,8 @@ export default function AssembleiasHubPage() {
   const [pendentes, setPendentes] = useState<ProcuracaoPendente[]>([]);
   const [manuais, setManuais] = useState<VotanteManualAdmin[]>([]);
   const [selfieAberta, setSelfieAberta] = useState<string>("");
+  // Opção cuja lista "quem votou" está aberta (admin-only). Uma por vez.
+  const [opcaoAberta, setOpcaoAberta] = useState<string>("");
   const [loadingResultados, setLoadingResultados] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -249,6 +251,7 @@ export default function AssembleiasHubPage() {
     assembleias.find((a) => a.status === "aberta") || assembleias[0];
   const aoVivo =
     !!selected && assembleias.find((a) => a.id === selected)?.status === "aberta";
+  const selecionada = assembleias.find((a) => a.id === selected);
 
   function SeletorAssembleia() {
     return (
@@ -592,39 +595,164 @@ export default function AssembleiasHubPage() {
 
           {!loadingResultados && resultados.length > 0 && (
             <div className="space-y-6">
-              {resultados.map((r) => (
-                <div key={r.questao_id} className="card">
-                  <h3 className="font-semibold text-lg mb-1">{r.questao_titulo}</h3>
-                  <p className="text-sm text-gray-500 mb-4">
-                    {r.total_votos} de {r.total_votantes} votos (
-                    {r.percentual_participacao}%)
-                  </p>
-                  <div className="space-y-3">
-                    {r.opcoes.map((opcao) => {
-                      const pct =
-                        r.total_votos > 0
-                          ? Math.round((opcao.votos / r.total_votos) * 100)
-                          : 0;
-                      return (
-                        <div key={opcao.id}>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="font-medium">{opcao.texto}</span>
-                            <span className="text-gray-500">
-                              {opcao.votos} voto{opcao.votos !== 1 ? "s" : ""} ({pct}%)
-                            </span>
-                          </div>
-                          <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-primary-500 rounded-full transition-all duration-500"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
+              {/* Cabeçalho da apuração — condomínio, título, data, presença */}
+              {selecionada && (
+                <div className="card flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-bold">{selecionada.titulo}</h2>
+                    <p className="text-sm text-gray-500 mt-0.5">
+                      {selecionada.condominio_nome}
+                      {selecionada.data_inicio &&
+                        ` · ${new Date(selecionada.data_inicio).toLocaleDateString(
+                          "pt-BR"
+                        )}`}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-2">
+                      <span className="font-medium">
+                        {selecionada.total_votantes}
+                      </span>{" "}
+                      unidade{selecionada.total_votantes !== 1 ? "s" : ""} apta
+                      {selecionada.total_votantes !== 1 ? "s" : ""} a votar
+                    </p>
                   </div>
+                  <button
+                    onClick={() => window.print()}
+                    className="btn-secondary inline-flex items-center gap-2 print:hidden shrink-0"
+                  >
+                    <Download className="w-4 h-4" /> Imprimir / PDF
+                  </button>
                 </div>
-              ))}
+              )}
+
+              {resultados.map((r) => {
+                const maxVotos = Math.max(
+                  0,
+                  ...r.opcoes.map((o) => o.votos)
+                );
+                const vencedoras = r.opcoes.filter(
+                  (o) => o.votos === maxVotos && maxVotos > 0
+                );
+                const empate = vencedoras.length > 1;
+                const mostrarPeso =
+                  typeof r.total_pessoas === "number" &&
+                  r.total_pessoas !== r.total_votos;
+                return (
+                  <div key={r.questao_id} className="card">
+                    <div className="flex items-start justify-between gap-3 mb-1">
+                      <h3 className="font-semibold text-lg">{r.questao_titulo}</h3>
+                      <span
+                        className={clsx(
+                          "shrink-0 rounded-full px-2.5 py-1 text-xs font-medium",
+                          r.encerrada
+                            ? "bg-gray-100 text-gray-600"
+                            : "bg-green-50 text-green-700"
+                        )}
+                      >
+                        {r.encerrada ? "encerrada" : "em votação"}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-500 mb-1">
+                      {r.total_votos} voto{r.total_votos !== 1 ? "s" : ""}
+                      {mostrarPeso &&
+                        ` · ${r.total_pessoas} pessoa${
+                          r.total_pessoas !== 1 ? "s" : ""
+                        }`}
+                      {typeof r.abstencoes === "number" &&
+                        ` · ${r.abstencoes} abstenç${
+                          r.abstencoes !== 1 ? "ões" : "ão"
+                        }`}
+                      {` · ${r.percentual_participacao}% de participação`}
+                    </p>
+
+                    {/* Vencedor só depois que a questão é encerrada */}
+                    {r.encerrada && maxVotos > 0 && (
+                      <p
+                        className={clsx(
+                          "text-sm font-medium mb-4",
+                          empate ? "text-amber-600" : "text-green-700"
+                        )}
+                      >
+                        {empate
+                          ? `Empate entre ${vencedoras
+                              .map((o) => o.texto)
+                              .join(", ")} (${maxVotos} votos cada)`
+                          : `Vencedora: ${vencedoras[0].texto} (${maxVotos} voto${
+                              maxVotos !== 1 ? "s" : ""
+                            })`}
+                      </p>
+                    )}
+                    {!r.encerrada && <div className="mb-4" />}
+
+                    <div className="space-y-3">
+                      {r.opcoes.map((opcao) => {
+                        const pct =
+                          r.total_votos > 0
+                            ? Math.round((opcao.votos / r.total_votos) * 100)
+                            : 0;
+                        const isVencedora =
+                          r.encerrada &&
+                          !empate &&
+                          opcao.votos === maxVotos &&
+                          maxVotos > 0;
+                        const aberta = opcaoAberta === opcao.id;
+                        const temVotantes =
+                          !!opcao.votantes && opcao.votantes.length > 0;
+                        return (
+                          <div key={opcao.id}>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span
+                                className={clsx(
+                                  "font-medium",
+                                  isVencedora && "text-green-700"
+                                )}
+                              >
+                                {isVencedora && "★ "}
+                                {opcao.texto}
+                              </span>
+                              <span className="text-gray-500">
+                                {opcao.votos} voto{opcao.votos !== 1 ? "s" : ""} (
+                                {pct}%)
+                              </span>
+                            </div>
+                            <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                className={clsx(
+                                  "h-full rounded-full transition-all duration-500",
+                                  isVencedora ? "bg-green-500" : "bg-primary-500"
+                                )}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            {temVotantes && (
+                              <button
+                                onClick={() =>
+                                  setOpcaoAberta(aberta ? "" : opcao.id)
+                                }
+                                className="mt-1 text-xs text-primary-600 hover:underline print:hidden"
+                              >
+                                {aberta ? "ocultar" : "ver quem votou"}
+                              </button>
+                            )}
+                            {aberta && temVotantes && (
+                              <ul className="mt-2 space-y-1 rounded-lg bg-gray-50 border border-gray-100 p-3 text-sm">
+                                {opcao.votantes!.map((vt, i) => (
+                                  <li key={i} className="flex justify-between gap-2">
+                                    <span className="truncate">{vt.nome}</span>
+                                    <span className="text-gray-400 shrink-0">
+                                      {vt.bloco ? `${vt.bloco} / ` : ""}
+                                      {vt.apartamento}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 

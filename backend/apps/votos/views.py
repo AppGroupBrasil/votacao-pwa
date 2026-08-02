@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import re
 import uuid
 
 from django.db import transaction
@@ -18,7 +19,13 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.assembleias.models import Assembleia, OpcaoVoto, Presenca, Questao
-from apps.eleitores.models import Eleitor, IdentidadeFacial
+from apps.eleitores.models import (
+    Eleitor,
+    IdentidadeFacial,
+    MENSAGEM_INADIMPLENTE,
+    normalizar_unidade,
+    unidade_inadimplente,
+)
 from apps.eleitores.facial import melhor_correspondencia, validar_descriptor
 from core.permissions import IsAdminWithRole, get_user_condominios
 
@@ -44,6 +51,83 @@ def get_client_ip(request):
 
 def get_client_user_agent(request):
     return str(request.META.get("HTTP_USER_AGENT", "")).strip()
+
+
+AVISO_UNIDADE_JA_CADASTRADA = (
+    "Já existe um cadastro dessa unidade. O seu cadastro não poderá votar; "
+    "só será válido um voto por unidade."
+)
+
+
+def _aviso_unidade_ja_cadastrada(condominio_id, bloco, apartamento, criado_em, ident_id):
+    """Retorna o aviso "1 voto por unidade" quando a mesma unidade já tinha um
+    rosto cadastrado ANTES deste (por criado_em). Não bloqueia nada — só avisa a
+    2ª pessoa da unidade que o voto dela não vale. Comparação tolerante de unidade
+    ([[normalizar_unidade]]). Falha aberta: qualquer erro retorna sem aviso."""
+    napto = normalizar_unidade(apartamento)
+    if not condominio_id or not napto:
+        return ""
+    nbloco = normalizar_unidade(bloco)
+    anteriores = (
+        IdentidadeFacial.objects.filter(condominio_id=condominio_id)
+        .exclude(id=ident_id)
+    )
+    if criado_em is not None:
+        anteriores = anteriores.filter(criado_em__lt=criado_em)
+    for e in anteriores.only("bloco", "apartamento"):
+        if normalizar_unidade(e.apartamento) == napto and normalizar_unidade(e.bloco) == nbloco:
+            return AVISO_UNIDADE_JA_CADASTRADA
+    return ""
+
+
+def _voto_unidade(v):
+    """(bloco, apartamento) efetivos de um Voto, conforme o caminho: unidade
+    declarada usa os campos digitados; voto manual usa o votante; senão o eleitor."""
+    if v.unidade_declarada:
+        return v.decl_bloco, v.decl_apartamento
+    if v.votante_manual_id and v.votante_manual:
+        return v.votante_manual.bloco, v.votante_manual.apartamento
+    if v.eleitor_id and v.eleitor:
+        return v.eleitor.bloco, v.eleitor.apartamento
+    return "", ""
+
+
+def _unidade_ja_votou(assembleia, questao, bloco, apartamento, *, excluir_eleitor_id=None, excluir_votante_id=None):
+    """True se a unidade (comparada de forma normalizada, [[normalizar_unidade]])
+    já tem um voto NÃO-rejeitado nesta questão por QUALQUER caminho (cadastro,
+    manual ou declarada) — unifica os 3 subsistemas para honrar "1 voto por
+    unidade / primeiro voto conta". Ignora os votos próprios do solicitante
+    (para não se autobloquear). **Falha aberta:** sem unidade ou em erro,
+    retorna False (nunca bloqueia um votante legítimo)."""
+    napto = normalizar_unidade(apartamento)
+    if not napto:
+        return False
+    nbloco = normalizar_unidade(bloco)
+    try:
+        qs = (
+            Voto.objects.filter(assembleia=assembleia, questao=questao)
+            .exclude(status=Voto.Status.REJEITADO)
+            .select_related("eleitor", "votante_manual")
+        )
+        for v in qs:
+            if (
+                excluir_eleitor_id
+                and v.eleitor_id == excluir_eleitor_id
+                and not v.unidade_declarada
+                and not v.por_procuracao
+            ):
+                continue
+            if excluir_votante_id and v.votante_manual_id == excluir_votante_id:
+                continue
+            vb, va = _voto_unidade(v)
+            if normalizar_unidade(va) == napto and normalizar_unidade(vb) == nbloco:
+                return True
+        return False
+    except Exception:
+        audit.exception(
+            "dedup_unidade falhou assembleia=%s questao=%s", assembleia.id, questao.id
+        )
+        return False
 
 
 def infer_device_info(user_agent):
@@ -303,7 +387,7 @@ def registrar_voto(request, assembleia_id):
         if eleitor.inadimplente:
             return Response(
                 {
-                    "error": "Entre em contato com sua administradora.",
+                    "error": MENSAGEM_INADIMPLENTE,
                     "code": "inadimplente",
                     "whatsapp": (eleitor.condominio.whatsapp_administradora or "").strip(),
                 },
@@ -363,82 +447,57 @@ def registrar_voto(request, assembleia_id):
             # Sem select_for_update: o lock da Assembleia no início da transação
             # já serializa os votos, e FOR UPDATE não funciona nos LEFT JOINs
             # dos FKs anuláveis (eleitor/votante_manual).
-            dup = (
-                Voto.objects.filter(assembleia=assembleia, questao=questao)
-                .filter(
-                    Q(
-                        unidade_declarada=True,
-                        decl_bloco__iexact=decl_bloco,
-                        decl_apartamento__iexact=decl_apartamento,
-                    )
-                    | Q(
-                        unidade_declarada=False,
-                        por_procuracao=False,
-                        eleitor__bloco__iexact=decl_bloco,
-                        eleitor__apartamento__iexact=decl_apartamento,
-                    )
-                    | Q(
-                        votante_manual__isnull=False,
-                        votante_manual__bloco__iexact=decl_bloco,
-                        votante_manual__apartamento__iexact=decl_apartamento,
-                    )
-                )
-                .exclude(status=Voto.Status.REJEITADO)
-                .exists()
-            )
+            dup = _unidade_ja_votou(assembleia, questao, decl_bloco, decl_apartamento)
             if dup and BLOQUEAR_UNIDADE:
                 return Response(
                     {"error": "Esta unidade já tem um voto nesta questão."},
                     status=status.HTTP_409_CONFLICT,
                 )
         else:
-            # Quantos votos este eleitor pode dar nesta questão (1 por unidade;
-            # mais de 1 quando possui mais de uma unidade). Procuração não consome
-            # a cota do procurador — conta para a unidade representada.
+            # Idempotência (retry no 4G / duplo-clique): se este eleitor já atingiu
+            # a cota de votos próprios nesta questão, devolve o 1º voto como SUCESSO
+            # (não erro) — evita o susto "votei e não computou" seguido de re-voto.
+            # Multi-unidade (votos_permitidos > 1) ainda pode votar até a cota.
             votos_permitidos = max(1, eleitor.votos_permitidos or 1)
-            ja_votou = (
+            proprios = list(
                 Voto.objects.select_for_update()
-                .filter(eleitor=eleitor, questao=questao, unidade_declarada=False)
-                .exclude(status=Voto.Status.REJEITADO)
-                .count()
-            )
-            if BLOQUEAR_UNIDADE and ja_votou >= votos_permitidos:
-                return Response(
-                    {"error": "Você já usou todos os seus votos nesta questão."},
-                    status=status.HTTP_409_CONFLICT,
-                )
-
-        # Cadastro tem prioridade sobre voto manual: se a unidade do eleitor já
-        # tinha voto manual contabilizado nesta questão, ele volta para revisão
-        # do síndico (pendente) e o voto do eleitor cadastrado entra normalmente.
-        if not por_procuracao and not unidade_declarada:
-            Voto.objects.filter(
-                assembleia=assembleia,
-                questao=questao,
-                votante_manual__isnull=False,
-                votante_manual__bloco__iexact=(eleitor.bloco or "").strip(),
-                votante_manual__apartamento__iexact=(eleitor.apartamento or "").strip(),
-                status=Voto.Status.VALIDADO,
-            ).update(status=Voto.Status.PENDENTE)
-
-        # Um voto por unidade: se outro morador da mesma unidade
-        # (condomínio + bloco + apartamento) já votou nesta questão, bloqueia.
-        if not por_procuracao and not unidade_declarada:
-            unidade_ja_votou = (
-                Voto.objects.filter(
-                    assembleia=assembleia,
+                .filter(
+                    eleitor=eleitor,
                     questao=questao,
-                    eleitor__condominio=eleitor.condominio_id,
-                    eleitor__bloco__iexact=(eleitor.bloco or "").strip(),
-                    eleitor__apartamento__iexact=(eleitor.apartamento or "").strip(),
+                    unidade_declarada=False,
+                    por_procuracao=False,
                 )
-                .exclude(eleitor=eleitor)
                 .exclude(status=Voto.Status.REJEITADO)
-                .exists()
+                .order_by("timestamp")
             )
-            if unidade_ja_votou and BLOQUEAR_UNIDADE:
+            if BLOQUEAR_UNIDADE and len(proprios) >= votos_permitidos:
+                v0 = proprios[0]
                 return Response(
-                    {"error": "Sua unidade já tem um voto."},
+                    {
+                        "message": "Seu voto já estava registrado nesta questão.",
+                        "hash_voto": v0.hash_voto,
+                        "timestamp": v0.timestamp,
+                        "ja_registrado": True,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+        # Um voto por unidade (o primeiro voto da unidade conta): se OUTRA pessoa
+        # da mesma unidade já votou nesta questão por QUALQUER caminho (cadastro,
+        # manual ou declarada), bloqueia com aviso claro. O antigo "cadastro tem
+        # prioridade" (que rebaixava o voto manual da unidade a pendente em
+        # silêncio, sumindo da apuração) foi REMOVIDO — voto já dado não some;
+        # o síndico revisa na apuração se necessário.
+        if not por_procuracao and not unidade_declarada:
+            if BLOQUEAR_UNIDADE and _unidade_ja_votou(
+                assembleia,
+                questao,
+                eleitor.bloco,
+                eleitor.apartamento,
+                excluir_eleitor_id=eleitor.id,
+            ):
+                return Response(
+                    {"error": "Sua unidade já tem um voto nesta questão."},
                     status=status.HTTP_409_CONFLICT,
                 )
 
@@ -507,6 +566,14 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
         OpcaoVoto, id=serializer.validated_data["opcao_id"], questao=questao
     )
 
+    # Inadimplência por unidade: o votante manual pode ter entrado e assistido,
+    # mas a unidade marcada como inadimplente não vota.
+    if unidade_inadimplente(assembleia.condominio_id, votante.bloco, votante.apartamento):
+        return Response(
+            {"error": MENSAGEM_INADIMPLENTE, "code": "inadimplente"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     if questao.encerrada:
         return Response(
             {"error": "A votação deste item foi encerrada."},
@@ -519,54 +586,39 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
             status=status.HTTP_409_CONFLICT,
         )
 
-    ja_votou = (
+    # Idempotência (retry no 4G / duplo-clique): se este votante já votou nesta
+    # questão, devolve o voto existente como SUCESSO em vez de erro.
+    ja = (
         Voto.objects.select_for_update()
         .filter(votante_manual=votante, questao=questao)
         .exclude(status=Voto.Status.REJEITADO)
-        .exists()
+        .order_by("timestamp")
+        .first()
     )
-    if ja_votou and BLOQUEAR_UNIDADE:
+    if ja and BLOQUEAR_UNIDADE:
         return Response(
-            {"error": "Você já votou nesta questão."},
+            {
+                "message": "Seu voto já estava registrado nesta questão.",
+                "hash_voto": ja.hash_voto,
+                "timestamp": ja.timestamp,
+                "ja_registrado": True,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    # Um voto por unidade (o primeiro voto da unidade conta): se OUTRA pessoa da
+    # mesma unidade já votou nesta questão por qualquer caminho, bloqueia com aviso
+    # claro — sem criar voto pendente que engorda a apuração. Falha aberta: sem
+    # unidade informada, não bloqueia ([[_unidade_ja_votou]]).
+    if BLOQUEAR_UNIDADE and _unidade_ja_votou(
+        assembleia, questao, votante.bloco, votante.apartamento, excluir_votante_id=votante.id
+    ):
+        return Response(
+            {"error": "Sua unidade já tem um voto nesta questão."},
             status=status.HTTP_409_CONFLICT,
         )
 
-    bloco = (votante.bloco or "").strip()
-    apartamento = (votante.apartamento or "").strip()
-    # Sem unidade informada (rosto reconhecido sem apartamento) não dá para
-    # deduplicar por unidade — evita marcar pendente à toa.
-    conflito_unidade = bool(apartamento) and (
-        Voto.objects.filter(assembleia=assembleia, questao=questao)
-        .filter(
-            Q(
-                votante_manual__isnull=False,
-                votante_manual__bloco__iexact=bloco,
-                votante_manual__apartamento__iexact=apartamento,
-            )
-            | Q(
-                eleitor__isnull=False,
-                unidade_declarada=False,
-                eleitor__bloco__iexact=bloco,
-                eleitor__apartamento__iexact=apartamento,
-            )
-            | Q(
-                unidade_declarada=True,
-                decl_bloco__iexact=bloco,
-                decl_apartamento__iexact=apartamento,
-            )
-        )
-        .exclude(votante_manual=votante)
-        .exclude(status=Voto.Status.REJEITADO)
-        .exists()
-    )
-
     device_id = (serializer.validated_data.get("device_id") or "").strip()
-    conflito_device = bool(device_id) and (
-        Voto.objects.filter(assembleia=assembleia, device_id=device_id)
-        .exclude(votante_manual=votante)
-        .exclude(status=Voto.Status.REJEITADO)
-        .exists()
-    )
 
     voto = Voto(
         assembleia=assembleia,
@@ -583,11 +635,7 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
         user_agent=get_client_user_agent(request),
         device_info=infer_device_info(get_client_user_agent(request)),
         device_id=device_id,
-        status=(
-            Voto.Status.PENDENTE
-            if (conflito_unidade and BLOQUEAR_UNIDADE)
-            else Voto.Status.VALIDADO
-        ),
+        status=Voto.Status.VALIDADO,
     )
     voto.save()
 
@@ -644,29 +692,97 @@ def acesso_manual(request, assembleia_id):
         )
 
     user_agent = get_client_user_agent(request)
-    votante = VotanteManual.objects.create(
-        assembleia=assembleia,
-        nome=nome,
-        bloco=bloco,
-        apartamento=apartamento,
-        selfie=selfie,
-        ip_address=get_client_ip(request),
-        user_agent=user_agent,
-        device_info=infer_device_info(user_agent),
-        device_id=device_id,
-    )
-    Presenca.objects.create(
-        assembleia=assembleia,
-        eleitor=None,
-        nome=nome,
-        bloco=bloco,
-        apartamento=apartamento,
-        metodo_auth="selfie",
-        selfie=selfie,
-        ip_address=get_client_ip(request),
-        user_agent=user_agent,
-        device_info=infer_device_info(user_agent),
-    )
+
+    # Reaproveita o votante já criado nesta assembleia em vez de criar um novo a
+    # cada entrada. Reentradas (facial que falhou e caiu no manual, página
+    # recarregada, link reaberto) mintavam um votante novo por vez, o que furava
+    # a deduplicação por votante e gerou votos repetidos (incidente 27/07: gente
+    # com 2 e até 5 votos). Casa primeiro pelo mesmo aparelho+unidade e, na
+    # falta, pela unidade+nome normalizados. Fail open: se nada casar, cria como
+    # antes.
+    napto = normalizar_unidade(apartamento)
+    nbloco = normalizar_unidade(bloco)
+    nnome = re.sub(r"\s+", " ", nome).strip().lower()
+
+    def _mesmo_nome(v):
+        return re.sub(r"\s+", " ", v.nome or "").strip().lower() == nnome
+
+    votante = None
+    if device_id:
+        for v in VotanteManual.objects.filter(
+            assembleia=assembleia, device_id=device_id
+        ).order_by("criado_em"):
+            vapto = normalizar_unidade(v.apartamento)
+            if not vapto or (vapto == napto and normalizar_unidade(v.bloco) == nbloco):
+                votante = v
+                break
+    if votante is None and napto:
+        for v in VotanteManual.objects.filter(assembleia=assembleia).order_by(
+            "criado_em"
+        ):
+            if (
+                normalizar_unidade(v.apartamento) == napto
+                and normalizar_unidade(v.bloco) == nbloco
+                and _mesmo_nome(v)
+            ):
+                votante = v
+                break
+
+    reutilizou = votante is not None
+    if votante is None:
+        votante = VotanteManual.objects.create(
+            assembleia=assembleia,
+            nome=nome,
+            bloco=bloco,
+            apartamento=apartamento,
+            selfie=selfie,
+            ip_address=get_client_ip(request),
+            user_agent=user_agent,
+            device_info=infer_device_info(user_agent),
+            device_id=device_id,
+        )
+    else:
+        # Mesma pessoa reentrando: completa dados úteis sem duplicar o registro.
+        mudou = []
+        if device_id and not votante.device_id:
+            votante.device_id = device_id
+            mudou.append("device_id")
+        if selfie and not votante.selfie:
+            votante.selfie = selfie
+            mudou.append("selfie")
+        if mudou:
+            votante.save(update_fields=mudou)
+
+    # Presença: só na primeira entrada desta pessoa, para não duplicar linha na
+    # lista de presença a cada reentrada.
+    if not reutilizou:
+        Presenca.objects.create(
+            assembleia=assembleia,
+            eleitor=None,
+            nome=nome,
+            bloco=bloco,
+            apartamento=apartamento,
+            metodo_auth="selfie",
+            selfie=selfie,
+            ip_address=get_client_ip(request),
+            user_agent=user_agent,
+            device_info=infer_device_info(user_agent),
+        )
+
+    # Aviso "1 voto por unidade": se a mesma unidade já tinha outro votante
+    # (outra pessoa) registrado antes, avisa que só o 1º voto da unidade conta.
+    # Não bloqueia a presença — a pessoa participa normalmente (quórum).
+    aviso_unidade = ""
+    if napto:
+        for v in VotanteManual.objects.filter(assembleia=assembleia).exclude(id=votante.id):
+            if v.criado_em and votante.criado_em and v.criado_em >= votante.criado_em:
+                continue
+            if (
+                normalizar_unidade(v.apartamento) == napto
+                and normalizar_unidade(v.bloco) == nbloco
+            ):
+                aviso_unidade = AVISO_UNIDADE_JA_CADASTRADA
+                break
 
     token = signing.dumps(
         {
@@ -686,6 +802,7 @@ def acesso_manual(request, assembleia_id):
             "authenticated": True,
             "method": "manual",
             "votante_manual_id": str(votante.id),
+            "aviso_unidade": aviso_unidade,
             "token": token,
         },
         status=status.HTTP_201_CREATED,
@@ -752,18 +869,39 @@ def acesso_facial(request, assembleia_id):
         perfil = str(request.data.get("perfil", "")).strip().lower()
         if perfil not in {"proprietario", "locatario", "conjuge", "procurador", "outro"}:
             perfil = "proprietario"
-        ident = IdentidadeFacial.objects.create(
-            condominio_id=assembleia.condominio_id,
-            nome=nome,
-            bloco=bloco,
-            apartamento=apartamento,
-            perfil=perfil,
-            descriptor=descriptor,
-            selfie=selfie,
-            consentimento_lgpd=True,
-            consentimento_em=timezone.now(),
-        )
-        novo = True
+        # Anti-duplo-clique / recadastro: se a mesma unidade+nome já tem
+        # identidade no condomínio (dois cliques rápidos, ou o rosto não casou
+        # por variação de luz), reaproveita em vez de criar outra identidade.
+        napto = normalizar_unidade(apartamento)
+        nbloco = normalizar_unidade(bloco)
+        nnome = re.sub(r"\s+", " ", nome).strip().lower()
+        existente = None
+        if napto:
+            for e in IdentidadeFacial.objects.filter(
+                condominio_id=assembleia.condominio_id
+            ):
+                if (
+                    normalizar_unidade(e.apartamento) == napto
+                    and normalizar_unidade(e.bloco) == nbloco
+                    and re.sub(r"\s+", " ", e.nome or "").strip().lower() == nnome
+                ):
+                    existente = e
+                    break
+        if existente is not None:
+            ident = existente
+        else:
+            ident = IdentidadeFacial.objects.create(
+                condominio_id=assembleia.condominio_id,
+                nome=nome,
+                bloco=bloco,
+                apartamento=apartamento,
+                perfil=perfil,
+                descriptor=descriptor,
+                selfie=selfie,
+                consentimento_lgpd=True,
+                consentimento_em=timezone.now(),
+            )
+            novo = True
 
     # 1 votante por rosto por assembleia (reaproveita quem já entrou antes).
     user_agent = get_client_user_agent(request)
@@ -801,6 +939,13 @@ def acesso_facial(request, assembleia_id):
     if not novo:
         ident.save(update_fields=["ultimo_visto_em"])
 
+    # Aviso "1 voto por unidade": se a unidade já tinha um cadastro/rosto mais
+    # antigo no condomínio, informa que só um voto por unidade conta. Não
+    # bloqueia a presença — a pessoa participa normalmente (quórum).
+    aviso_unidade = _aviso_unidade_ja_cadastrada(
+        assembleia.condominio_id, ident.bloco, ident.apartamento, ident.criado_em, ident.id
+    )
+
     token = signing.dumps(
         {
             "manual_id": str(votante.id),
@@ -822,6 +967,7 @@ def acesso_facial(request, assembleia_id):
             "novo": novo,
             "nome": votante.nome,
             "votante_manual_id": str(votante.id),
+            "aviso_unidade": aviso_unidade,
             "token": token,
         },
         status=status.HTTP_200_OK,
@@ -1034,6 +1180,7 @@ def votacao_publica(request, assembleia_id):
             "descricao": assembleia.descricao,
             "status": assembleia.status,
             "votacao_liberada": assembleia.votacao_liberada,
+            "link_reuniao": assembleia.link_reuniao,
             "modo_multiplas_unidades": assembleia.modo_multiplas_unidades,
             "exigir_confirmacao_email": assembleia.exigir_confirmacao_email,
             "questoes": QuestaoSerializer(
@@ -1090,32 +1237,67 @@ def resultados(request, assembleia_id):
     )
 
     for questao in questoes:
+        # Puxa os votos validados da questão de uma vez, resolvendo a identidade
+        # (eleitor / votante manual / unidade declarada). Este endpoint é
+        # admin-only (IsAdminWithRole), então pode expor QUEM votou em cada
+        # opção — o morador usa /votacao-publica, que não devolve nada disso.
+        votos_q = (
+            Voto.objects.filter(questao=questao, status=Voto.Status.VALIDADO)
+            .select_related("eleitor", "votante_manual", "opcao_escolhida")
+        )
+        votantes_por_opcao = {}  # opcao_id -> [ {nome, bloco, apartamento} ]
+        pessoas = set()  # chave única por pessoa, p/ separar pessoas x votos(peso)
+        for v in votos_q:
+            if v.eleitor_id:
+                nome = v.eleitor.nome
+                bloco = v.eleitor.bloco
+                apto = v.eleitor.apartamento
+                pessoa_key = f"e:{v.eleitor_id}"
+            elif v.votante_manual_id:
+                nome = v.votante_manual.nome
+                bloco = v.votante_manual.bloco
+                apto = v.votante_manual.apartamento
+                pessoa_key = f"m:{v.votante_manual_id}"
+            else:
+                nome = v.decl_nome or ""
+                bloco = v.decl_bloco or ""
+                apto = v.decl_apartamento or ""
+                pessoa_key = f"d:{v.grupo_declaracao or v.id}"
+            pessoas.add(pessoa_key)
+            votantes_por_opcao.setdefault(str(v.opcao_escolhida_id), []).append(
+                {"nome": nome, "bloco": bloco, "apartamento": apto}
+            )
+
         opcoes_resultado = []
         total_votos_questao = 0
-
-        for opcao in questao.opcoes.annotate(
-            votos_count=Count(
-                "votos",
-                filter=Q(votos__questao=questao)
-                & Q(votos__status=Voto.Status.VALIDADO),
-            )
-        ):
-            count = opcao.votos_count
+        for opcao in questao.opcoes.order_by("ordem", "id"):
+            votantes_op = votantes_por_opcao.get(str(opcao.id), [])
+            votantes_op.sort(key=lambda x: (x["bloco"], x["apartamento"], x["nome"]))
+            count = len(votantes_op)
             total_votos_questao += count
             opcoes_resultado.append(
                 {
                     "id": str(opcao.id),
                     "texto": opcao.texto,
                     "votos": count,
+                    "votantes": votantes_op,
                 }
             )
+
+        total_pessoas = len(pessoas)
+        # Abstenções: votantes que registraram presença mas não votaram nesta
+        # questão. Base = pessoas presentes/aptas (total_votantes), nunca negativa.
+        abstencoes = max(total_votantes - total_pessoas, 0)
 
         data.append(
             {
                 "questao_id": str(questao.id),
                 "questao_titulo": questao.titulo,
+                "encerrada": questao.encerrada,
                 "total_votos": total_votos_questao,
+                "total_pessoas": total_pessoas,
                 "total_votantes": total_votantes,
+                "abstencoes": abstencoes,
                 "percentual_participacao": (
                     round(total_votos_questao / total_votos_possiveis * 100, 1)
                     if total_votos_possiveis > 0
