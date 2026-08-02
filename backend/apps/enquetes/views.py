@@ -16,7 +16,11 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from apps.eleitores.facial import melhor_correspondencia, validar_descriptor
+from apps.eleitores.facial import (
+    LIMIAR_PRESENCA,
+    melhor_correspondencia,
+    validar_descriptor,
+)
 from apps.eleitores.models import (
     Eleitor,
     IdentidadeFacial,
@@ -300,7 +304,8 @@ def lista_presenca_publica(request, lista_id):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@ratelimit(key="ip", rate="30/m", block=True)
+# Todo mundo chega junto pelo mesmo Wi-Fi do salão (um IP só).
+@ratelimit(key="ip", rate="120/m", block=True)
 def consultar_cpf_presenca(request, lista_id):
     """Morador digita o CPF na lista de presença; devolve as unidades ligadas a
     esse CPF/CNPJ no condomínio da lista, para preencher nome/bloco/apartamento
@@ -333,7 +338,9 @@ def consultar_cpf_presenca(request, lista_id):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@ratelimit(key="ip", rate="20/m", block=True)
+# 120/m: numa assembleia presencial todos entram pelo mesmo Wi-Fi e saem com o
+# mesmo IP — é o limite já usado nos endpoints de votação.
+@ratelimit(key="ip", rate="120/m", block=True)
 def registrar_presenca_manual(request, lista_id):
     try:
         lista = ListaPresenca.objects.get(id=lista_id)
@@ -455,7 +462,7 @@ def registrar_presenca_manual(request, lista_id):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@ratelimit(key="ip", rate="30/m", block=True)
+@ratelimit(key="ip", rate="120/m", block=True)
 def presenca_reconhecer_facial(request, lista_id):
     """Recebe o vetor facial e diz se essa pessoa já tem identidade facial cadastrada
     no condomínio desta lista. Não grava nada — só reconhece."""
@@ -482,7 +489,7 @@ def presenca_reconhecer_facial(request, lista_id):
     identidades = IdentidadeFacial.objects.filter(
         condominio_id=lista.condominio_id
     ).defer("selfie")
-    ident, _dist = melhor_correspondencia(descriptor, identidades)
+    ident, _dist = melhor_correspondencia(descriptor, identidades, LIMIAR_PRESENCA)
     # Só informamos SE o rosto é conhecido — nunca o nome/unidade de quem foi
     # reconhecido (LGPD: quem está com o aparelho não deve ver dados de outra
     # pessoa). Na hora de registrar, o servidor reusa os dados guardados.
@@ -491,7 +498,7 @@ def presenca_reconhecer_facial(request, lista_id):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@ratelimit(key="ip", rate="20/m", block=True)
+@ratelimit(key="ip", rate="120/m", block=True)
 def registrar_presenca_facial(request, lista_id):
     """Marca a presença pelo rosto. Se o rosto já está cadastrado no condomínio,
     reconhece e usa os dados existentes (não pede cadastro de novo). Se é a
@@ -543,7 +550,7 @@ def registrar_presenca_facial(request, lista_id):
         identidades = IdentidadeFacial.objects.filter(
             condominio_id=lista.condominio_id
         ).defer("selfie")
-        ident, _dist = melhor_correspondencia(descriptor, identidades)
+        ident, _dist = melhor_correspondencia(descriptor, identidades, LIMIAR_PRESENCA)
 
     if ident is None:
         # Primeira vez: precisa de nome e apartamento para cadastrar a identidade.
@@ -559,26 +566,42 @@ def registrar_presenca_facial(request, lista_id):
         if perfil not in perfis_validos:
             perfil = "proprietario"
         if lista.condominio_id:
-            ident = IdentidadeFacial.objects.create(
-                condominio_id=lista.condominio_id,
-                nome=nome,
-                bloco=bloco,
-                apartamento=apartamento,
-                perfil=perfil,
-                descriptor=descriptor,
-                selfie=selfie,
-                consentimento_lgpd=True,
-                consentimento_em=agora,
+            # Duplo clique/duas abas: se já existe identidade da mesma pessoa na
+            # mesma unidade, reaproveita em vez de criar uma segunda.
+            ident = (
+                IdentidadeFacial.objects.filter(
+                    condominio_id=lista.condominio_id,
+                    nome__iexact=nome,
+                    bloco__iexact=bloco,
+                    apartamento__iexact=apartamento,
+                )
+                .order_by("id")
+                .first()
             )
+            if ident is None:
+                ident = IdentidadeFacial.objects.create(
+                    condominio_id=lista.condominio_id,
+                    nome=nome,
+                    bloco=bloco,
+                    apartamento=apartamento,
+                    perfil=perfil,
+                    descriptor=descriptor,
+                    selfie=selfie,
+                    consentimento_lgpd=True,
+                    consentimento_em=agora,
+                )
         nome_reg, bloco_reg, apto_reg, perfil_reg = nome, bloco, apartamento, perfil
         novo = True
     else:
-        # Rosto já conhecido: reusa nome/unidade do cadastro, mas o perfil é o
-        # que o morador declara agora — pode participar como procurador/cônjuge
-        # nesta assembleia mesmo tendo cadastro como proprietário.
-        nome_reg = ident.nome
-        bloco_reg = ident.bloco
-        apto_reg = ident.apartamento
+        # Rosto já conhecido: vale o que o morador digitou agora (nome/unidade
+        # podem ter sido corrigidos); o cadastro antigo só preenche o que veio
+        # em branco. O perfil também é o declarado agora — pode participar como
+        # procurador/cônjuge mesmo tendo cadastro como proprietário.
+        nome_reg = str(request.data.get("nome", "")).strip()[:200] or ident.nome
+        bloco_reg = str(request.data.get("bloco", "")).strip()[:20] or ident.bloco
+        apto_reg = (
+            str(request.data.get("apartamento", "")).strip()[:20] or ident.apartamento
+        )
         perfil_req = str(request.data.get("perfil", "")).strip().lower()
         perfil_reg = (
             perfil_req
@@ -588,12 +611,21 @@ def registrar_presenca_facial(request, lista_id):
         novo = False
 
     # Evita presença duplicada na mesma lista.
-    if ident is not None and PresencaManual.objects.filter(
-        lista=lista, identidade=ident
-    ).exists():
-        return Response(
-            {"ok": True, "ja_presente": True, "novo": False, "nome": nome_reg}
-        )
+    if ident is not None:
+        ja = PresencaManual.objects.filter(lista=lista, identidade=ident).first()
+        if ja is not None:
+            # Devolve o nome de quem já consta na lista: se o rosto foi confundido
+            # com outra pessoa, o morador vê o nome errado e procura a mesa.
+            return Response(
+                {
+                    "ok": True,
+                    "ja_presente": True,
+                    "novo": False,
+                    "nome": ja.nome,
+                    "bloco": ja.bloco,
+                    "apartamento": ja.apartamento,
+                }
+            )
 
     user_agent = get_client_user_agent(request)
     marca_aparelho = str(request.data.get("marca_aparelho", "")).strip()[:120]
@@ -610,7 +642,9 @@ def registrar_presenca_facial(request, lista_id):
                 apartamento=apto_reg,
                 selfie=selfie or (ident.selfie if ident else ""),
                 assinatura=assinatura,
-                metodo_auth="facial",
+                # Sem condomínio na lista não há base facial para comparar: a
+                # presença vale pela foto, e não pode ser rotulada de biometria.
+                metodo_auth="facial" if ident is not None else "selfie",
                 marca_aparelho=marca_aparelho or infer_device_info(user_agent),
                 user_agent=user_agent,
                 device_info=infer_device_info(user_agent),
@@ -628,15 +662,26 @@ def registrar_presenca_facial(request, lista_id):
     if ident is not None and not novo:
         ident.save(update_fields=["ultimo_visto_em"])
 
+    # Mesmo aviso do cadastro simples: inadimplente participa, mas não vota.
+    inadimplente = unidade_inadimplente(lista.condominio_id, bloco_reg, apto_reg)
     return Response(
-        {"ok": True, "ja_presente": False, "novo": novo, "nome": nome_reg},
+        {
+            "ok": True,
+            "ja_presente": False,
+            "novo": novo,
+            "nome": nome_reg,
+            "inadimplente": inadimplente,
+            "aviso": MENSAGEM_INADIMPLENTE if inadimplente else "",
+        },
         status=status.HTTP_201_CREATED,
     )
 
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@ratelimit(key="ip", rate="10/m", block=True)
+# Mais folgado que o padrão porque a sala inteira sai do mesmo IP, mas ainda
+# com freio: cada envio é um e-mail de verdade.
+@ratelimit(key="ip", rate="30/m", block=True)
 def presenca_enviar_codigo(request, lista_id):
     """Envia um código de confirmação por e-mail (fallback da cascata da lista de presença)."""
     try:
@@ -678,7 +723,7 @@ def presenca_enviar_codigo(request, lista_id):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@ratelimit(key="ip", rate="10/m", block=True)
+@ratelimit(key="ip", rate="30/m", block=True)
 def presenca_verificar_codigo(request, lista_id):
     """Valida o código de e-mail e libera o registro por até 10 minutos."""
     email = str(request.data.get("email", "")).strip().lower()[:254]

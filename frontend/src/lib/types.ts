@@ -44,6 +44,8 @@ export interface OpcaoVoto {
 
 export interface Questao {
   id: string;
+  // Código do link curto deste item (/v/<codigo>): abre a votação só dele.
+  codigo_curto?: string | null;
   titulo: string;
   descricao: string;
   ordem: number;
@@ -205,6 +207,9 @@ export interface VotanteManualAdmin {
   horario: string;
   device_info: string;
   situacao: "pendente" | "validado" | "rejeitado" | "sem_votos";
+  // Marcado à mão pelo síndico no painel: votos invalidados e unidade
+  // impedida de votar (linha vermelha na lista).
+  inadimplente?: boolean;
   total_votos: number;
   votos: { questao: string; status: string }[];
 }

@@ -190,4 +190,16 @@ def unidade_inadimplente(condominio_id, bloco, apartamento):
     ):
         if normalizar_unidade(e.apartamento) == na and normalizar_unidade(e.bloco) == nb:
             return True
+
+    # Marcação feita à mão pelo síndico no painel de votos manuais: vale para
+    # todo o condomínio, mesmo quando o morador não tem cadastro de eleitor.
+    from apps.votos.models import VotanteManual  # import tardio: evita ciclo
+
+    for v in (
+        VotanteManual.objects.filter(
+            assembleia__condominio_id=condominio_id, inadimplente=True
+        ).only("bloco", "apartamento")
+    ):
+        if normalizar_unidade(v.apartamento) == na and normalizar_unidade(v.bloco) == nb:
+            return True
     return False

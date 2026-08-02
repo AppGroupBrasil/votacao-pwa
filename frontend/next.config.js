@@ -20,6 +20,21 @@ const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
   poweredByHeader: false,
+  async headers() {
+    // Os modelos do reconhecimento facial (~6 MB) nunca mudam: o aparelho baixa
+    // uma vez e reusa nas próximas assembleias.
+    return [
+      {
+        source: "/models/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+    ];
+  },
   async redirects() {
     return [
       { source: "/v/1", destination: "/acesso", permanent: false },

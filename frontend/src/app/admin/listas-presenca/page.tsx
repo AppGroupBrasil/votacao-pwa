@@ -341,7 +341,7 @@ export default function ListasPresencaPage() {
               </div>
               <NextLink
                 href={`/admin/listas-presenca/${l.id}`}
-                className="btn-secondary inline-flex items-center gap-1 text-sm shrink-0"
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
               >
                 <Users className="w-4 h-4" /> Ver presenças
               </NextLink>

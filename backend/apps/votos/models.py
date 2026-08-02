@@ -32,6 +32,13 @@ class VotanteManual(models.Model):
         related_name="votantes_manuais",
         help_text="Rosto reconhecido (quando entrou pela facial). Garante 1 voto por rosto.",
     )
+    inadimplente = models.BooleanField(
+        default=False,
+        help_text=(
+            "Marcado pelo síndico/administradora no painel: os votos são "
+            "invalidados e a unidade fica impedida de votar."
+        ),
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -48,7 +48,12 @@ export default function ShortVotacaoRedirect() {
       try {
         const r = await api.resolverCodigo(code);
         if (ativo && r?.assembleia_id) {
-          router.replace(`/votacao/${r.assembleia_id}`);
+          // Código de um item: abre a votação só daquela questão.
+          router.replace(
+            r.questao_id
+              ? `/votacao/${r.assembleia_id}?q=${r.questao_id}`
+              : `/votacao/${r.assembleia_id}`
+          );
           return;
         }
       } catch {

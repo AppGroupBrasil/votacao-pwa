@@ -143,16 +143,21 @@ export default function ExemploListaPresencaPage() {
                 <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-300 bg-white p-1">
                   <RostoSketch variante={i} />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate font-semibold">{r.nome}</h3>
-                  <p className="text-sm text-gray-500">
+                <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                  <h3
+                    className="min-w-0 flex-[1.1] truncate font-semibold print:overflow-visible print:whitespace-normal"
+                    title={r.nome}
+                  >
+                    {r.nome}
+                  </h3>
+                  <p className="min-w-0 flex-1 truncate text-sm text-gray-500 print:overflow-visible print:whitespace-normal">
                     {PERFIL_LABEL[r.perfil]} · Bloco {r.bloco} · Ap.{" "}
                     {r.apartamento}
                   </p>
-                  <p className="text-xs text-gray-400">
+                  <p className="min-w-0 flex-1 truncate text-xs text-gray-400 print:overflow-visible print:whitespace-normal">
                     {dataHoraBrasilia(r.criado_em)} (horário de Brasília)
                   </p>
-                  <div className="mt-1 flex flex-wrap gap-1">
+                  <div className="flex min-w-0 flex-[1.2] flex-wrap items-center gap-1 sm:justify-end">
                     <span className="inline-flex items-center rounded bg-green-50 px-1.5 py-0.5 text-[11px] font-medium text-green-700 ring-1 ring-green-200">
                       {METODO_LABEL[r.metodo]}
                     </span>

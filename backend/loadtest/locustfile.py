@@ -3,7 +3,7 @@ Teste de carga para a API de votação.
 
 Uso:
     pip install locust
-    # Cenário 1: leitura pública (assembleias abertas)
+    # Cenário 1: leitura pública (healthz + detalhe da assembleia)
     locust -f loadtest/locustfile.py --host https://votacao.example.com -u 500 -r 50 -t 5m
 
 Variáveis opcionais:
@@ -26,10 +26,6 @@ ASSEMBLEIA_ID = os.getenv("ASSEMBLEIA_ID")
 
 class VotanteAnonimo(HttpUser):
     wait_time = between(0.5, 2.5)
-
-    @task(5)
-    def listar_abertas(self):
-        self.client.get(f"{BASE}/assembleias/abertas/", name="abertas")
 
     @task(3)
     def healthz(self):

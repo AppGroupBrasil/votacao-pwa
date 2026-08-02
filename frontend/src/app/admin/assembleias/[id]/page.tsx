@@ -47,6 +47,8 @@ export default function AssembleiaDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [showAddQuestao, setShowAddQuestao] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Id do item cujo link acabou de ser copiado (feedback "Copiado!" na linha).
+  const [copiedQuestaoId, setCopiedQuestaoId] = useState("");
   const [editing, setEditing] = useState(false);
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [editForm, setEditForm] = useState({
@@ -344,6 +346,21 @@ export default function AssembleiaDetailPage() {
     navigator.clipboard.writeText(votingLink());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  // Link exclusivo de um item: abre a votação só daquela questão. Usa o código
+  // curto quando existe; senão, o link longo com o id do item.
+  function questaoLink(questaoId: string, codigo?: string | null) {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return codigo
+      ? `${origin}/v/${codigo}`
+      : `${origin}/votacao/${id}?q=${questaoId}`;
+  }
+
+  function copyQuestaoLink(questaoId: string, codigo?: string | null) {
+    navigator.clipboard.writeText(questaoLink(questaoId, codigo));
+    setCopiedQuestaoId(questaoId);
+    setTimeout(() => setCopiedQuestaoId(""), 2000);
   }
 
   if (loading) {
@@ -1098,6 +1115,14 @@ export default function AssembleiaDetailPage() {
                     <div className="flex-1 min-w-0">
                       <h3 className="font-medium flex items-center gap-2 flex-wrap">
                         <span>{index + 1}. {q.titulo}</span>
+                        {q.codigo_curto && !q.encerrada && (
+                          <span
+                            className="text-xs font-mono px-2 py-0.5 rounded-full bg-blue-50 text-blue-700"
+                            title="Endereço curto da votação deste item"
+                          >
+                            /v/{q.codigo_curto}
+                          </span>
+                        )}
                         {q.encerrada && (
                           <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700">
                             Votação encerrada
@@ -1105,12 +1130,12 @@ export default function AssembleiaDetailPage() {
                         )}
                         {!q.encerrada && q.liberada === false && (
                           <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                            Bloqueado
+                            Aguardando votação
                           </span>
                         )}
                         {!q.encerrada && q.liberada !== false && assembleia.status === "aberta" && (
                           <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                            Liberado
+                            Aberto para votar
                           </span>
                         )}
                       </h3>
@@ -1147,19 +1172,38 @@ export default function AssembleiaDetailPage() {
                     </div>
                     {assembleia.status !== "encerrada" && !q.encerrada && (
                       <button
+                        onClick={() => copyQuestaoLink(q.id, q.codigo_curto)}
+                        className="shrink-0 flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-yellow-500 bg-yellow-400 text-black hover:bg-yellow-500 transition-colors"
+                        title="Copiar o link que abre a votação só deste item"
+                      >
+                        {copiedQuestaoId === q.id ? (
+                          <><CheckCircle className="w-3.5 h-3.5" /> Copiado!</>
+                        ) : (
+                          <><Copy className="w-3.5 h-3.5" /> Link do item</>
+                        )}
+                      </button>
+                    )}
+                    {assembleia.status !== "encerrada" && !q.encerrada && (
+                      <button
                         onClick={() => handleLiberarQuestao(q.id, q.liberada === false)}
                         className={clsx(
                           "shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
+                          // A cor mostra o que o clique faz: verde abre a votação,
+                          // vermelho pausa.
                           q.liberada === false
                             ? "bg-green-600 text-white hover:bg-green-700"
-                            : "bg-amber-500 text-white hover:bg-amber-600"
+                            : "bg-red-600 text-white hover:bg-red-700"
                         )}
-                        title={q.liberada === false ? "Liberar a votação deste item" : "Bloquear a votação deste item"}
+                        title={
+                          q.liberada === false
+                            ? "Item pausado: clique para abrir a votação dele agora"
+                            : "Item aberto: clique para pausar a votação (o morador vê que ainda não pode votar)"
+                        }
                       >
                         {q.liberada === false ? (
-                          <><Play className="w-3.5 h-3.5" /> Liberar votação</>
+                          <><Play className="w-3.5 h-3.5" /> Abrir para votar</>
                         ) : (
-                          <><Lock className="w-3.5 h-3.5" /> Bloquear votação</>
+                          <><Lock className="w-3.5 h-3.5" /> Pausar votação</>
                         )}
                       </button>
                     )}

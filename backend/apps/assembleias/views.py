@@ -13,6 +13,7 @@ from core.permissions import IsAdminWithRole, get_user_condominios
 from .audit import registrar_log
 from .ata_ia import AtaIAError, gerar_ata, transcrever_link
 from .ata_pdf import gerar_pdf
+from .relatorios_pdf import pdf_lista_presenca, pdf_resultado, pdf_votacao
 from .models import Assembleia, Ata, LogAuditoria, Presenca, Questao
 from .serializers import (
     AssembleiaListSerializer,
@@ -26,26 +27,46 @@ from .serializers import (
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminWithRole])
 def assembleias_abertas(request):
-    """Endpoint público: retorna assembleias com votação aberta."""
-    qs = Assembleia.objects.filter(status=Assembleia.Status.ABERTA).values(
-        "id", "titulo"
-    )
-    return Response(list(qs))
+    """Assembleias com votação aberta, restritas aos condomínios do síndico.
+
+    Já foi público, mas expunha o título das pautas de todos os clientes a
+    qualquer visitante; nenhuma tela do morador usa esta rota."""
+    qs = Assembleia.objects.filter(status=Assembleia.Status.ABERTA)
+    cond_ids = get_user_condominios(request.user)
+    if cond_ids is not None:
+        qs = qs.filter(condominio_id__in=cond_ids)
+    return Response(list(qs.values("id", "titulo")))
 
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def resolver_codigo(request, codigo):
-    """Endpoint público: resolve o código curto do link (/v/<codigo>) para o id da assembleia."""
-    try:
-        assembleia = Assembleia.objects.only("id").get(codigo_curto=codigo.upper())
-    except Assembleia.DoesNotExist:
+    """Endpoint público: resolve o código curto do link (/v/<codigo>).
+
+    O mesmo código pode ser da assembleia inteira ou de um item específico —
+    quando é de um item, devolvemos também o questao_id para o link abrir só
+    aquela votação."""
+    codigo = codigo.upper()
+    assembleia = Assembleia.objects.only("id").filter(codigo_curto=codigo).first()
+    if assembleia is not None:
+        return Response({"assembleia_id": str(assembleia.id)})
+
+    questao = (
+        Questao.objects.only("id", "assembleia_id").filter(codigo_curto=codigo).first()
+    )
+    if questao is not None:
         return Response(
-            {"error": "Código não encontrado."}, status=status.HTTP_404_NOT_FOUND
+            {
+                "assembleia_id": str(questao.assembleia_id),
+                "questao_id": str(questao.id),
+            }
         )
-    return Response({"assembleia_id": str(assembleia.id)})
+
+    return Response(
+        {"error": "Código não encontrado."}, status=status.HTTP_404_NOT_FOUND
+    )
 
 
 class AssembleiaViewSet(viewsets.ModelViewSet):
@@ -280,6 +301,28 @@ class AssembleiaViewSet(viewsets.ModelViewSet):
         resp["Content-Disposition"] = f'attachment; filename="ata-{nome}.pdf"'
         return resp
 
+    def _pdf(self, assembleia, gerador, prefixo):
+        pdf = gerador(assembleia)
+        resp = HttpResponse(pdf, content_type="application/pdf")
+        nome = (assembleia.titulo or "assembleia").lower().replace(" ", "-")[:60]
+        resp["Content-Disposition"] = f'attachment; filename="{prefixo}-{nome}.pdf"'
+        return resp
+
+    @action(detail=True, methods=["get"], url_path="relatorio-presenca-pdf")
+    def relatorio_presenca_pdf(self, request, pk=None):
+        """PDF 1/3 — lista de presença oficial."""
+        return self._pdf(self.get_object(), pdf_lista_presenca, "lista-presenca")
+
+    @action(detail=True, methods=["get"], url_path="relatorio-votacao-pdf")
+    def relatorio_votacao_pdf(self, request, pk=None):
+        """PDF 2/3 — auditoria voto a voto."""
+        return self._pdf(self.get_object(), pdf_votacao, "relatorio-votacao")
+
+    @action(detail=True, methods=["get"], url_path="relatorio-resultado-pdf")
+    def relatorio_resultado_pdf(self, request, pk=None):
+        """PDF 3/3 — apuração com percentual e vencedora."""
+        return self._pdf(self.get_object(), pdf_resultado, "resultado")
+
     @action(detail=True, methods=["post"], url_path="transcrever")
     def transcrever(self, request, pk=None):
         """Transcreve automaticamente o link de gravação (Groq Whisper)."""
@@ -434,9 +477,16 @@ class QuestaoViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_queryset(self):
-        return Questao.objects.filter(
+        qs = Questao.objects.filter(
             assembleia_id=self.kwargs["assembleia_pk"]
         ).prefetch_related("opcoes")
+        # Mesma trava do ViewSet de assembleias: sem isto, um síndico logado que
+        # descubra o id de uma assembleia de OUTRO condomínio (o resolvedor de
+        # código curto é público) conseguiria ler e alterar as questões dela.
+        cond_ids = get_user_condominios(self.request.user)
+        if cond_ids is not None:
+            qs = qs.filter(assembleia__condominio_id__in=cond_ids)
+        return qs
 
     def get_serializer_class(self):
         if self.action in ("create", "update", "partial_update"):
@@ -446,10 +496,20 @@ class QuestaoViewSet(viewsets.ModelViewSet):
     def _check_assembleia_locked(self):
         """Retorna Response de erro se assembleia não está em rascunho.
         O master (superuser) pode alterar questões mesmo com a assembleia aberta."""
+        # A checagem de escopo vem antes do atalho do master: criar questão não
+        # passa pelo get_queryset, então é aqui que a assembleia de outro
+        # condomínio é barrada.
+        alcance = Assembleia.objects.all()
+        cond_ids = get_user_condominios(self.request.user)
+        if cond_ids is not None:
+            alcance = alcance.filter(condominio_id__in=cond_ids)
         if getattr(self.request.user, "is_superuser", False):
-            return None
+            return None if alcance.filter(pk=self.kwargs["assembleia_pk"]).exists() else Response(
+                {"error": "Assembleia não encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         try:
-            assembleia = Assembleia.objects.get(pk=self.kwargs["assembleia_pk"])
+            assembleia = alcance.get(pk=self.kwargs["assembleia_pk"])
         except Assembleia.DoesNotExist:
             return Response(
                 {"error": "Assembleia não encontrada."},

@@ -61,7 +61,7 @@ def _eleitor_state(eleitor):
     }
 
 
-@ratelimit(key="ip", rate="30/m", block=True)
+@ratelimit(key="ip", rate="120/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def eleitor_login(request):
@@ -119,7 +119,7 @@ def eleitor_condominio_info(request):
     return Response({"nome": condominio.nome, "blocos": condominio.blocos or []})
 
 
-@ratelimit(key="ip", rate="30/m", block=True)
+@ratelimit(key="ip", rate="60/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def eleitor_cadastro(request):

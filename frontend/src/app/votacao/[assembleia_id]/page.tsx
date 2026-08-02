@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { Vote, CheckCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, Link2, Users, Clock, ArrowLeft, MessageCircle, X, Lock } from "lucide-react";
+import { Vote, CheckCircle, XCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, Link2, Users, Clock, ArrowLeft, MessageCircle, X, Lock } from "lucide-react";
 import { api, getDeviceId } from "@/lib/api";
 import WebAuthnVerify from "@/components/webauthn/WebAuthnVerify";
 import FaceVerify from "@/components/FaceVerify";
@@ -17,6 +17,15 @@ import type { Assembleia, UnidadeVotante, CapturaIdentidade } from "@/lib/types"
 export default function VotacaoPage() {
   const params = useParams();
   const assembleiaId = params.assembleia_id as string;
+
+  // Link de um item só (/v/<codigo> da questão redireciona para cá com ?q=).
+  // Quando vem preenchido, o morador vota apenas naquele item. Lido do window
+  // porque o primeiro render (assembleia ainda carregando) não usa este valor.
+  const [questaoLink] = useState<string>(() =>
+    typeof window === "undefined"
+      ? ""
+      : new URLSearchParams(window.location.search).get("q") || ""
+  );
 
   const [assembleia, setAssembleia] = useState<Assembleia | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -36,6 +45,13 @@ export default function VotacaoPage() {
   // de índice mantém a sequência correta mesmo que a administração encerre um
   // item ao vivo (o que reordena a lista filtrada).
   const [respondidas, setRespondidas] = useState<string[]>([]);
+  // Itens em que esta pessoa JÁ votou antes de abrir esta página (por ela mesma,
+  // pelo mesmo rosto ou pela mesma unidade). Cada link aceita um voto por
+  // morador: reabrir o link de um item já votado não mostra a cédula de novo.
+  const [jaVotadas, setJaVotadas] = useState<string[]>([]);
+  // Itens já votados por OUTRA pessoa da mesma unidade (1 voto por unidade).
+  const [unidadeVotou, setUnidadeVotou] = useState<string[]>([]);
+  const [bloqueioJaVotou, setBloqueioJaVotou] = useState("");
   const [selectedOpcao, setSelectedOpcao] = useState<string | null>(null);
   const [comprovantes, setComprovantes] = useState<
     { questao: string; hash: string }[]
@@ -145,6 +161,21 @@ export default function VotacaoPage() {
     const t = setInterval(() => carregar(false), 6000);
     return () => { ativo = false; clearInterval(t); };
   }, [assembleiaId]);
+
+  // Um voto por item: assim que o morador se identifica, o servidor informa em
+  // quais itens ele já votou, para a tela avisar antes de mostrar a cédula.
+  useEffect(() => {
+    if (!authToken) return;
+    let ativo = true;
+    api.getQuestoesVotadas(assembleiaId, authToken)
+      .then((r) => {
+        if (!ativo) return;
+        setJaVotadas(r.questoes || []);
+        setUnidadeVotou(r.por_unidade || []);
+      })
+      .catch(() => {});
+    return () => { ativo = false; };
+  }, [assembleiaId, authToken]);
 
   // Lista de presença: registra a presença somente após autenticação
   // (webauthn/desbloqueio, facial ou token por e-mail/OTP).
@@ -298,10 +329,42 @@ export default function VotacaoPage() {
   }
 
   // Questões encerradas pela administração não entram na sequência de votação.
-  const questoes = (assembleia.questoes || []).filter((q) => !q.encerrada);
+  const questoesAbertas = (assembleia.questoes || []).filter((q) => !q.encerrada);
+  // Item do link (?q=): a votação fica restrita a ele; sem link de item, o
+  // morador segue a sequência normal de todos os itens.
+  const itemDoLink = questaoLink
+    ? (assembleia.questoes || []).find((q) => q.id === questaoLink) || null
+    : null;
+  const questoes = questaoLink
+    ? questoesAbertas.filter((q) => q.id === questaoLink)
+    : questoesAbertas;
+  // Voto próprio (não é procuração nem unidade declarada): só nele vale a trava
+  // "um voto por item" da própria pessoa/unidade.
+  const votoProprio = !ehProcuracao && !ehDeclaracao;
   // Itens ainda não votados por este eleitor (inclui os bloqueados, que
-  // permanecem pendentes até a administração liberar).
-  const pendentes = questoes.filter((q) => !respondidas.includes(q.id));
+  // permanecem pendentes até a administração liberar). Itens já votados em
+  // acesso anterior também saem da fila — cada item aceita um voto por morador.
+  const pendentes = questoes.filter(
+    (q) =>
+      !respondidas.includes(q.id) &&
+      !(votoProprio && (jaVotadas.includes(q.id) || unidadeVotou.includes(q.id)))
+  );
+  // Não sobrou item para votar e esta pessoa não votou nada agora: ou ela já
+  // tinha votado (outro acesso/dispositivo/rosto) ou a unidade dela votou
+  // primeiro. Sem isto a tela diria "voto registrado" a quem não votou.
+  const semItens =
+    votoProprio &&
+    !done &&
+    comprovantes.length === 0 &&
+    questoes.length > 0 &&
+    pendentes.length === 0;
+  const motivoBloqueio = semItens
+    ? questoes.some((q) => jaVotadas.includes(q.id))
+      ? "propria"
+      : questoes.some((q) => unidadeVotou.includes(q.id))
+        ? "unidade"
+        : ""
+    : "";
   // Bloqueados ("aguarde o debate"): visíveis, mas não votáveis até liberar.
   const bloqueadasPendentes = pendentes.filter((q) => q.liberada === false);
   // A questão atual é a primeira pendente que já esteja liberada para votação.
@@ -547,6 +610,90 @@ export default function VotacaoPage() {
     );
   }
 
+  // Link de um item só: o item pode ter sido excluído ou já encerrado — nesses
+  // casos explicamos, em vez de jogar o morador na sequência da assembleia.
+  if (!done && questaoLink && !itemDoLink) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
+        <div className="card w-full max-w-md text-center">
+          <Shield className="w-16 h-16 text-primary-400 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Item não encontrado</h1>
+          <p className="text-gray-600 mb-4">
+            Este item de votação não existe mais. Peça o link atualizado à
+            administração.
+          </p>
+          <a href={`/votacao/${assembleiaId}`} className="btn-primary inline-block">
+            Ver a votação completa
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // Um voto por morador em cada link: quem já votou neste item (agora, em outro
+  // dispositivo, pelo mesmo rosto ou pela mesma unidade) é bloqueado com aviso
+  // claro, em vez de ver a cédula de novo e tomar erro depois de escolher.
+  if (!done && (bloqueioJaVotou || motivoBloqueio)) {
+    // O servidor pode barrar por unidade e mandar a explicação pronta; nesse
+    // caso o título tem de falar de unidade, não de perfil.
+    const porUnidade =
+      motivoBloqueio === "unidade" ||
+      (!!bloqueioJaVotou && /unidade/i.test(bloqueioJaVotou));
+    // Sem link de item o bloqueio vale para a votação toda.
+    const alvo = itemDoLink?.titulo
+      ? `em "${itemDoLink.titulo}"`
+      : questoes.length > 1
+        ? "nos itens desta votação"
+        : "neste item";
+    const sufixo = itemDoLink || questoes.length === 1 ? " neste item" : "";
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
+        <div className="card w-full max-w-md text-center">
+          {/* X vermelho, nunca o certo verde: o verde é a tela de voto
+              confirmado e usar o mesmo símbolo aqui faz o morador achar que
+              acabou de votar de novo. */}
+          <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-red-700 mb-2">
+            {porUnidade
+              ? "Já existe um voto para esta unidade"
+              : "Já existe um voto para o seu perfil"}
+          </h1>
+          <p className="text-gray-600 mb-4">
+            {bloqueioJaVotou ||
+              (porUnidade
+                ? `Outra pessoa da sua unidade já votou ${alvo}. Vale um voto por unidade — o primeiro voto é o que conta.`
+                : `Já existe um voto registrado para o seu perfil ${alvo}. Cada morador vota uma única vez em cada item.`)}
+          </p>
+          {questaoLink && (
+            <a
+              href={`/votacao/${assembleiaId}`}
+              className="btn-primary inline-block mb-3"
+            >
+              Ver os outros itens
+            </a>
+          )}
+          {salaBanner}
+        </div>
+      </div>
+    );
+  }
+
+  if (!done && itemDoLink?.encerrada) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
+        <div className="card w-full max-w-md text-center">
+          <Lock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Votação encerrada</h1>
+          <p className="text-gray-600 mb-4">
+            A votação de <strong>{itemDoLink.titulo}</strong> foi encerrada pela
+            administração e não aceita mais votos.
+          </p>
+          {salaBanner}
+        </div>
+      </div>
+    );
+  }
+
   if (!done && questoes.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
@@ -678,11 +825,15 @@ export default function VotacaoPage() {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
         <div className="card w-full max-w-md text-center">
           <Clock className="w-16 h-16 text-primary-400 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold mb-2">Aguarde o próximo item</h1>
+          <h1 className="text-2xl font-bold mb-2">
+            {questaoLink ? "Aguarde a liberação" : "Aguarde o próximo item"}
+          </h1>
           <p className="text-gray-600 mb-4">
-            O próximo item será liberado para votação assim que o assunto for
-            debatido. Mantenha esta página aberta — ela abrirá automaticamente
-            quando a votação for liberada.
+            {questaoLink
+              ? "Este item será liberado para votação assim que o assunto for debatido."
+              : "O próximo item será liberado para votação assim que o assunto for debatido."}{" "}
+            Mantenha esta página aberta — ela abrirá automaticamente quando a
+            votação for liberada.
           </p>
           {salaBanner}
         </div>
@@ -693,6 +844,9 @@ export default function VotacaoPage() {
   async function handleVotar() {
     if (!selectedOpcao || !questao || !authToken) return;
     setVotando(true);
+    // Reenvio (automático ou manual após queda de rede): o voto pode já estar no
+    // servidor, então "já registrado" ali é sucesso, não segunda tentativa.
+    let houveReenvio = falhaRede;
     setFalhaRede(false);
 
     const payload = {
@@ -730,6 +884,7 @@ export default function VotacaoPage() {
         } catch (err: any) {
           const semResposta = !err?.response; // fetch rejeitou (rede), sem HTTP
           if (semResposta && tentativa < maxTentativas) {
+            houveReenvio = true;
             setReenviando(true);
             await new Promise((r) => setTimeout(r, 1200 * tentativa));
             continue;
@@ -747,6 +902,20 @@ export default function VotacaoPage() {
     try {
       const result = await votarComReenvio();
       setReenviando(false);
+
+      // Voto já existia no servidor sem ter sido reenvio: é uma segunda
+      // tentativa no mesmo item (link reaberto). Mostra o bloqueio em vez de
+      // "voto registrado" — o voto original é o que vale.
+      if ((result as any)?.ja_registrado && !houveReenvio && votoProprio) {
+        setJaVotadas((prev) =>
+          prev.includes(questao.id) ? prev : [...prev, questao.id]
+        );
+        setBloqueioJaVotou(
+          "Já existe um voto registrado para o seu perfil neste item. O primeiro voto é o que vale."
+        );
+        setSelectedOpcao(null);
+        return;
+      }
 
       if (manualId && result.status === "pendente") setVotoPendente(true);
 
@@ -790,7 +959,14 @@ export default function VotacaoPage() {
         setFalhaRede(true);
       } else {
         const data = err?.response?.data;
-        if (data?.code === "inadimplente") {
+        if (data?.code === "ja_votou") {
+          // Já há voto desta pessoa/unidade neste item: bloqueio explicado.
+          setJaVotadas((prev) =>
+            prev.includes(questao!.id) ? prev : [...prev, questao!.id]
+          );
+          setBloqueioJaVotou(data.error || "Você já votou neste item.");
+          setSelectedOpcao(null);
+        } else if (data?.code === "inadimplente") {
           setInadModal({
             msg: data.error || "Entre em contato com sua administradora.",
             whatsapp: (data.whatsapp || "").replace(/\D/g, ""),

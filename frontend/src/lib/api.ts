@@ -281,8 +281,11 @@ export const api = {
   getAssembleiaPublic: (id: string) =>
     request<Assembleia>(`/votos/${id}/votacao/`),
 
+  // questao_id só vem quando o código é de um item específico da assembleia.
   resolverCodigo: (codigo: string) =>
-    request<{ assembleia_id: string }>(`/assembleias/resolver/${codigo}/`),
+    request<{ assembleia_id: string; questao_id?: string }>(
+      `/assembleias/resolver/${codigo}/`
+    ),
 
   resolverCodigoEnquete: (codigo: string) =>
     request<{ enquete_id: string }>(`/enquetes/resolver/${codigo}/`),
@@ -360,6 +363,19 @@ export const api = {
       credentials: "include",
     });
     if (!res.ok) throw new Error("Falha ao gerar o PDF da ata.");
+    return res.blob();
+  },
+
+  // Os três relatórios oficiais da assembleia, todos em PDF.
+  baixarRelatorioPdf: async (
+    assembleiaId: string,
+    tipo: "presenca" | "votacao" | "resultado",
+  ) => {
+    const res = await fetch(
+      `${API_URL}/assembleias/${assembleiaId}/relatorio-${tipo}-pdf/`,
+      { credentials: "include" },
+    );
+    if (!res.ok) throw new Error("Falha ao gerar o PDF do relatório.");
     return res.blob();
   },
 
@@ -463,6 +479,12 @@ export const api = {
       `/votos/${assembleiaId}/unidades/`
     ),
 
+  // Itens em que este votante já votou (1 voto por item/link).
+  getQuestoesVotadas: (assembleiaId: string, authToken: string) =>
+    request<{ questoes: string[]; por_unidade: string[] }>(
+      `/votos/${assembleiaId}/ja-votadas/?auth_token=${encodeURIComponent(authToken)}`
+    ),
+
   acessoManualVotacao: (
     assembleiaId: string,
     data: {
@@ -520,7 +542,7 @@ export const api = {
   validarVotoManual: (
     assembleiaId: string,
     votanteManualId: string,
-    acao: "aprovar" | "rejeitar"
+    acao: "aprovar" | "rejeitar" | "inadimplente" | "regularizar"
   ) =>
     request<{ status: string; votos_atualizados: number }>(
       `/votos/${assembleiaId}/votos-manuais/validar/`,
@@ -950,7 +972,16 @@ export const api = {
       declaracao_veracidade?: boolean;
     }
   ) =>
-    request<{ ok: boolean; ja_presente: boolean; novo: boolean; nome: string }>(
+    request<{
+      ok: boolean;
+      ja_presente: boolean;
+      novo: boolean;
+      nome: string;
+      bloco?: string;
+      apartamento?: string;
+      inadimplente?: boolean;
+      aviso?: string;
+    }>(
       `/enquetes/listas-presenca/${id}/facial/registrar/`,
       { method: "POST", body: JSON.stringify(data) }
     ),

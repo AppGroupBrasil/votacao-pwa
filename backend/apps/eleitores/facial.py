@@ -19,6 +19,16 @@ try:
 except (TypeError, ValueError):
     LIMIAR_RECONHECIMENTO = 0.65
 
+# Na LISTA DE PRESENÇA o erro caro é o contrário: confundir dois rostos deixa o
+# morador fora do quórum e grava o nome de outra pessoa num documento oficial,
+# enquanto um registro duplicado é visível na lista e o síndico apaga. Por isso
+# aqui usamos o limiar padrão do modelo (0.60), mais rígido que o da votação.
+# Ajustável sem redeploy pela variável de ambiente FACIAL_LIMIAR_PRESENCA.
+try:
+    LIMIAR_PRESENCA = float(os.environ.get("FACIAL_LIMIAR_PRESENCA", "0.60"))
+except (TypeError, ValueError):
+    LIMIAR_PRESENCA = 0.60
+
 # Tamanho esperado do vetor facial do face-api.
 TAMANHO_DESCRIPTOR = 128
 

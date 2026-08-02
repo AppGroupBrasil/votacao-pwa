@@ -108,6 +108,18 @@ def _unidade_ja_votou(assembleia, questao, bloco, apartamento, *, excluir_eleito
             Voto.objects.filter(assembleia=assembleia, questao=questao)
             .exclude(status=Voto.Status.REJEITADO)
             .select_related("eleitor", "votante_manual")
+            .only(
+                "eleitor_id",
+                "votante_manual_id",
+                "unidade_declarada",
+                "por_procuracao",
+                "decl_bloco",
+                "decl_apartamento",
+                "eleitor__bloco",
+                "eleitor__apartamento",
+                "votante_manual__bloco",
+                "votante_manual__apartamento",
+            )
         )
         for v in qs:
             if (
@@ -128,6 +140,81 @@ def _unidade_ja_votou(assembleia, questao, bloco, apartamento, *, excluir_eleito
             "dedup_unidade falhou assembleia=%s questao=%s", assembleia.id, questao.id
         )
         return False
+
+
+def _questoes_ja_votadas(assembleia, *, votante=None, eleitor=None):
+    """Itens já votados por esta pessoa, separados por motivo:
+    `proprias` (ela mesma ou o mesmo rosto) e `por_unidade` (outra pessoa da
+    mesma unidade votou primeiro). Cada link (item) aceita um voto por morador, e
+    a tela usa isto para explicar o bloqueio ANTES de mostrar a cédula de novo.
+    **Falha aberta:** em erro devolve listas vazias (nunca impede um votante
+    legítimo — o bloqueio real acontece ao registrar o voto)."""
+    ident_id = getattr(votante, "identidade_facial_id", None)
+    bloco = getattr(votante, "bloco", "") or getattr(eleitor, "bloco", "") or ""
+    apartamento = (
+        getattr(votante, "apartamento", "") or getattr(eleitor, "apartamento", "") or ""
+    )
+    napto = normalizar_unidade(apartamento)
+    nbloco = normalizar_unidade(bloco)
+    # Morador com mais de uma unidade (votos_permitidos) só fecha o item depois
+    # de usar toda a cota dele naquele item.
+    cota = max(1, (getattr(eleitor, "votos_permitidos", 1) or 1) if votante is None else 1)
+    contagem, por_unidade = {}, set()
+    try:
+        # only(): esta varredura pega TODOS os votos da assembleia e é chamada por
+        # cada morador ao abrir a tela — sem isto viriam junto selfie/assinatura
+        # (base64) de cada voto, dezenas de MB no pico da votação.
+        qs = (
+            Voto.objects.filter(assembleia=assembleia)
+            .exclude(status=Voto.Status.REJEITADO)
+            .select_related("eleitor", "votante_manual")
+            .only(
+                "questao_id",
+                "eleitor_id",
+                "votante_manual_id",
+                "unidade_declarada",
+                "por_procuracao",
+                "decl_bloco",
+                "decl_apartamento",
+                "eleitor__bloco",
+                "eleitor__apartamento",
+                "votante_manual__bloco",
+                "votante_manual__apartamento",
+                "votante_manual__identidade_facial",
+            )
+        )
+        for v in qs:
+            propria = False
+            if votante is not None and v.votante_manual_id == votante.id:
+                propria = True
+            elif (
+                eleitor is not None
+                and v.eleitor_id == eleitor.id
+                and not v.unidade_declarada
+                and not v.por_procuracao
+            ):
+                propria = True
+            elif (
+                ident_id
+                and v.votante_manual_id
+                and v.votante_manual.identidade_facial_id == ident_id
+            ):
+                propria = True
+            if propria:
+                contagem[v.questao_id] = contagem.get(v.questao_id, 0) + 1
+                continue
+            if BLOQUEAR_UNIDADE and napto:
+                vb, va = _voto_unidade(v)
+                if normalizar_unidade(va) == napto and normalizar_unidade(vb) == nbloco:
+                    por_unidade.add(v.questao_id)
+    except Exception:
+        audit.exception("questoes_ja_votadas falhou assembleia=%s", assembleia.id)
+        return [], []
+    proprias = {q for q, n in contagem.items() if n >= cota}
+    return (
+        [str(q) for q in proprias],
+        [str(q) for q in por_unidade if q not in proprias],
+    )
 
 
 def infer_device_info(user_agent):
@@ -497,7 +584,10 @@ def registrar_voto(request, assembleia_id):
                 excluir_eleitor_id=eleitor.id,
             ):
                 return Response(
-                    {"error": "Sua unidade já tem um voto nesta questão."},
+                    {
+                        "error": "Sua unidade já tem um voto nesta questão.",
+                        "code": "ja_votou",
+                    },
                     status=status.HTTP_409_CONFLICT,
                 )
 
@@ -614,7 +704,7 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
         assembleia, questao, votante.bloco, votante.apartamento, excluir_votante_id=votante.id
     ):
         return Response(
-            {"error": "Sua unidade já tem um voto nesta questão."},
+            {"error": "Sua unidade já tem um voto nesta questão.", "code": "ja_votou"},
             status=status.HTTP_409_CONFLICT,
         )
 
@@ -654,7 +744,38 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
     )
 
 
-@ratelimit(key="ip", rate="10/m", block=True)
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def questoes_votadas(request, assembleia_id):
+    """Itens em que quem está com este token de voto já votou. A tela de votação
+    consulta ao entrar: se o link aberto for de um item já votado, mostra "você
+    já votou neste item" em vez da cédula."""
+    assembleia = get_object_or_404(Assembleia, id=assembleia_id)
+    try:
+        auth_context = resolve_vote_auth_token(
+            str(request.query_params.get("auth_token", "")), assembleia.id
+        )
+    except ValueError:
+        return Response({"questoes": [], "por_unidade": []})
+
+    votante = eleitor = None
+    if auth_context.get("manual_id"):
+        votante = VotanteManual.objects.filter(
+            id=auth_context["manual_id"], assembleia=assembleia
+        ).first()
+    elif auth_context.get("eleitor_id"):
+        eleitor = Eleitor.objects.filter(id=auth_context["eleitor_id"]).first()
+    if votante is None and eleitor is None:
+        return Response({"questoes": [], "por_unidade": []})
+
+    proprias, por_unidade = _questoes_ja_votadas(
+        assembleia, votante=votante, eleitor=eleitor
+    )
+    return Response({"questoes": proprias, "por_unidade": por_unidade})
+
+
+# Mesmo motivo do acesso facial: o Wi-Fi do salão é um IP só.
+@ratelimit(key="ip", rate="60/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def acesso_manual(request, assembleia_id):
@@ -809,7 +930,9 @@ def acesso_manual(request, assembleia_id):
     )
 
 
-@ratelimit(key="ip", rate="20/m", block=True)
+# Numa assembleia presencial todos entram pelo mesmo Wi-Fi (um único IP): o
+# limite tem de caber a sala inteira chegando junto, não uma pessoa por vez.
+@ratelimit(key="ip", rate="120/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def acesso_facial(request, assembleia_id):
@@ -1008,6 +1131,7 @@ def votos_manuais(request, assembleia_id):
                 "horario": votante.criado_em,
                 "device_info": votante.device_info,
                 "situacao": situacao,
+                "inadimplente": votante.inadimplente,
                 "total_votos": len(votos),
                 "votos": [
                     {"questao": v.questao.titulo, "status": v.status} for v in votos
@@ -1024,13 +1148,68 @@ def validar_voto_manual(request, assembleia_id):
     votante_id = request.data.get("votante_manual_id")
     acao = str(request.data.get("acao", "")).strip().lower()
 
-    if not votante_id or acao not in {"aprovar", "rejeitar"}:
+    if not votante_id or acao not in {
+        "aprovar", "rejeitar", "inadimplente", "regularizar",
+    }:
         return Response(
-            {"error": "Informe votante_manual_id e acao (aprovar/rejeitar)"},
+            {
+                "error": "Informe votante_manual_id e acao "
+                "(aprovar/rejeitar/inadimplente/regularizar)"
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     votante = get_object_or_404(VotanteManual, id=votante_id, assembleia=assembleia)
+
+    # Botão "Inadimplente" do painel: invalida os votos e deixa a unidade
+    # impedida de votar de novo, sem tocar na marcação vinda da planilha
+    # (aquela mora no Eleitor). Por isso é reversível em "regularizar".
+    if acao in {"inadimplente", "regularizar"}:
+        marcar = acao == "inadimplente"
+        votante.inadimplente = marcar
+        votante.save(update_fields=["inadimplente"])
+
+        atualizados = 0
+        if marcar:
+            atualizados = (
+                Voto.objects.filter(assembleia=assembleia, votante_manual=votante)
+                .exclude(status=Voto.Status.REJEITADO)
+                .update(status=Voto.Status.REJEITADO)
+            )
+
+        # A mesma pessoa costuma estar na lista de presença: realça lá também.
+        na = normalizar_unidade(votante.apartamento)
+        nb = normalizar_unidade(votante.bloco)
+        for p in assembleia.presencas.all().only("bloco", "apartamento", "inadimplente"):
+            if normalizar_unidade(p.apartamento) == na and normalizar_unidade(p.bloco) == nb:
+                if p.inadimplente != marcar:
+                    p.inadimplente = marcar
+                    p.save(update_fields=["inadimplente"])
+
+        audit.info(
+            "voto_manual_%s assembleia=%s votante=%s votos=%s admin=%s",
+            acao, assembleia.id, votante.id, atualizados, request.user.id,
+        )
+        from apps.assembleias.audit import registrar_log
+        from apps.assembleias.models import LogAuditoria
+        registrar_log(
+            request, assembleia,
+            LogAuditoria.Acao.REJEITAR_PROCURACAO if marcar
+            else LogAuditoria.Acao.VALIDAR_PROCURACAO,
+            f"{votante.nome} ({votante.bloco}/{votante.apartamento}): "
+            + (
+                f"marcado como INADIMPLENTE, {atualizados} voto(s) invalidado(s)."
+                if marcar
+                else "inadimplência removida."
+            ),
+        )
+        return Response(
+            {
+                "status": "inadimplente" if marcar else "regular",
+                "votos_atualizados": atualizados,
+            }
+        )
+
     if acao == "aprovar":
         qs = Voto.objects.filter(
             assembleia=assembleia,
@@ -1318,6 +1497,11 @@ def unidades_assembleia(request, assembleia_id):
     """Lista pública (resumida) das unidades votantes, para seleção de
     voto por procuração. Retorna só nome/bloco/apto, sem dados sensíveis."""
     assembleia = get_object_or_404(Assembleia, id=assembleia_id)
+    # A lista traz nomes e unidades de moradores: só faz sentido enquanto a
+    # votação está aberta (é quando a tela de procuração existe). Fora disso a
+    # rota virava um catálogo de moradores para quem tivesse o link.
+    if assembleia.status != Assembleia.Status.ABERTA:
+        return Response([])
     votantes = assembleia.votantes.filter(bloqueado=False, inadimplente=False).order_by(
         "bloco", "apartamento"
     )

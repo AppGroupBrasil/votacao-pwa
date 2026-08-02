@@ -53,6 +53,13 @@ const vantagensVotacao = [
   "O resultado só aparece depois que você encerra",
 ];
 
+const itensResultado = [
+  "Placar de cada questão, atualizado ao vivo",
+  "Total de votos, percentual e opção vencedora",
+  "Lista de quem votou (presença e votos manuais)",
+  "Ata e relatório em PDF para assinar",
+];
+
 function AcaoCard({ q }: { q: Acao }) {
   return (
     <Link
@@ -131,24 +138,42 @@ export default function PainelPage() {
         </ul>
       </Link>
 
-      {/* Resultados e relatórios — menor */}
-      <Link
-        href="/admin/assembleias"
-        className="group mt-4 flex items-center justify-between rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-indigo-100 p-5 transition hover:shadow-md"
-      >
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-sky-100 p-2.5 text-sky-700">
-            <BarChart3 className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 className="font-bold text-gray-900">Resultados e relatórios</h2>
-            <p className="text-sm text-gray-500">
-              Acompanhe a votação, veja o resultado e gere a ata.
-            </p>
-          </div>
+      {/* Resultado — seção própria, separada do menu de atalhos.
+          É a parte mais procurada do painel (é o que o síndico abre no dia
+          da assembleia), então sai da lista de cards e ganha um bloco só
+          dele, com título, separador e o card grande. */}
+      <section className="mt-10 border-t border-gray-100 pt-8">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-sky-700" />
+          <h2 className="text-lg font-bold text-gray-900">Resultado</h2>
+          <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-semibold text-sky-700">
+            o que todo mundo quer ver
+          </span>
         </div>
-        <ChevronRight className="w-5 h-5 shrink-0 text-gray-400 opacity-0 group-hover:opacity-100 transition" />
-      </Link>
+
+        <Link
+          href="/admin/assembleias"
+          className="group relative block overflow-hidden rounded-2xl bg-gradient-to-br from-sky-600 to-indigo-700 p-6 text-white shadow-md ring-2 ring-sky-300 transition hover:shadow-xl hover:-translate-y-0.5"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-2xl font-bold">Ver o resultado da votação</h3>
+              <p className="mt-1 text-sm text-white/85">
+                Acompanhe ao vivo, veja quem ganhou e gere a ata.
+              </p>
+            </div>
+            <ChevronRight className="w-6 h-6 shrink-0 opacity-70 transition group-hover:opacity-100 group-hover:translate-x-0.5" />
+          </div>
+          <ul className="mt-5 grid gap-2 sm:grid-cols-2">
+            {itensResultado.map((r) => (
+              <li key={r} className="flex items-start gap-2 text-sm text-white/90">
+                <Check className="mt-0.5 w-4 h-4 shrink-0 text-sky-200" />
+                <span>{r}</span>
+              </li>
+            ))}
+          </ul>
+        </Link>
+      </section>
 
       {/* Acessos discretos — só para o dono do sistema */}
       {user.is_superuser && (

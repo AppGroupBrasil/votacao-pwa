@@ -6,6 +6,8 @@ import * as faceapi from "@vladmandic/face-api";
 
 const MODEL_URL = "/models";
 
+export type FaceInput = HTMLVideoElement | HTMLCanvasElement | HTMLImageElement;
+
 let modelsLoaded = false;
 let loadingPromise: Promise<void> | null = null;
 
@@ -18,12 +20,20 @@ export async function loadModels(): Promise<void> {
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = (async () => {
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-      faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
-      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-    ]);
-    modelsLoaded = true;
+    try {
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      ]);
+      modelsLoaded = true;
+    } catch (e) {
+      // Sem isto, uma única falha (rede caiu, aba trocada no meio do download)
+      // ficaria guardada e TODA tentativa seguinte falharia na mesma aba, até
+      // recarregar a página. Limpando, a próxima chamada baixa de novo.
+      loadingPromise = null;
+      throw e;
+    }
   })();
 
   return loadingPromise;
@@ -34,19 +44,43 @@ export function isModelsLoaded(): boolean {
 }
 
 /**
+ * Ajustes tentados em ordem até achar o rosto. O primeiro resolve o caso comum;
+ * os seguintes baixam o corte de confiança e mudam a escala da análise, que é o
+ * que salva webcam escura, rosto longe demais ou colado na câmera.
+ */
+const AJUSTES = [
+  { inputSize: 416, scoreThreshold: 0.5 },
+  { inputSize: 416, scoreThreshold: 0.25 },
+  { inputSize: 320, scoreThreshold: 0.2 },
+  { inputSize: 608, scoreThreshold: 0.2 },
+];
+
+/**
  * Detecta um único rosto no elemento de vídeo/imagem e retorna o descritor 128-pontos.
  * Retorna null se nenhum rosto for detectado.
  */
 export async function detectFace(
-  input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement
+  input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
+  opcoes: { inputSize: number; scoreThreshold: number } = AJUSTES[0]
 ): Promise<Float32Array | null> {
   const detection = await faceapi
-    .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.5 }))
+    .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions(opcoes))
     .withFaceLandmarks(true) // useTinyModel = true
     .withFaceDescriptor();
 
   if (!detection) return null;
   return detection.descriptor;
+}
+
+/** Detecta tentando todos os ajustes; devolve também qual funcionou. */
+export async function detectFaceTentandoTudo(
+  input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement
+): Promise<{ descriptor: Float32Array; ajuste: (typeof AJUSTES)[number] } | null> {
+  for (const ajuste of AJUSTES) {
+    const d = await detectFace(input, ajuste);
+    if (d) return { descriptor: d, ajuste };
+  }
+  return null;
 }
 
 /**
@@ -56,14 +90,37 @@ export async function detectFace(
  * facilidade a mesma pessoa. Retorna null se não achar rosto em nenhuma amostra.
  */
 export async function detectFaceAveraged(
-  input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
+  entrada: FaceInput | FaceInput[],
   amostras = 4
 ): Promise<Float32Array | null> {
+  const entradas = Array.isArray(entrada) ? entrada : [entrada];
+
+  // Primeira leitura: descobre em qual entrada (vídeo ao vivo ou foto já
+  // capturada) e com qual ajuste o rosto aparece. As demais repetem o que deu
+  // certo, em vez de gastar tempo tentando tudo de novo.
+  let alvo: FaceInput | null = null;
+  let ajuste: (typeof AJUSTES)[number] | null = null;
   const descritores: Float32Array[] = [];
-  for (let i = 0; i < amostras; i++) {
-    const d = await detectFace(input);
-    if (d) descritores.push(d);
-    if (i < amostras - 1) await new Promise((r) => setTimeout(r, 160));
+
+  for (const e of entradas) {
+    const r = await detectFaceTentandoTudo(e);
+    if (r) {
+      alvo = e;
+      ajuste = r.ajuste;
+      descritores.push(r.descriptor);
+      break;
+    }
+  }
+  if (!alvo || !ajuste) return null;
+
+  // Imagem parada não muda entre leituras — repetir daria o mesmo vetor.
+  const aoVivo = typeof HTMLVideoElement !== "undefined" && alvo instanceof HTMLVideoElement;
+  if (aoVivo) {
+    for (let i = 1; i < amostras; i++) {
+      await new Promise((r) => setTimeout(r, 160));
+      const d = await detectFace(alvo, ajuste);
+      if (d) descritores.push(d);
+    }
   }
   if (!descritores.length) return null;
   const media = new Float32Array(descritores[0].length);

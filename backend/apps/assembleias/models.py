@@ -14,6 +14,32 @@ def gerar_codigo_curto(tamanho: int = 3) -> str:
     return "".join(secrets.choice(CODIGO_CURTO_ALFABETO) for _ in range(tamanho))
 
 
+def codigo_curto_livre(codigo: str) -> bool:
+    """O mesmo /v/<codigo> serve assembleia, item de votação, enquete e lista de
+    presença — o código só pode existir uma vez em todo o sistema."""
+    from django.apps import apps as django_apps
+
+    if Assembleia.objects.filter(codigo_curto=codigo).exists():
+        return False
+    if Questao.objects.filter(codigo_curto=codigo).exists():
+        return False
+    for label in ("enquetes.Enquete", "enquetes.ListaPresenca"):
+        modelo = django_apps.get_model(label)
+        if modelo.objects.filter(codigo_curto=codigo).exists():
+            return False
+    return True
+
+
+def novo_codigo_curto():
+    """Sorteia um código curto ainda não usado. Devolve None se não conseguir
+    (o registro fica sem código e continua acessível pelo link longo)."""
+    for _ in range(20):
+        codigo = gerar_codigo_curto()
+        if codigo_curto_livre(codigo):
+            return codigo
+    return None
+
+
 class Assembleia(models.Model):
     class Status(models.TextChoices):
         RASCUNHO = "rascunho", "Rascunho"
@@ -96,11 +122,7 @@ class Assembleia(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.codigo_curto:
-            for _ in range(20):
-                codigo = gerar_codigo_curto()
-                if not Assembleia.objects.filter(codigo_curto=codigo).exists():
-                    self.codigo_curto = codigo
-                    break
+            self.codigo_curto = novo_codigo_curto()
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -111,6 +133,17 @@ class Questao(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     assembleia = models.ForeignKey(
         Assembleia, on_delete=models.CASCADE, related_name="questoes"
+    )
+    codigo_curto = models.CharField(
+        max_length=8,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "Código curto do link deste item: appvotacao.com.br/v/<codigo> abre "
+            "a votação só desta questão."
+        ),
     )
     titulo = models.CharField(max_length=500)
     descricao = models.TextField(blank=True, default="")
@@ -143,6 +176,11 @@ class Questao(models.Model):
     class Meta:
         ordering = ["ordem"]
         verbose_name_plural = "questões"
+
+    def save(self, *args, **kwargs):
+        if not self.codigo_curto:
+            self.codigo_curto = novo_codigo_curto()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.titulo

@@ -47,6 +47,7 @@ export default function ListaPresencaPage() {
   const pedidosRef = useRef<Set<string>>(new Set());
   const [busca, setBusca] = useState("");
   const [ordem, setOrdem] = useState<"unidade" | "nome" | "chegada">("unidade");
+  const [baixando, setBaixando] = useState(false);
 
   async function carregar() {
     const a = await api.getAssembleia(assembleiaId);
@@ -88,36 +89,29 @@ export default function ListaPresencaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assembleiaId]);
 
-  function exportarCsv() {
-    if (!assembleia) return;
-    // Exporta SEMPRE a lista completa (ignora busca/filtro da tela): é o
-    // documento oficial de presença. Ordena por unidade para estabilidade.
-    const todas = [...(assembleia.presencas || [])].sort(cmpUnidade);
-    const linhas = [
-      ["Nome", "Bloco", "Apartamento", "Inadimplente", "Perfil", "Método", "Registro facial", "IP", "Aparelho", "Horário de entrada"],
-      ...todas.map((p) => [
-        p.nome,
-        p.bloco || "",
-        p.apartamento || "",
-        p.inadimplente ? "Sim" : "Não",
-        perfilLabel[p.perfil] || p.perfil,
-        metodoLabel[p.metodo_auth] || p.metodo_auth,
-        p.assinatura_facial || "",
-        p.ip_address || "",
-        p.device_info || "",
-        new Date(p.horario_entrada).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
-      ]),
-    ];
-    const csv = linhas
-      .map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";"))
-      .join("\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `presenca-${assembleia.titulo}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function baixarPdfPresenca() {
+    if (!assembleia || baixando) return;
+    // Baixa SEMPRE a lista completa (ignora busca/filtro da tela): é o
+    // documento oficial de presença, gerado pelo servidor em PDF.
+    setBaixando(true);
+    try {
+      const blob = await api.baixarRelatorioPdf(assembleiaId, "presenca");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `lista-presenca-${assembleia.titulo
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/gi, "-")
+        .slice(0, 60)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Erro ao gerar o PDF da lista de presença.");
+    } finally {
+      setBaixando(false);
+    }
   }
 
   async function toggleInadimplente(p: Presenca) {
@@ -232,11 +226,12 @@ export default function ListaPresencaPage() {
             </button>
           )}
           <button
-            onClick={exportarCsv}
-            className="btn-secondary flex items-center gap-2"
+            onClick={baixarPdfPresenca}
+            disabled={baixando}
+            className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 font-bold text-white shadow-sm ring-1 ring-green-700/30 transition hover:bg-green-700 disabled:opacity-50"
           >
-            <FileDown className="w-4 h-4" />
-            Exportar CSV
+            <FileDown className="w-4 h-4 text-white" />
+            {baixando ? "Gerando PDF..." : "Baixar lista em PDF"}
           </button>
           <button
             onClick={() => window.print()}

@@ -9,8 +9,27 @@ import {
   Check,
   Eraser,
   CreditCard,
+  ScanFace,
 } from "lucide-react";
 import { api } from "@/lib/api";
+
+// O face-api só existe no navegador: carregado sob demanda para não quebrar a
+// renderização da página no servidor.
+const faceapiLib = () => import("@/lib/faceapi");
+
+// Cantos de enquadramento (estilo câmera de reconhecimento) desenhados por cima
+// da moldura: dão o ar de "leitura biométrica" sem cobrir o rosto.
+function CantosFoco({ cor }: { cor: string }) {
+  const base = `pointer-events-none absolute h-7 w-7 ${cor}`;
+  return (
+    <>
+      <span className={`${base} left-2.5 top-2.5 rounded-tl-xl border-l-2 border-t-2`} />
+      <span className={`${base} right-2.5 top-2.5 rounded-tr-xl border-r-2 border-t-2`} />
+      <span className={`${base} bottom-2.5 left-2.5 rounded-bl-xl border-b-2 border-l-2`} />
+      <span className={`${base} bottom-2.5 right-2.5 rounded-br-xl border-b-2 border-r-2`} />
+    </>
+  );
+}
 
 async function sha256Hex(value: string): Promise<string> {
   const data = new TextEncoder().encode(value.replace(/\D/g, ""));
@@ -50,6 +69,7 @@ export default function PresencaManualPublicaPage() {
   const [enviando, setEnviando] = useState(false);
   const [enviado, setEnviado] = useState(false);
   const [jaPresente, setJaPresente] = useState(false);
+  const [jaPresenteNome, setJaPresenteNome] = useState("");
   const [avisoInadimplente, setAvisoInadimplente] = useState("");
 
   const [nome, setNome] = useState("");
@@ -74,6 +94,11 @@ export default function PresencaManualPublicaPage() {
   const [camAtiva, setCamAtiva] = useState(false);
   const [camErro, setCamErro] = useState("");
 
+  // --- biometria facial (vetor do rosto, lido no próprio aparelho) ---
+  const [descritor, setDescritor] = useState<number[] | null>(null);
+  const [lendoRosto, setLendoRosto] = useState(false);
+  const [avisoFacial, setAvisoFacial] = useState("");
+
   // --- assinatura (canvas) ---
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const desenhando = useRef(false);
@@ -89,7 +114,13 @@ export default function PresencaManualPublicaPage() {
     if (!id) return;
     api
       .getListaPresencaPublica(id)
-      .then((d) => setLista(d))
+      .then((d) => {
+        setLista(d);
+        // Os modelos do reconhecimento facial pesam ~6 MB. Baixamos assim que a
+        // lista abre (enquanto o morador digita nome e apartamento) para a
+        // câmera não ficar esperando o download na hora da foto.
+        if (d?.ativa) faceapiLib().then((m) => m.loadModels()).catch(() => {});
+      })
       .catch(() => setErro("Lista de presença não encontrada."))
       .finally(() => setLoading(false));
   }, [id]);
@@ -146,6 +177,13 @@ export default function PresencaManualPublicaPage() {
 
   async function abrirCamera() {
     setCamErro("");
+    setAvisoFacial("");
+    setDescritor(null);
+    // Os modelos do reconhecimento facial baixam enquanto a pessoa se ajeita
+    // na frente da câmera, para o "Capturar" não ficar esperando.
+    faceapiLib()
+      .then((m) => m.loadModels())
+      .catch(() => {});
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user" },
@@ -158,7 +196,7 @@ export default function PresencaManualPublicaPage() {
     }
   }
 
-  function capturarSelfie() {
+  async function capturarSelfie() {
     const video = videoRef.current;
     if (!video) return;
     if (!video.videoWidth) {
@@ -176,8 +214,40 @@ export default function PresencaManualPublicaPage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    setSelfie(canvas.toDataURL("image/jpeg", 0.7));
-    pararCamera();
+    const foto = canvas.toDataURL("image/jpeg", 0.7);
+
+    // Biometria facial: a leitura do rosto acontece aqui no aparelho, com a
+    // câmera ainda ligada (várias amostras). Sai só o vetor, nunca a imagem.
+    // A foto só é mostrada no fim para o <video> não sumir durante a leitura.
+    setLendoRosto(true);
+    setAvisoFacial("");
+    try {
+      const { loadModels, detectFaceAveraged } = await faceapiLib();
+      await loadModels();
+      // Procura o rosto no vídeo ao vivo e também na foto que acabou de sair:
+      // a foto está parada e nítida, então salva quando a imagem ao vivo treme.
+      const d = await detectFaceAveraged([video, canvas], 4);
+      if (d) {
+        setDescritor(Array.from(d));
+      } else {
+        setDescritor(null);
+        setAvisoFacial(
+          "Não consegui ler o seu rosto (luz ou ângulo). A presença vale pela foto, mas para conferir por biometria tire outra em um lugar mais claro, de frente para a câmera."
+        );
+      }
+    } catch (e) {
+      setDescritor(null);
+      // Falha técnica (modelo não baixou, navegador sem suporte). O detalhe curto
+      // separa isso de "estava escuro demais" na hora de socorrer o síndico.
+      const detalhe = e instanceof Error && e.message ? ` (${e.message.slice(0, 90)})` : "";
+      setAvisoFacial(
+        `Não consegui ler o seu rosto agora${detalhe}. A presença vale pela foto assim mesmo.`
+      );
+    } finally {
+      setLendoRosto(false);
+      setSelfie(foto);
+      pararCamera();
+    }
   }
 
   // --- canvas de assinatura ---
@@ -247,22 +317,45 @@ export default function PresencaManualPublicaPage() {
       setErro("Marque a caixa de concordância (LGPD) para registrar a presença.");
       return;
     }
+    if (lendoRosto) {
+      setErro("Aguarde a leitura do rosto terminar.");
+      return;
+    }
     const assinatura = canvasRef.current?.toDataURL("image/png") || "";
     setEnviando(true);
     try {
-      const r = await api.registrarPresencaManual(id, {
-        nome: nome.trim(),
-        bloco: bloco.trim(),
-        apartamento: apartamento.trim(),
-        selfie,
-        assinatura,
-        metodo_auth: "selfie",
-        marca_aparelho: marcaAparelho.current,
-        consentimento_lgpd: consentimento,
-        declaracao_veracidade: consentimento,
-      });
-      if ((r as any)?.ja_presente) setJaPresente(true);
-      if (r?.inadimplente) setAvisoInadimplente(r.aviso || "");
+      // Com o rosto lido, a presença entra pela biometria facial: o servidor
+      // compara com os rostos já cadastrados e barra a mesma pessoa duas vezes.
+      // Sem leitura do rosto, cai no registro simples (foto + assinatura).
+      const r = descritor
+        ? await api.registrarPresencaFacial(id, {
+            descriptor: descritor,
+            nome: nome.trim(),
+            bloco: bloco.trim(),
+            apartamento: apartamento.trim(),
+            selfie,
+            assinatura,
+            marca_aparelho: marcaAparelho.current,
+            consentimento_lgpd: consentimento,
+            declaracao_veracidade: consentimento,
+          })
+        : await api.registrarPresencaManual(id, {
+            nome: nome.trim(),
+            bloco: bloco.trim(),
+            apartamento: apartamento.trim(),
+            selfie,
+            assinatura,
+            metodo_auth: "selfie",
+            marca_aparelho: marcaAparelho.current,
+            consentimento_lgpd: consentimento,
+            declaracao_veracidade: consentimento,
+          });
+      if ((r as any)?.ja_presente) {
+        setJaPresente(true);
+        setJaPresenteNome(String((r as any).nome || ""));
+      }
+      if ((r as any)?.inadimplente)
+        setAvisoInadimplente((r as any).aviso || "");
       setEnviado(true);
     } catch (e: any) {
       setErro(
@@ -301,10 +394,23 @@ export default function PresencaManualPublicaPage() {
         <p className="text-gray-500">
           {jaPresente
             ? `Sua presença nesta assembleia já estava registrada${
-                nome.trim() ? `, ${nome.trim()}` : ""
+                (jaPresenteNome || nome).trim()
+                  ? `, ${(jaPresenteNome || nome).trim()}`
+                  : ""
               }.`
             : `Obrigado${nome.trim() ? `, ${nome.trim()}` : ""}.`}
         </p>
+        {/* Rosto confundido com outra pessoa: o morador precisa saber para
+            procurar a mesa em vez de simplesmente ficar fora da lista. */}
+        {jaPresente &&
+          !!jaPresenteNome &&
+          !!nome.trim() &&
+          jaPresenteNome.trim().toLowerCase() !== nome.trim().toLowerCase() && (
+            <div className="mt-5 max-w-sm rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              A presença consta em nome de <b>{jaPresenteNome}</b>. Se não é
+              você, procure a mesa da assembleia para registrar a sua presença.
+            </div>
+          )}
         {avisoInadimplente && (
           <div className="mt-5 max-w-sm rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
             {avisoInadimplente}
@@ -435,49 +541,125 @@ export default function PresencaManualPublicaPage() {
         <h1 className="text-xl font-bold mb-1">Lista de presença</h1>
         <p className="text-sm text-gray-500 mb-4">{lista?.titulo}</p>
 
-        {/* Selfie */}
+        {/* Reconhecimento facial */}
         <div className="card mb-4">
-          <label className="block text-sm font-medium mb-2">Selfie</label>
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-blue-400 text-white shadow-lg shadow-blue-500/30">
+              <ScanFace className="h-8 w-8" strokeWidth={1.75} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-gray-900">
+                Reconhecimento facial
+              </h2>
+              <p className="text-xs text-gray-500">
+                A leitura acontece no seu próprio aparelho e confirma que cada
+                pessoa registra presença uma única vez.
+              </p>
+            </div>
+          </div>
+
           {selfie ? (
             <div className="text-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={selfie}
-                alt="Selfie"
-                className="mx-auto rounded-lg max-h-60"
-              />
+              <div
+                className={`relative mx-auto aspect-[4/5] w-full max-w-[16rem] overflow-hidden rounded-3xl border-2 shadow-sm ${
+                  descritor ? "border-green-500" : "border-amber-400"
+                }`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={selfie}
+                  alt="Selfie"
+                  className="block h-full w-full object-cover"
+                />
+                <CantosFoco
+                  cor={descritor ? "border-green-300/90" : "border-amber-300/90"}
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-3 pb-2.5 pt-8">
+                  {descritor ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/95 px-3 py-1 text-xs font-semibold text-white shadow">
+                      <Check className="h-3.5 w-3.5" /> Rosto reconhecido
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/95 px-3 py-1 text-xs font-semibold text-white shadow">
+                      <Camera className="h-3.5 w-3.5" /> Presença pela foto
+                    </span>
+                  )}
+                </div>
+              </div>
+              {descritor && (
+                <p className="mt-2 text-xs text-gray-500">
+                  Biometria facial confirmada neste aparelho.
+                </p>
+              )}
               <button
                 onClick={() => {
                   setSelfie("");
+                  setDescritor(null);
                   abrirCamera();
                 }}
-                className="mt-3 inline-flex items-center gap-1 text-sm text-primary-600"
+                className="mt-3 inline-flex w-full items-center justify-center gap-1 text-sm font-medium text-primary-600"
               >
                 <RefreshCw className="w-4 h-4" /> Tirar outra
               </button>
+              {avisoFacial && (
+                <p className="mt-2 text-left text-xs text-amber-700">
+                  {avisoFacial}
+                </p>
+              )}
             </div>
           ) : camAtiva ? (
             <div className="text-center">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="mx-auto rounded-lg max-h-60 bg-black"
-              />
+              <div className="relative mx-auto aspect-[4/5] w-full max-w-[16rem] overflow-hidden rounded-3xl border-2 border-blue-500 bg-black shadow-sm">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="block h-full w-full object-cover"
+                />
+                {/* guia oval do rosto */}
+                <div className="pointer-events-none absolute inset-x-8 inset-y-6 rounded-[50%] border-2 border-dashed border-white/60" />
+                <CantosFoco cor="border-blue-300/90" />
+                {lendoRosto && (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-xs font-semibold text-white">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Lendo o
+                      rosto...
+                    </span>
+                  </div>
+                )}
+              </div>
               <button
                 onClick={capturarSelfie}
-                className="btn-primary mt-3 inline-flex items-center gap-2"
+                disabled={lendoRosto}
+                className="btn-primary mt-4 inline-flex w-full items-center justify-center gap-2 disabled:opacity-60"
               >
-                <Camera className="w-4 h-4" /> Capturar
+                {lendoRosto ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Lendo o rosto...
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-4 h-4" /> Capturar
+                  </>
+                )}
               </button>
+              <p className="mt-2 text-xs text-gray-500">
+                {lendoRosto
+                  ? "Fique parado, olhando para a câmera."
+                  : "Encaixe o rosto no oval e toque em Capturar."}
+              </p>
               {camErro && <p className="mt-2 text-sm text-red-600">{camErro}</p>}
             </div>
           ) : (
             <div className="text-center">
+              <div className="relative mx-auto flex aspect-[4/5] max-h-64 w-full max-w-[16rem] items-center justify-center overflow-hidden rounded-3xl border-2 border-dashed border-blue-300 bg-white">
+                <ScanFace className="h-28 w-28 text-blue-500" strokeWidth={1.1} />
+                <CantosFoco cor="border-blue-400/80" />
+              </div>
               <button
                 onClick={abrirCamera}
-                className="btn-secondary inline-flex items-center gap-2"
+                className="btn-primary mt-4 inline-flex w-full items-center justify-center gap-2"
               >
                 <Camera className="w-4 h-4" /> Abrir câmera
               </button>
@@ -553,10 +735,12 @@ export default function PresencaManualPublicaPage() {
             className="mt-0.5 shrink-0"
           />
           <span>
-            Concordo com o tratamento dos meus dados (selfie, assinatura, IP e
-            aparelho) para registrar a presença nesta assembleia, conforme a
-            LGPD (Lei nº 13.709/2018), e declaro que sou a própria pessoa e que
-            as informações são verdadeiras.
+            Concordo com o tratamento dos meus dados (selfie, assinatura, IP,
+            aparelho e o código de leitura do meu rosto — dado biométrico, usado
+            só para confirmar que cada pessoa registra presença uma única vez)
+            para registrar a presença nesta assembleia, conforme a LGPD (Lei nº
+            13.709/2018), e declaro que sou a própria pessoa e que as
+            informações são verdadeiras.
           </span>
         </label>
 

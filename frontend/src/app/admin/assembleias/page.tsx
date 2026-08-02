@@ -20,6 +20,8 @@ import {
   Link as LinkIcon,
   ExternalLink,
   Share2,
+  Ban,
+  RotateCcw,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
@@ -37,6 +39,56 @@ const statusMap = {
   aberta: { label: "Aberta", class: "bg-green-100 text-green-700" },
   encerrada: { label: "Encerrada", class: "bg-red-100 text-red-700" },
 };
+
+// Os três relatórios oficiais. Só existem estes; todos saem em PDF.
+const RELATORIOS: {
+  tipo: "presenca" | "votacao" | "resultado";
+  titulo: string;
+  descricao: string;
+  icone: typeof Vote;
+  fundo: string;
+  itens: string[];
+}[] = [
+  {
+    tipo: "presenca",
+    titulo: "Lista de presença",
+    descricao: "Quem esteve na assembleia, para anexar à ata.",
+    icone: Users,
+    fundo: "bg-primary-600",
+    itens: [
+      "Nome, unidade e perfil de cada presente",
+      "Quórum, presenciais e online",
+      "Inadimplentes destacados",
+      "Linhas de assinatura no final",
+    ],
+  },
+  {
+    tipo: "votacao",
+    titulo: "Relatório de votação",
+    descricao: "Voto a voto, com tudo que comprova cada registro.",
+    icone: ClipboardList,
+    fundo: "bg-sky-600",
+    itens: [
+      "Separado por questão, na ordem",
+      "Autenticação, IP, aparelho e horário",
+      "Código do voto para conferência",
+      "Pendentes e invalidados sinalizados",
+    ],
+  },
+  {
+    tipo: "resultado",
+    titulo: "Relatório do resultado",
+    descricao: "A apuração final de cada questão.",
+    icone: BarChart3,
+    fundo: "bg-green-600",
+    itens: [
+      "Total de votos e percentual por opção",
+      "Opção vencedora em destaque",
+      "Abstenções e votos válidos",
+      "Aviso de empate quando houver",
+    ],
+  },
+];
 
 const abas: { id: Tab; label: string; icon: typeof Vote }[] = [
   { id: "votacao", label: "Votação", icon: Vote },
@@ -61,7 +113,8 @@ export default function AssembleiasHubPage() {
   // Opção cuja lista "quem votou" está aberta (admin-only). Uma por vez.
   const [opcaoAberta, setOpcaoAberta] = useState<string>("");
   const [loadingResultados, setLoadingResultados] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  // Qual dos três PDFs está sendo gerado agora (null = nenhum).
+  const [exporting, setExporting] = useState<string | null>(null);
 
   function loadAssembleias() {
     api
@@ -81,8 +134,13 @@ export default function AssembleiasHubPage() {
 
   useEffect(() => {
     loadAssembleias();
-    const t = new URLSearchParams(window.location.search).get("tab");
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
     if (t === "resultados" || t === "relatorio") setTab(t);
+    // ?id=<assembleia> vindo do botão "Resultado" dos cards: já abre o
+    // resultado daquela assembleia, sem o síndico ter de escolher na lista.
+    const id = params.get("id");
+    if (id) setSelected(id);
   }, []);
 
   const carregarPendentes = useCallback((id: string) => {
@@ -116,6 +174,12 @@ export default function AssembleiasHubPage() {
     }, 5000);
     return () => clearInterval(interval);
   }, [selected, assembleias]);
+
+  function verResultado(id: string) {
+    setSelected(id);
+    setTab("resultados");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   async function handleDelete(e: React.MouseEvent, id: string, titulo: string) {
     e.preventDefault();
@@ -181,69 +245,42 @@ export default function AssembleiasHubPage() {
 
   async function validarManual(
     votante: VotanteManualAdmin,
-    acao: "aprovar" | "rejeitar"
+    acao: "aprovar" | "rejeitar" | "inadimplente" | "regularizar"
   ) {
+    if (
+      acao === "inadimplente" &&
+      !confirm(
+        `Marcar ${votante.nome} (${votante.bloco ? `${votante.bloco} / ` : ""}${votante.apartamento}) como INADIMPLENTE?\n\n` +
+          "Os votos dele são invalidados e a unidade fica impedida de votar. Dá para desfazer depois."
+      )
+    )
+      return;
     await api.validarVotoManual(selected, votante.id, acao);
     carregarPendentes(selected);
     api.getResultados(selected).then(setResultados);
   }
 
-  function csvValue(value: string | number | boolean | null | undefined) {
-    const text = value == null ? "" : String(value);
-    return `"${text.replaceAll('"', '""')}"`;
-  }
-
-  async function exportarRelatorioDetalhado() {
+  async function baixarRelatorio(tipo: "presenca" | "votacao" | "resultado") {
     if (!selected) return;
-    setExporting(true);
+    setExporting(tipo);
     try {
-      const relatorio = await api.getRelatorioVotos(selected);
-      const header = [
-        "Nome",
-        "Bloco",
-        "Apartamento",
-        "Perfil",
-        "Por procuração",
-        "Questão",
-        "Opção escolhida",
-        "Tipo da autenticação",
-        "IP",
-        "Aparelho/Navegador",
-        "User-Agent",
-        "Data e horário",
-        "Hash do voto",
-      ];
-      const rows = relatorio.votos.map((voto) => [
-        voto.eleitor_nome,
-        voto.bloco,
-        voto.apartamento,
-        voto.perfil,
-        voto.por_procuracao ? "Sim" : "Não",
-        voto.questao_titulo,
-        voto.opcao_texto,
-        voto.tipo_autenticacao,
-        voto.ip_address,
-        voto.device_info,
-        voto.user_agent,
-        new Date(voto.timestamp).toLocaleString("pt-BR"),
-        voto.hash_voto,
-      ]);
-      const csv = [header, ...rows]
-        .map((row) => row.map((value) => csvValue(value)).join(";"))
-        .join("\r\n");
-      const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
+      const blob = await api.baixarRelatorioPdf(selected, tipo);
+      const nome = (assembleias.find((a) => a.id === selected)?.titulo || "assembleia")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/gi, "-")
+        .slice(0, 60);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `relatorio-votos-${relatorio.assembleia_titulo.toLowerCase().replace(/[^a-z0-9]+/gi, "-")}.csv`;
+      link.download = `${tipo}-${nome}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
     } catch {
-      alert("Erro ao exportar relatório detalhado.");
+      alert("Erro ao gerar o relatório em PDF.");
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   }
 
@@ -365,12 +402,23 @@ export default function AssembleiasHubPage() {
                           </span>
                         </div>
                       </div>
-                      <Link
-                        href={`/admin/assembleias/${a.id}`}
-                        className="btn-secondary inline-flex items-center gap-1 text-sm shrink-0"
-                      >
-                        <ClipboardList className="w-4 h-4" /> Gerenciar
-                      </Link>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {/* Atalho: troca para a aba Resultados já com esta
+                            assembleia selecionada — um clique em vez de
+                            trocar de aba e procurar na lista. */}
+                        <button
+                          onClick={() => verResultado(a.id)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-green-700/30 hover:bg-green-700"
+                        >
+                          <BarChart3 className="w-4 h-4 text-white" /> Resultado
+                        </button>
+                        <Link
+                          href={`/admin/assembleias/${a.id}`}
+                          className="btn-secondary inline-flex items-center gap-1 text-sm"
+                        >
+                          <ClipboardList className="w-4 h-4" /> Gerenciar
+                        </Link>
+                      </div>
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -509,13 +557,22 @@ export default function AssembleiasHubPage() {
                 Moradores sem cadastro que votaram pela via manual. O voto vale
                 imediatamente; confira a selfie e invalide se não reconhecer a
                 pessoa. Votos pendentes (unidade já tinha votado) só entram na
-                totalização após sua aprovação.
+                totalização após sua aprovação. Use <b>Inadimplente</b> quando a
+                unidade estiver em débito: o voto é invalidado, a linha fica
+                vermelha e a unidade não vota mais nesta assembleia.
               </p>
               <div className="space-y-2">
                 {manuais.map((v) => (
                   <div
                     key={v.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-4 py-3"
+                    className={clsx(
+                      "flex items-center justify-between gap-3 rounded-lg border px-4 py-3",
+                      // Inadimplente: linha inteira em vermelho para o síndico
+                      // achar de longe quem está impedido de votar.
+                      v.inadimplente
+                        ? "border-red-400 bg-red-50 ring-1 ring-red-200"
+                        : "border-gray-200"
+                    )}
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -523,26 +580,48 @@ export default function AssembleiasHubPage() {
                         src={v.selfie}
                         alt={`Selfie de ${v.nome}`}
                         onClick={() => setSelfieAberta(v.selfie)}
-                        className="w-12 h-12 rounded-lg object-cover shrink-0 cursor-pointer"
+                        className={clsx(
+                          "w-12 h-12 rounded-lg object-cover shrink-0 cursor-pointer",
+                          v.inadimplente && "ring-2 ring-red-500"
+                        )}
                       />
                       <div className="min-w-0">
-                        <p className="font-medium truncate">
+                        <p
+                          className={clsx(
+                            "font-medium truncate",
+                            v.inadimplente && "text-red-700"
+                          )}
+                        >
                           {v.bloco ? `${v.bloco} / ` : ""}
                           {v.apartamento} — {v.nome}
+                          {v.inadimplente && (
+                            <span className="ml-2 rounded bg-red-600 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+                              Inadimplente
+                            </span>
+                          )}
                         </p>
-                        <p className="text-xs text-gray-500 truncate">
+                        <p
+                          className={clsx(
+                            "text-xs truncate",
+                            v.inadimplente ? "text-red-600" : "text-gray-500"
+                          )}
+                        >
                           {new Date(v.horario).toLocaleString("pt-BR")} ·{" "}
                           {v.total_votos} voto{v.total_votos !== 1 ? "s" : ""} ·{" "}
                           <span
                             className={
-                              v.situacao === "pendente"
+                              v.inadimplente
+                                ? "text-red-700 font-semibold"
+                                : v.situacao === "pendente"
                                 ? "text-amber-600 font-medium"
                                 : v.situacao === "rejeitado"
                                 ? "text-red-600 font-medium"
                                 : "text-green-600 font-medium"
                             }
                           >
-                            {v.situacao === "pendente"
+                            {v.inadimplente
+                              ? "invalidado por inadimplência"
+                              : v.situacao === "pendente"
                               ? "aguardando validação"
                               : v.situacao === "rejeitado"
                               ? "invalidado"
@@ -553,8 +632,23 @@ export default function AssembleiasHubPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {v.situacao === "pendente" && (
+                    <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                      {v.inadimplente ? (
+                        <button
+                          onClick={() => validarManual(v, "regularizar")}
+                          className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+                        >
+                          <RotateCcw className="w-4 h-4" /> Tirar inadimplência
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => validarManual(v, "inadimplente")}
+                          className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
+                        >
+                          <Ban className="w-4 h-4" /> Inadimplente
+                        </button>
+                      )}
+                      {!v.inadimplente && v.situacao === "pendente" && (
                         <button
                           onClick={() => validarManual(v, "aprovar")}
                           className="inline-flex items-center gap-1 rounded-lg bg-green-600 text-white px-3 py-1.5 text-sm hover:bg-green-700"
@@ -562,14 +656,16 @@ export default function AssembleiasHubPage() {
                           <Check className="w-4 h-4" /> Aprovar
                         </button>
                       )}
-                      {v.situacao !== "rejeitado" && v.total_votos > 0 && (
-                        <button
-                          onClick={() => validarManual(v, "rejeitar")}
-                          className="inline-flex items-center gap-1 rounded-lg border border-red-300 text-red-600 px-3 py-1.5 text-sm hover:bg-red-50"
-                        >
-                          <X className="w-4 h-4" /> Invalidar
-                        </button>
-                      )}
+                      {!v.inadimplente &&
+                        v.situacao !== "rejeitado" &&
+                        v.total_votos > 0 && (
+                          <button
+                            onClick={() => validarManual(v, "rejeitar")}
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-300 text-red-600 px-3 py-1.5 text-sm hover:bg-red-50"
+                          >
+                            <X className="w-4 h-4" /> Invalidar
+                          </button>
+                        )}
                     </div>
                   </div>
                 ))}
@@ -773,25 +869,54 @@ export default function AssembleiasHubPage() {
       {/* Aba: Relatório */}
       {tab === "relatorio" && (
         <div>
-          <h1 className="text-2xl font-bold mb-4">Relatório detalhado</h1>
-          <div className="mb-4">
+          <h1 className="text-2xl font-bold">Relatórios da assembleia</h1>
+          <p className="mt-1 mb-4 text-sm text-gray-500">
+            Três documentos prontos para imprimir, assinar e arquivar. Todos em PDF.
+          </p>
+          <div className="mb-5">
             <SeletorAssembleia />
           </div>
-          <div className="card">
-            <button
-              onClick={exportarRelatorioDetalhado}
-              disabled={!selected || exporting}
-              className="btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              <Download className="w-4 h-4" />
-              {exporting ? "Gerando relatório..." : "Exportar Relatório Detalhado (CSV)"}
-            </button>
-            <p className="mt-3 text-sm text-gray-500">
-              O relatório detalhado inclui nome, bloco, apartamento, perfil, IP,
-              autenticação, data/hora e aparelho inferido pelo navegador no
-              momento do voto.
-            </p>
-          </div>
+
+          {!selected && (
+            <div className="card text-center py-8">
+              <p className="text-gray-500">
+                Escolha a assembleia acima para baixar os relatórios.
+              </p>
+            </div>
+          )}
+
+          {selected && (
+            <div className="grid gap-4 md:grid-cols-3">
+              {RELATORIOS.map((r) => (
+                <div
+                  key={r.tipo}
+                  className="flex flex-col rounded-2xl border-2 border-gray-300 bg-white p-5 shadow-md transition hover:shadow-lg"
+                >
+                  <div className={`mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl ${r.fundo}`}>
+                    <r.icone className="h-6 w-6 text-white" />
+                  </div>
+                  <h2 className="text-lg font-bold text-gray-900">{r.titulo}</h2>
+                  <p className="mt-1 text-sm text-gray-600">{r.descricao}</p>
+                  <ul className="mt-3 mb-5 flex-1 space-y-1.5">
+                    {r.itens.map((item) => (
+                      <li key={item} className="flex gap-2 text-sm text-gray-600">
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    onClick={() => baixarRelatorio(r.tipo)}
+                    disabled={!!exporting}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3 text-sm font-bold text-white shadow-sm ring-1 ring-green-700/30 transition hover:bg-green-700 disabled:opacity-50"
+                  >
+                    <Download className="h-4 w-4 text-white" />
+                    {exporting === r.tipo ? "Gerando PDF..." : "Baixar em PDF"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

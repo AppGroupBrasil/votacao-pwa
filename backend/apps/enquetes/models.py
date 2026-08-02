@@ -2,7 +2,7 @@ import uuid
 
 from django.db import models
 
-from apps.assembleias.models import Assembleia, gerar_codigo_curto
+from apps.assembleias.models import novo_codigo_curto
 from apps.condominios.models import Condominio
 
 
@@ -46,15 +46,7 @@ class Enquete(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.codigo_curto:
-            for _ in range(20):
-                codigo = gerar_codigo_curto()
-                if (
-                    not Enquete.objects.filter(codigo_curto=codigo).exists()
-                    and not Assembleia.objects.filter(codigo_curto=codigo).exists()
-                    and not ListaPresenca.objects.filter(codigo_curto=codigo).exists()
-                ):
-                    self.codigo_curto = codigo
-                    break
+            self.codigo_curto = novo_codigo_curto()
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -109,15 +101,7 @@ class ListaPresenca(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.codigo_curto:
-            for _ in range(20):
-                codigo = gerar_codigo_curto()
-                if (
-                    not ListaPresenca.objects.filter(codigo_curto=codigo).exists()
-                    and not Enquete.objects.filter(codigo_curto=codigo).exists()
-                    and not Assembleia.objects.filter(codigo_curto=codigo).exists()
-                ):
-                    self.codigo_curto = codigo
-                    break
+            self.codigo_curto = novo_codigo_curto()
         super().save(*args, **kwargs)
 
     def __str__(self):

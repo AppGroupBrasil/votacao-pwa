@@ -334,35 +334,44 @@ export default function RegistrosPresencaPage() {
                   ) : (
                     <div className="w-16 h-16 rounded-lg bg-gray-100 shrink-0" />
                   )}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold truncate">{r.nome}</h3>
+                  {/* Uma linha só enquanto TUDO couber; quando não couber (nome
+                      completo longo, CPF, vários selos), o conteúdo quebra
+                      sozinho para a linha de baixo — nunca é cortado nem
+                      reticenciado. Por isso: flex-wrap no lugar de flex-nowrap
+                      e break-words no lugar de truncate. */}
+                  <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <h3 className="text-lg font-semibold break-words">
+                        {r.nome}
+                      </h3>
                       {dup && dup.total > 1 && (
                         <span className="shrink-0 inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-300">
                           {dup.ord}ª de {dup.total}
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-500">
+                    <p className="min-w-0 break-words text-base text-gray-600">
                       {r.perfil ? `${PERFIL_LABEL[r.perfil] || r.perfil} · ` : ""}
                       {r.bloco ? `Bloco ${r.bloco} · ` : ""}Ap. {r.apartamento}
                     </p>
-                    <p className="text-xs text-gray-400">
+                    <p className="min-w-0 break-words text-sm text-gray-500">
                       {dataHoraBrasilia(r.criado_em)} (horário de Brasília)
                     </p>
-                    <div className="mt-1 flex flex-wrap gap-1 print:hidden">
+                    {/* Selos: cada um inteiro (whitespace-nowrap), mas o grupo
+                        quebra para a linha seguinte quando não há largura. */}
+                    <div className="flex min-w-0 flex-wrap items-center gap-1 sm:ml-auto sm:justify-end print:hidden">
                       {r.metodo_auth && (
-                        <span className="inline-flex items-center rounded bg-green-50 px-1.5 py-0.5 text-[11px] font-medium text-green-700 ring-1 ring-green-200">
+                        <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded bg-green-50 px-2 py-0.5 text-sm font-medium text-green-700 ring-1 ring-green-200">
                           {METODO_LABEL[r.metodo_auth] || r.metodo_auth}
                         </span>
                       )}
                       {(r.marca_aparelho || r.device_info) && (
-                        <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">
+                        <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded bg-gray-100 px-2 py-0.5 text-sm text-gray-600">
                           {r.marca_aparelho || r.device_info}
                         </span>
                       )}
                       {r.ip_address && (
-                        <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">
+                        <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded bg-gray-100 px-2 py-0.5 text-sm text-gray-600">
                           IP {r.ip_address}
                         </span>
                       )}

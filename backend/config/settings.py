@@ -75,6 +75,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "core.middleware.RealClientIpMiddleware",
+    # Sem ele o limite de requisições estoura como 403 HTML ("Forbidden"), e o
+    # morador vê tela de erro em vez do aviso de "aguarde alguns instantes".
+    "django_ratelimit.middleware.RatelimitMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",

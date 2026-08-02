@@ -35,7 +35,7 @@ As respostas de verificação facial/WebAuthn/OTP também devolvem `votos_permit
 |---|---|---|---|
 | GET/POST | `/assembleias/` | Admin | Lista / cria assembleias. |
 | GET/PUT/DELETE | `/assembleias/{id}/` | Admin | Detalhe administrativo (inclui presenças/identidades). |
-| GET | `/assembleias/abertas/` | Público | Assembleias abertas (id + título). |
+| GET | `/assembleias/abertas/` | Admin | Assembleias abertas (id + título), só dos condomínios do síndico. |
 | GET | `/assembleias/resolver/{codigo}/` | Público | Resolve o **link curto**. Recebe o `codigo_curto` (3 chars, case-insensitive via `.upper()`), devolve `{assembleia_id}` ou 404. Usado por `/vote/[code]` e `/v/[code]`. |
 | POST | `/assembleias/{id}/abrir/` | Admin | Abre (status=aberta, votacao_liberada=false). |
 | POST | `/assembleias/{id}/liberar-votacao/` | Admin | `{liberar:true/false}` — libera/trava o voto. |

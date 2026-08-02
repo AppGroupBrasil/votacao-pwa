@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ScanFace, Camera, Loader2, Mail, ShieldCheck } from "lucide-react";
+import {
+  ScanFace,
+  Camera,
+  Loader2,
+  Mail,
+  ShieldCheck,
+  CheckCircle2,
+} from "lucide-react";
 import { api, getDeviceId } from "@/lib/api";
 import { loadModels, detectFaceAveraged } from "@/lib/faceapi";
 
@@ -43,6 +50,12 @@ export default function AcessoFacialVotacao({
   const [apartamento, setApartamento] = useState("");
   const [perfil, setPerfil] = useState("proprietario");
   const [lgpd, setLgpd] = useState(false);
+  // Confirmação visível de que o rosto foi reconhecido, com o nome de quem
+  // entrou: o morador precisa ver que é ele mesmo antes de votar.
+  const [reconhecido, setReconhecido] = useState<{
+    nome: string;
+    entrar: () => void;
+  } | null>(null);
 
   useEffect(() => {
     loadModels().catch(() => {});
@@ -107,8 +120,9 @@ export default function AcessoFacialVotacao({
       if (!canvas) return;
       await loadModels();
       // Média de várias leituras do rosto ao vivo: vetor mais estável, reconhece
-      // a mesma pessoa com mais facilidade. O canvas serve só para a selfie.
-      const desc = await detectFaceAveraged(video, 4);
+      // a mesma pessoa com mais facilidade. Se a imagem ao vivo não render o
+      // rosto, tenta na foto parada, que é a mesma usada como selfie.
+      const desc = await detectFaceAveraged([video, canvas], 4);
       if (!desc) {
         setErro(
           "Não reconheci um rosto. Aproxime-se, melhore a luz e tente de novo."
@@ -125,14 +139,27 @@ export default function AcessoFacialVotacao({
       });
       if (r.encontrado && r.token) {
         pararCamera();
-        onSuccess(r.token, r.votante_manual_id || "", r.aviso_unidade || "");
+        const token = r.token;
+        const votanteId = r.votante_manual_id || "";
+        const aviso = r.aviso_unidade || "";
+        setReconhecido({
+          nome: r.nome || "",
+          entrar: () => onSuccess(token, votanteId, aviso),
+        });
         return;
       }
       // Rosto novo: pede nome/unidade uma única vez, depois entra e vota.
       pararCamera();
       setNovoRosto(true);
-    } catch {
-      setErro("Não foi possível processar o rosto. Tente de novo ou use o e-mail.");
+    } catch (e: any) {
+      // O motivo costuma vir do servidor ("assembleia não está aberta",
+      // "registre a presença primeiro"). Escondê-lo atrás de um texto genérico
+      // faz parecer defeito da câmera quando é regra da votação.
+      setErro(
+        e?.response?.data?.error ||
+          e?.response?.data?.detail ||
+          "Não foi possível processar o rosto. Tente de novo ou use o e-mail."
+      );
     } finally {
       setProcessando(false);
     }
@@ -173,6 +200,45 @@ export default function AcessoFacialVotacao({
     } finally {
       setProcessando(false);
     }
+  }
+
+  // Reconhecido: confirma na tela quem entrou antes de abrir a votação.
+  if (reconhecido) {
+    return (
+      <div className="text-center">
+        <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
+          <CheckCircle2 className="h-12 w-12 text-green-600" strokeWidth={2.2} />
+        </div>
+        <h1 className="text-2xl font-extrabold text-green-700">
+          Rosto reconhecido
+        </h1>
+        {reconhecido.nome && (
+          <p className="mt-1 text-lg font-semibold text-gray-900">
+            {reconhecido.nome}
+          </p>
+        )}
+        <p className="mx-auto mt-2 max-w-xs text-sm text-gray-600">
+          Sua identificação foi confirmada pela biometria facial. Você já pode
+          votar.
+        </p>
+
+        {selfie && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={selfie}
+            alt="Sua foto"
+            className="mx-auto mt-4 h-24 w-24 rounded-xl border-2 border-green-500 object-cover"
+          />
+        )}
+
+        <button
+          onClick={reconhecido.entrar}
+          className="btn-primary mt-6 w-full py-3 text-base"
+        >
+          Continuar para a votação
+        </button>
+      </div>
+    );
   }
 
   // Passo 2: rosto novo — cadastro rápido para poder votar.

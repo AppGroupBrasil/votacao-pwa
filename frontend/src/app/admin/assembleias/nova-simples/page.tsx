@@ -1,17 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Plus, Trash2, Loader2, Vote } from "lucide-react";
+import {
+  ArrowLeft,
+  Plus,
+  Trash2,
+  Loader2,
+  Vote,
+  Link as LinkIcon,
+  Check,
+  ExternalLink,
+  Share2,
+  ClipboardList,
+  ListChecks,
+  BarChart3,
+} from "lucide-react";
 import { api } from "@/lib/api";
-import type { Condominio } from "@/lib/types";
+import type { Condominio, AssembleiaListItem, Questao } from "@/lib/types";
 
 const TIPOS_SUGERIDOS = [
   "Assembleia Geral Ordinária (AGO)",
   "Assembleia Geral Extraordinária (AGE)",
   "Eleição de Síndico",
 ];
+
+// Quantas assembleias aparecem em card aqui embaixo. Cada card busca as
+// questões numa chamada própria, então o limite evita dezenas de requisições
+// em contas com histórico grande — o resto continua em /admin/assembleias.
+const LIMITE_CARDS = 10;
+
+const STATUS_INFO: Record<string, { label: string; classe: string }> = {
+  rascunho: { label: "Rascunho", classe: "bg-gray-100 text-gray-600" },
+  aberta: { label: "Aberta", classe: "bg-green-100 text-green-700" },
+  encerrada: { label: "Encerrada", classe: "bg-red-100 text-red-700" },
+};
+
+type CardAssembleia = AssembleiaListItem & { questoes: Questao[] };
 
 type QuestaoLocal = { titulo: string; respostas: string[] };
 
@@ -26,6 +52,92 @@ export default function VotacaoSimplesPage() {
   const [questoes, setQuestoes] = useState<QuestaoLocal[]>([novaQuestao()]);
   const [criando, setCriando] = useState(false);
   const [erro, setErro] = useState("");
+  const [cards, setCards] = useState<CardAssembleia[]>([]);
+  const [carregandoCards, setCarregandoCards] = useState(true);
+  const [copiado, setCopiado] = useState("");
+  const [destaque, setDestaque] = useState("");
+
+  async function carregarCards() {
+    setCarregandoCards(true);
+    try {
+      const d = await api.getAssembleias();
+      const lista = (d.results || (d as any as AssembleiaListItem[])) || [];
+      const recentes = [...lista]
+        .sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1))
+        .slice(0, LIMITE_CARDS);
+      // As questões só vêm no detalhe; se uma falhar, o card aparece do mesmo
+      // jeito, só sem a lista de perguntas.
+      const questoes = await Promise.all(
+        recentes.map((a) =>
+          api
+            .getAssembleia(a.id)
+            .then((full) => full.questoes || [])
+            .catch(() => [] as Questao[])
+        )
+      );
+      setCards(recentes.map((a, i) => ({ ...a, questoes: questoes[i] })));
+    } catch {
+      setCards([]);
+    } finally {
+      setCarregandoCards(false);
+    }
+  }
+
+  useEffect(() => {
+    carregarCards();
+  }, []);
+
+  function origem() {
+    return typeof window === "undefined" ? "" : window.location.origin;
+  }
+
+  function linkAssembleia(a: AssembleiaListItem) {
+    return a.codigo_curto
+      ? `${origem()}/vote/${a.codigo_curto}`
+      : `${origem()}/votacao/${a.id}`;
+  }
+
+  // Link de um item só: abre a votação direto naquela pergunta.
+  function linkQuestao(a: AssembleiaListItem, q: Questao) {
+    return q.codigo_curto
+      ? `${origem()}/v/${q.codigo_curto}`
+      : `${origem()}/votacao/${a.id}?q=${q.id}`;
+  }
+
+  async function copiar(url: string, chave: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiado(chave);
+      setTimeout(() => setCopiado(""), 2000);
+    } catch {
+      /* navegador sem permissão de área de transferência */
+    }
+  }
+
+  async function compartilhar(url: string, titulo: string, chave: string) {
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title: titulo, url });
+        return;
+      } catch {
+        /* usuário cancelou ou não suportado: cai no copiar */
+      }
+    }
+    await copiar(url, chave);
+  }
+
+  async function excluirAssembleia(a: AssembleiaListItem) {
+    if (
+      !confirm(`Excluir "${a.titulo}" e todos os votos registrados nela?`)
+    )
+      return;
+    try {
+      await api.deleteAssembleia(a.id);
+      carregarCards();
+    } catch {
+      alert("Não foi possível excluir agora. Tente novamente.");
+    }
+  }
 
   function atualizarQuestao(i: number, titulo: string) {
     setQuestoes((qs) => qs.map((q, k) => (k === i ? { ...q, titulo } : q)));
@@ -126,7 +238,13 @@ export default function VotacaoSimplesPage() {
           opcoes: q.respostas.map((texto, j) => ({ texto, ordem: j + 1 })),
         });
       }
-      router.push(`/admin/assembleias/${assembleia.id}`);
+      // Fica na página: o card da assembleia recém-criada aparece logo abaixo,
+      // já com os botões de link, compartilhar e abrir cada questão.
+      setTitulo("");
+      setQuestoes([novaQuestao()]);
+      setDestaque(assembleia.id);
+      setCriando(false);
+      await carregarCards();
     } catch {
       if (assembleiaId) {
         alert(
@@ -292,6 +410,204 @@ export default function VotacaoSimplesPage() {
             </>
           )}
         </button>
+      </div>
+
+      {/* Assembleias já criadas, prontas para clicar: cada card traz o link da
+          votação inteira e o link de cada pergunta, no mesmo padrão da lista
+          de presença. */}
+      <div className="mt-10">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-lg font-bold">
+            <ListChecks className="h-5 w-5 text-primary-600" /> Assembleias
+            criadas
+          </h2>
+          <Link
+            href="/admin/assembleias"
+            className="text-sm text-primary-700 hover:text-primary-800"
+          >
+            Ver todas
+          </Link>
+        </div>
+
+        {carregandoCards && <p className="text-gray-500">Carregando...</p>}
+
+        {!carregandoCards && cards.length === 0 && (
+          <div className="rounded-xl border border-dashed border-gray-300 py-10 text-center text-gray-500">
+            Nenhuma assembleia criada ainda. Crie a primeira acima.
+          </div>
+        )}
+
+        <div className="space-y-4">
+          {cards.map((a) => {
+            const st = STATUS_INFO[a.status] || STATUS_INFO.rascunho;
+            const url = linkAssembleia(a);
+            return (
+              <div
+                key={a.id}
+                /* Moldura: borda grossa + sombra para cada assembleia virar
+                   um bloco visualmente separado do resto da página. */
+                className={`rounded-2xl border-2 bg-white p-4 shadow-md transition hover:shadow-lg ${
+                  destaque === a.id
+                    ? "border-primary-500 ring-4 ring-primary-200"
+                    : "border-gray-300"
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-lg font-semibold break-words">
+                        {a.titulo}
+                      </h3>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${st.classe}`}
+                      >
+                        {st.label}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      {a.condominio_nome} · {a.questoes.length || a.total_questoes}{" "}
+                      pergunta
+                      {(a.questoes.length || a.total_questoes) !== 1 ? "s" : ""} ·{" "}
+                      {a.total_votantes} votante
+                      {a.total_votantes !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {/* Atalho direto para a apuração desta assembleia:
+                        abre a aba Resultados já com ela selecionada. */}
+                    <Link
+                      href={`/admin/assembleias?tab=resultados&id=${a.id}`}
+                      className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-green-700/30 hover:bg-green-700"
+                    >
+                      <BarChart3 className="h-4 w-4 text-white" /> Resultado
+                    </Link>
+                    <Link
+                      href={`/admin/assembleias/${a.id}`}
+                      className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                    >
+                      <ClipboardList className="h-4 w-4" /> Gerenciar
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => copiar(url, a.id)}
+                    className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-orange-600/30 hover:bg-orange-600"
+                  >
+                    {copiado === a.id ? (
+                      <>
+                        <Check className="h-4 w-4" /> Copiado!
+                      </>
+                    ) : (
+                      <>
+                        <LinkIcon className="h-4 w-4" /> Copiar link
+                      </>
+                    )}
+                  </button>
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-amber-950 shadow-sm ring-1 ring-amber-500/40 hover:bg-amber-300"
+                  >
+                    <ExternalLink className="h-4 w-4" /> Abrir votação
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => compartilhar(url, a.titulo, a.id)}
+                    className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-green-700/30 hover:bg-green-700"
+                  >
+                    <Share2 className="h-4 w-4" /> Compartilhar
+                  </button>
+                  {a.status !== "aberta" && (
+                    <button
+                      type="button"
+                      onClick={() => excluirAssembleia(a)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" /> Excluir
+                    </button>
+                  )}
+                </div>
+
+                {a.questoes.length > 0 && (
+                  <div className="mt-4 space-y-2 border-t border-gray-100 pt-3">
+                    {a.questoes.map((q, i) => {
+                      const urlQ = linkQuestao(a, q);
+                      return (
+                        <div
+                          key={q.id}
+                          /* Moldura própria da questão, dentro da moldura
+                             da assembleia. */
+                          className="rounded-xl border border-gray-300 bg-gray-50 p-3 shadow-sm"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <p className="min-w-0 break-words font-medium">
+                              {i + 1}. {q.titulo}
+                              {q.encerrada && (
+                                <span className="ml-2 rounded bg-gray-200 px-1.5 py-0.5 text-xs font-normal text-gray-600">
+                                  encerrada
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          {q.opcoes?.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {q.opcoes.map((o) => (
+                                <span
+                                  key={o.id}
+                                  className="rounded border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600"
+                                >
+                                  {o.texto}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <a
+                              href={urlQ}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-2.5 py-1.5 text-xs font-bold text-amber-950 shadow-sm ring-1 ring-amber-500/40 hover:bg-amber-300"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" /> Ver
+                              questão
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => copiar(urlQ, q.id)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm ring-1 ring-orange-600/30 hover:bg-orange-600"
+                            >
+                              {copiado === q.id ? (
+                                <>
+                                  <Check className="h-3.5 w-3.5" /> Copiado!
+                                </>
+                              ) : (
+                                <>
+                                  <LinkIcon className="h-3.5 w-3.5" /> Copiar
+                                  link
+                                </>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => compartilhar(urlQ, q.titulo, q.id)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm ring-1 ring-green-700/30 hover:bg-green-700"
+                            >
+                              <Share2 className="h-3.5 w-3.5" /> Compartilhar
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
