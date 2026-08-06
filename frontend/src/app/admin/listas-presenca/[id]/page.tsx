@@ -449,8 +449,10 @@ export default function RegistrosPresencaPage() {
                       {dataHoraBrasilia(r.criado_em)} (horário de Brasília)
                     </p>
                     {/* Selos: cada um inteiro (whitespace-nowrap), mas o grupo
-                        quebra para a linha seguinte quando não há largura. */}
-                    <div className="flex min-w-0 flex-wrap items-center gap-1 sm:ml-auto sm:justify-end print:hidden">
+                        quebra para a linha seguinte quando não há largura.
+                        Sempre encostados à esquerda: quando caem para a linha
+                        de baixo, seguem a leitura do nome, não a margem direita. */}
+                    <div className="flex min-w-0 flex-wrap items-center justify-start gap-1 print:hidden">
                       {r.metodo_auth && (
                         <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded bg-green-50 px-2 py-0.5 text-sm font-medium text-green-700 ring-1 ring-green-200">
                           {METODO_LABEL[r.metodo_auth] || r.metodo_auth}

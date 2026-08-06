@@ -157,7 +157,7 @@ export default function ExemploListaPresencaPage() {
                   <p className="min-w-0 flex-1 truncate text-xs text-gray-400 print:overflow-visible print:whitespace-normal">
                     {dataHoraBrasilia(r.criado_em)} (horário de Brasília)
                   </p>
-                  <div className="flex min-w-0 flex-[1.2] flex-wrap items-center gap-1 sm:justify-end">
+                  <div className="flex min-w-0 flex-[1.2] flex-wrap items-center justify-start gap-1">
                     <span className="inline-flex items-center rounded bg-green-50 px-1.5 py-0.5 text-[11px] font-medium text-green-700 ring-1 ring-green-200">
                       {METODO_LABEL[r.metodo]}
                     </span>
