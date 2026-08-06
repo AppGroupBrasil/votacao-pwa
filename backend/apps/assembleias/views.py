@@ -171,6 +171,22 @@ class AssembleiaViewSet(viewsets.ModelViewSet):
         registrar_log(request, assembleia, LogAuditoria.Acao.ENCERRAR, "Votação encerrada.")
         return Response(AssembleiaSerializer(assembleia).data)
 
+    @action(detail=True, methods=["post"], url_path="reabrir")
+    def reabrir(self, request, pk=None):
+        """Desfaz o encerramento: volta a assembleia para aberta sem tocar nos
+        votos já registrados (encerrar apenas muda o status)."""
+        assembleia = self.get_object()
+        if assembleia.status != Assembleia.Status.ENCERRADA:
+            return Response(
+                {"error": "Só é possível reabrir assembleias encerradas"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        assembleia.status = Assembleia.Status.ABERTA
+        assembleia.votacao_liberada = True
+        assembleia.save(update_fields=["status", "votacao_liberada"])
+        registrar_log(request, assembleia, LogAuditoria.Acao.ABRIR, "Votação reaberta.")
+        return Response(AssembleiaSerializer(assembleia).data)
+
     @action(detail=True, methods=["post"], url_path="marcar-presenca")
     def marcar_presenca(self, request, pk=None):
         """Síndico marca presença manualmente.

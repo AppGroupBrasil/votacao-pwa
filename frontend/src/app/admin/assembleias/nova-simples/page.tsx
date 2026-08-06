@@ -17,6 +17,7 @@ import {
   ListChecks,
   BarChart3,
   Play,
+  Square,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Condominio, AssembleiaListItem, Questao } from "@/lib/types";
@@ -33,9 +34,9 @@ const TIPOS_SUGERIDOS = [
 const LIMITE_CARDS = 10;
 
 const STATUS_INFO: Record<string, { label: string; classe: string }> = {
-  rascunho: { label: "Rascunho", classe: "bg-gray-100 text-gray-600" },
+  rascunho: { label: "Fechada", classe: "bg-red-100 text-red-700" },
   aberta: { label: "Aberta", classe: "bg-green-100 text-green-700" },
-  encerrada: { label: "Encerrada", classe: "bg-red-100 text-red-700" },
+  encerrada: { label: "Fechada", classe: "bg-red-100 text-red-700" },
 };
 
 type CardAssembleia = AssembleiaListItem & { questoes: Questao[] };
@@ -140,16 +141,34 @@ export default function VotacaoSimplesPage() {
     }
   }
 
-  async function abrirVotacao(a: AssembleiaListItem) {
+  // Botão único: verde abre (rascunho ou encerrada), vermelho fecha (aberta).
+  async function alternarAbertura(a: AssembleiaListItem) {
+    if (a.status === "aberta") {
+      if (
+        !confirm(`Fechar a assembleia "${a.titulo}" agora?\n\nNenhum morador poderá votar enquanto estiver fechada.`)
+      )
+        return;
+      try {
+        await api.encerrarAssembleia(a.id);
+        carregarCards();
+      } catch {
+        alert("Não foi possível fechar a assembleia agora. Tente novamente.");
+      }
+      return;
+    }
     if (
-      !confirm(`Abrir a votação "${a.titulo}" agora?\n\nOs moradores só conseguem votar depois desta ação.`)
+      !confirm(`Abrir a assembleia "${a.titulo}" agora?\n\nOs moradores só conseguem votar depois desta ação.`)
     )
       return;
     try {
-      await api.abrirAssembleia(a.id);
+      if (a.status === "encerrada") {
+        await api.reabrirAssembleia(a.id);
+      } else {
+        await api.abrirAssembleia(a.id);
+      }
       carregarCards();
     } catch {
-      alert("Não foi possível abrir a votação agora. Tente novamente.");
+      alert("Não foi possível abrir a assembleia agora. Tente novamente.");
     }
   }
 
@@ -528,19 +547,29 @@ export default function VotacaoSimplesPage() {
                   >
                     <ExternalLink className="h-4 w-4" /> Ver página
                   </a>
-                  {a.status === "rascunho" && (
-                    <button
-                      type="button"
-                      onClick={() => abrirVotacao(a)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-blue-700/30 hover:bg-blue-700"
-                    >
-                      <Play className="h-4 w-4" /> Abrir votação
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => alternarAbertura(a)}
+                    className={
+                      a.status === "aberta"
+                        ? "inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-red-700/30 hover:bg-red-700"
+                        : "inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-green-700/30 hover:bg-green-700"
+                    }
+                  >
+                    {a.status === "aberta" ? (
+                      <>
+                        <Square className="h-4 w-4" /> Fechar assembleia
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4" /> Abrir assembleia
+                      </>
+                    )}
+                  </button>
                   <button
                     type="button"
                     onClick={() => compartilhar(url, a.titulo, a.id)}
-                    className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-green-700/30 hover:bg-green-700"
+                    className="inline-flex items-center gap-1 rounded-lg bg-gray-700 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-gray-800/30 hover:bg-gray-800"
                   >
                     <Share2 className="h-4 w-4" /> Compartilhar
                   </button>

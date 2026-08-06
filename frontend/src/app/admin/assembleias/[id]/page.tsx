@@ -32,9 +32,9 @@ import type { Assembleia } from "@/lib/types";
 import { clsx } from "clsx";
 
 const statusConfig = {
-  rascunho: { label: "Rascunho", class: "bg-gray-100 text-gray-700" },
+  rascunho: { label: "Fechada", class: "bg-red-100 text-red-700" },
   aberta: { label: "Aberta", class: "bg-green-100 text-green-700" },
-  encerrada: { label: "Encerrada", class: "bg-red-100 text-red-700" },
+  encerrada: { label: "Fechada", class: "bg-red-100 text-red-700" },
 };
 
 export default function AssembleiaDetailPage() {
@@ -161,7 +161,10 @@ export default function AssembleiaDetailPage() {
     if (!confirm("Tem certeza que deseja abrir esta assembleia para votação?")) return;
     setActionLoading(true);
     try {
-      const updated = await api.abrirAssembleia(id);
+      const updated =
+        assembleia?.status === "encerrada"
+          ? await api.reabrirAssembleia(id)
+          : await api.abrirAssembleia(id);
       setAssembleia(updated);
     } catch (err: any) {
       const msg = err?.response?.data?.error || "Erro ao abrir assembleia.";
@@ -417,10 +420,10 @@ export default function AssembleiaDetailPage() {
                 <button
                   onClick={handleAbrir}
                   disabled={actionLoading}
-                  className="btn-primary flex items-center gap-2 text-sm"
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm"
                 >
                   <Play className="w-4 h-4" />
-                  Abrir Votação
+                  Abrir assembleia
                 </button>
                 <button
                   onClick={handleDelete}
@@ -451,9 +454,19 @@ export default function AssembleiaDetailPage() {
                   className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 text-sm"
                 >
                   <Square className="w-4 h-4" />
-                  Encerrar
+                  Fechar assembleia
                 </button>
               </>
+            )}
+            {assembleia.status === "encerrada" && (
+              <button
+                onClick={handleAbrir}
+                disabled={actionLoading}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm"
+              >
+                <Play className="w-4 h-4" />
+                Abrir assembleia
+              </button>
             )}
             {assembleia.status === "encerrada" && (
               <button

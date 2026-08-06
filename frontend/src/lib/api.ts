@@ -324,6 +324,9 @@ export const api = {
   encerrarAssembleia: (id: string) =>
     request<Assembleia>(`/assembleias/${id}/encerrar/`, { method: "POST" }),
 
+  reabrirAssembleia: (id: string) =>
+    request<Assembleia>(`/assembleias/${id}/reabrir/`, { method: "POST" }),
+
   marcarPresenca: (
     assembleiaId: string,
     data: { eleitor_id: string } | { nome: string; apartamento: string; bloco?: string }

@@ -36,9 +36,9 @@ import { clsx } from "clsx";
 type Tab = "votacao" | "resultados" | "relatorio";
 
 const statusMap = {
-  rascunho: { label: "Rascunho", class: "bg-gray-100 text-gray-700" },
+  rascunho: { label: "Fechada", class: "bg-red-100 text-red-700" },
   aberta: { label: "Aberta", class: "bg-green-100 text-green-700" },
-  encerrada: { label: "Encerrada", class: "bg-red-100 text-red-700" },
+  encerrada: { label: "Fechada", class: "bg-red-100 text-red-700" },
 };
 
 // Os três relatórios oficiais. Só existem estes; todos saem em PDF.
@@ -194,28 +194,30 @@ export default function AssembleiasHubPage() {
     }
   }
 
-  async function handleEncerrar(e: React.MouseEvent, id: string, titulo: string) {
+  // Botão único: verde abre (rascunho ou encerrada), vermelho fecha (aberta).
+  async function handleToggleAbertura(e: React.MouseEvent, a: AssembleiaListItem) {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm(`ATENÇÃO: Encerrar a votação "${titulo}" IMEDIATAMENTE?\n\nNenhum morador poderá mais votar após esta ação.`)) return;
-    if (!confirm("Confirmar encerramento? Clique OK para encerrar agora.")) return;
-    try {
-      await api.encerrarAssembleia(id);
-      loadAssembleias();
-    } catch {
-      alert("Erro ao encerrar assembleia.");
+    if (a.status === "aberta") {
+      if (!confirm(`Fechar a assembleia "${a.titulo}" agora?\n\nNenhum morador poderá votar enquanto estiver fechada.`)) return;
+      try {
+        await api.encerrarAssembleia(a.id);
+        loadAssembleias();
+      } catch {
+        alert("Erro ao fechar a assembleia.");
+      }
+      return;
     }
-  }
-
-  async function handleAbrir(e: React.MouseEvent, id: string, titulo: string) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm(`Abrir a votação "${titulo}" agora?\n\nOs moradores só conseguem votar depois desta ação.`)) return;
+    if (!confirm(`Abrir a assembleia "${a.titulo}" agora?\n\nOs moradores só conseguem votar depois desta ação.`)) return;
     try {
-      await api.abrirAssembleia(id);
+      if (a.status === "encerrada") {
+        await api.reabrirAssembleia(a.id);
+      } else {
+        await api.abrirAssembleia(a.id);
+      }
       loadAssembleias();
     } catch {
-      alert("Erro ao abrir a votação.");
+      alert("Erro ao abrir a assembleia.");
     }
   }
 
@@ -457,28 +459,31 @@ export default function AssembleiasHubPage() {
                       >
                         <ExternalLink className="w-4 h-4" /> Ver página
                       </a>
-                      {a.status === "rascunho" && (
-                        <button
-                          onClick={(e) => handleAbrir(e, a.id, a.titulo)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-blue-700/30 hover:bg-blue-700"
-                        >
-                          <Play className="w-4 h-4" /> Abrir votação
-                        </button>
-                      )}
+                      <button
+                        onClick={(e) => handleToggleAbertura(e, a)}
+                        className={clsx(
+                          "inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-bold text-white shadow-sm ring-1",
+                          a.status === "aberta"
+                            ? "bg-red-600 ring-red-700/30 hover:bg-red-700"
+                            : "bg-green-600 ring-green-700/30 hover:bg-green-700"
+                        )}
+                      >
+                        {a.status === "aberta" ? (
+                          <>
+                            <Square className="w-4 h-4" /> Fechar assembleia
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4" /> Abrir assembleia
+                          </>
+                        )}
+                      </button>
                       <button
                         onClick={() => compartilhar(a)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-green-700/30 hover:bg-green-700"
+                        className="inline-flex items-center gap-1 rounded-lg bg-gray-700 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-gray-800/30 hover:bg-gray-800"
                       >
                         <Share2 className="w-4 h-4" /> Compartilhar
                       </button>
-                      {a.status === "aberta" && (
-                        <button
-                          onClick={(e) => handleEncerrar(e, a.id, a.titulo)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
-                        >
-                          <Square className="w-4 h-4" /> Encerrar
-                        </button>
-                      )}
                       {a.status !== "aberta" && (
                         <button
                           onClick={(e) => handleDelete(e, a.id, a.titulo)}
