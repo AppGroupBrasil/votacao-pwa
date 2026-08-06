@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, Loader2, Pencil, Printer, Trash2, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Loader2, Pencil, Printer, Trash2, Users, Video } from "lucide-react";
 import { api } from "@/lib/api";
 import LinkDestaque from "@/components/LinkDestaque";
 import type { ListaPresenca, PresencaManualRegistro } from "@/lib/types";
@@ -114,6 +114,7 @@ export default function RegistrosPresencaPage() {
   const [editando, setEditando] = useState(false);
   const [tituloEdit, setTituloEdit] = useState("");
   const [descricaoEdit, setDescricaoEdit] = useState("");
+  const [linkSalaEdit, setLinkSalaEdit] = useState("");
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
@@ -128,16 +129,27 @@ export default function RegistrosPresencaPage() {
 
   async function salvarCabecalho() {
     if (!lista) return;
+    // Quem cola o link costuma colar "meet.google.com/..." sem o https://, e
+    // o servidor recusa a URL. Completamos aqui para o síndico não travar.
+    let link = linkSalaEdit.trim();
+    if (link && !/^https?:\/\//i.test(link)) link = `https://${link}`;
     setSalvando(true);
     try {
       const atualizada = await api.updateListaPresenca(id, {
         titulo: tituloEdit.trim() || lista.titulo,
         descricao: descricaoEdit,
+        link_reuniao: link,
       });
       setLista(atualizada);
+      setLinkSalaEdit(atualizada.link_reuniao || "");
       setEditando(false);
-    } catch {
-      alert("Não foi possível salvar o cabeçalho.");
+    } catch (e: any) {
+      const erroLink = e?.response?.data?.link_reuniao;
+      alert(
+        Array.isArray(erroLink)
+          ? `Link da sala: ${erroLink[0]}`
+          : "Não foi possível salvar o cabeçalho."
+      );
     } finally {
       setSalvando(false);
     }
@@ -175,6 +187,7 @@ export default function RegistrosPresencaPage() {
             onClick={() => {
               setTituloEdit(lista?.titulo || "");
               setDescricaoEdit(lista?.descricao || "");
+              setLinkSalaEdit(lista?.link_reuniao || "");
               setEditando(true);
             }}
             className="btn-secondary inline-flex items-center gap-2"
@@ -212,6 +225,68 @@ export default function RegistrosPresencaPage() {
                   }/presenca-manual/${id}`
             }
           />
+        </div>
+      )}
+
+      {/* Sala da videochamada: o morador só recebe este link depois de
+          concluir a presença — aqui o síndico coloca e confere o endereço. */}
+      {lista && !editando && (
+        <div className="card mb-4 border border-primary-200 bg-primary-50 print:hidden">
+          <p className="text-sm font-semibold text-primary-900 flex items-center gap-2">
+            <Video className="w-4 h-4 shrink-0" /> Sala da Assembleia (videochamada)
+          </p>
+          {lista.link_reuniao ? (
+            <>
+              <p className="mb-3 text-xs text-primary-800/80">
+                O botão &quot;Entrar na sala da Assembleia&quot; aparece para o
+                morador assim que ele termina de marcar a presença. Antes disso
+                ele não vê este endereço.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={lista.link_reuniao}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary inline-flex items-center gap-2 text-sm"
+                >
+                  <Video className="w-4 h-4" /> Entrar na sala
+                </a>
+                <button
+                  onClick={() => {
+                    setTituloEdit(lista.titulo || "");
+                    setDescricaoEdit(lista.descricao || "");
+                    setLinkSalaEdit(lista.link_reuniao || "");
+                    setEditando(true);
+                  }}
+                  className="btn-secondary inline-flex items-center gap-2 text-sm"
+                >
+                  <Pencil className="w-4 h-4" /> Alterar link
+                </button>
+                <span className="text-xs text-primary-800/70 break-all">
+                  {lista.link_reuniao}
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mb-3 text-xs text-primary-800/80">
+                Nenhum link cadastrado ainda. Coloque o link do Meet, Zoom ou
+                YouTube ao vivo para que o morador receba o botão da sala logo
+                depois de marcar a presença.
+              </p>
+              <button
+                onClick={() => {
+                  setTituloEdit(lista.titulo || "");
+                  setDescricaoEdit(lista.descricao || "");
+                  setLinkSalaEdit("");
+                  setEditando(true);
+                }}
+                className="btn-primary inline-flex items-center gap-2 text-sm"
+              >
+                <Video className="w-4 h-4" /> Colocar o link da sala
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -269,6 +344,22 @@ export default function RegistrosPresencaPage() {
               className="input-field"
               placeholder={"Data: 17/07/2026\nInício: 19:30 · Término: 21:50 (horário de Brasília)\nTipo: assembleia online"}
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Link da sala da assembleia (videochamada)
+            </label>
+            <input
+              value={linkSalaEdit}
+              onChange={(e) => setLinkSalaEdit(e.target.value)}
+              className="input-field"
+              placeholder="https://meet.google.com/abc-defg-hij"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Cole aqui o link do Google Meet, Zoom ou YouTube ao vivo. O botão
+              para entrar na sala só aparece para o morador depois que ele
+              termina de marcar a presença.
+            </p>
           </div>
           <div className="flex gap-2 justify-end">
             <button

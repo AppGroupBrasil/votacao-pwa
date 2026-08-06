@@ -888,7 +888,12 @@ export const api = {
 
   updateListaPresenca: (
     id: string,
-    data: Partial<{ titulo: string; descricao: string; ativa: boolean }>
+    data: Partial<{
+      titulo: string;
+      descricao: string;
+      link_reuniao: string;
+      ativa: boolean;
+    }>
   ) =>
     request<import("./types").ListaPresenca>(
       `/enquetes/listas-presenca/${id}/`,
@@ -910,9 +915,14 @@ export const api = {
     ),
 
   getListaPresencaPublica: (id: string) =>
-    request<{ id: string; titulo: string; ativa: boolean; tem_cpf?: boolean }>(
-      `/enquetes/listas-presenca/${id}/publica/`
-    ),
+    request<{
+      id: string;
+      titulo: string;
+      ativa: boolean;
+      tem_cpf?: boolean;
+      // Avisa que existe sala de vídeo; o endereço só vem depois da presença.
+      tem_sala?: boolean;
+    }>(`/enquetes/listas-presenca/${id}/publica/`),
 
   consultarCpfPresenca: (id: string, cpf_hash: string) =>
     request<{
@@ -944,7 +954,12 @@ export const api = {
       declaracao_veracidade?: boolean;
     }
   ) =>
-    request<{ ok: boolean; inadimplente?: boolean; aviso?: string }>(
+    request<{
+      ok: boolean;
+      inadimplente?: boolean;
+      aviso?: string;
+      link_reuniao?: string;
+    }>(
       `/enquetes/listas-presenca/${id}/registrar/`,
       { method: "POST", body: JSON.stringify(data) }
     ),
@@ -981,6 +996,7 @@ export const api = {
       apartamento?: string;
       inadimplente?: boolean;
       aviso?: string;
+      link_reuniao?: string;
     }>(
       `/enquetes/listas-presenca/${id}/facial/registrar/`,
       { method: "POST", body: JSON.stringify(data) }

@@ -10,6 +10,8 @@ import {
   Eraser,
   CreditCard,
   ScanFace,
+  Video,
+  Lock,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -63,7 +65,11 @@ export default function PresencaManualPublicaPage() {
     titulo: string;
     ativa: boolean;
     tem_cpf?: boolean;
+    tem_sala?: boolean;
   } | null>(null);
+  // Sala da assembleia: o servidor só entrega o endereço depois que a presença
+  // é registrada — antes disso não existe botão nenhum para abrir.
+  const [linkSala, setLinkSala] = useState("");
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -356,6 +362,7 @@ export default function PresencaManualPublicaPage() {
       }
       if ((r as any)?.inadimplente)
         setAvisoInadimplente((r as any).aviso || "");
+      setLinkSala(String((r as any)?.link_reuniao || ""));
       setEnviado(true);
     } catch (e: any) {
       setErro(
@@ -416,6 +423,24 @@ export default function PresencaManualPublicaPage() {
             {avisoInadimplente}
           </div>
         )}
+        {/* Presença confirmada: só agora aparece a porta da sala. */}
+        {linkSala && (
+          <div className="mt-6 w-full max-w-sm">
+            <a
+              href={linkSala}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-4 text-lg font-semibold text-white shadow-sm transition-colors hover:bg-primary-700"
+            >
+              <Video className="h-5 w-5 shrink-0" />
+              Entrar na sala da Assembleia
+            </a>
+            <p className="mt-2 text-xs text-gray-500">
+              Abre a sala de vídeo em outra aba. Se pedir permissão, autorize a
+              câmera e o microfone.
+            </p>
+          </div>
+        )}
       </div>
     );
   }
@@ -427,6 +452,18 @@ export default function PresencaManualPublicaPage() {
       </div>
     );
   }
+
+  // Sala travada: o morador vê que ela existe, mas o botão só nasce depois da
+  // presença registrada (o endereço nem chega ao navegador antes disso).
+  const avisoSala = lista?.tem_sala ? (
+    <div className="mb-4 flex items-start gap-2 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2.5 text-xs text-primary-900">
+      <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>
+        O botão para entrar na sala da Assembleia aparece aqui assim que você
+        terminar de registrar a sua presença.
+      </span>
+    </div>
+  ) : null;
 
   // Portão de CPF: primeiro passo. O morador digita o CPF e o sistema já traz
   // nome/bloco/apartamento; depois é só a selfie e a assinatura.
@@ -440,6 +477,7 @@ export default function PresencaManualPublicaPage() {
           {lista?.titulo && (
             <p className="text-sm text-gray-500 mb-4">{lista.titulo}</p>
           )}
+          {avisoSala}
 
           <div className="card mb-4">
             <label className="flex items-center gap-2 text-sm font-semibold mb-2">
@@ -540,6 +578,7 @@ export default function PresencaManualPublicaPage() {
       <div className="max-w-md mx-auto">
         <h1 className="text-xl font-bold mb-1">Lista de presença</h1>
         <p className="text-sm text-gray-500 mb-4">{lista?.titulo}</p>
+        {avisoSala}
 
         {/* Reconhecimento facial */}
         <div className="card mb-4">

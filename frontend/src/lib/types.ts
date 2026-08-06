@@ -334,6 +334,8 @@ export interface ListaPresenca {
   condominio_nome?: string;
   titulo: string;
   descricao: string;
+  // Sala de vídeo entregue ao morador só depois que ele registra a presença.
+  link_reuniao?: string;
   ativa: boolean;
   criado_em: string;
   total_registros: number;

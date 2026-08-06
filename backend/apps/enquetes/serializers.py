@@ -116,11 +116,17 @@ class ListaPresencaSerializer(serializers.ModelSerializer):
             "nome_condominio",
             "titulo",
             "descricao",
+            "link_reuniao",
             "ativa",
             "criado_em",
             "total_registros",
         ]
-        read_only_fields = ["id", "codigo_curto", "condominio", "criado_em"]
+        read_only_fields = [
+            "id",
+            "codigo_curto",
+            "condominio",
+            "criado_em",
+        ]
 
     def validate_nome_condominio(self, value):
         value = value.strip()

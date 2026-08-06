@@ -91,6 +91,14 @@ class ListaPresenca(models.Model):
         default="",
         help_text="Cabeçalho da lista impressa: data, horários, tipo da assembleia.",
     )
+    link_reuniao = models.URLField(
+        blank=True,
+        default="",
+        help_text=(
+            "Link da sala da assembleia (Meet, Zoom, YouTube ao vivo, etc.). "
+            "Só é entregue ao morador depois que ele registra a presença."
+        ),
+    )
     ativa = models.BooleanField(default=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 

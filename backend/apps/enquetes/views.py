@@ -298,6 +298,9 @@ def lista_presenca_publica(request, lista_id):
             "titulo": lista.titulo,
             "ativa": lista.ativa,
             "tem_cpf": tem_cpf,
+            # Só o aviso de que existe sala; o endereço da sala nunca sai daqui
+            # — ele é entregue apenas na resposta do registro de presença.
+            "tem_sala": bool(lista.link_reuniao),
         }
     )
 
@@ -455,6 +458,8 @@ def registrar_presenca_manual(request, lista_id):
             "ok": True,
             "inadimplente": inadimplente,
             "aviso": MENSAGEM_INADIMPLENTE if inadimplente else "",
+            # Presença registrada: agora sim o morador recebe a sala da assembleia.
+            "link_reuniao": lista.link_reuniao,
         },
         status=status.HTTP_201_CREATED,
     )
@@ -624,6 +629,8 @@ def registrar_presenca_facial(request, lista_id):
                     "nome": ja.nome,
                     "bloco": ja.bloco,
                     "apartamento": ja.apartamento,
+                    # Já consta na lista: continua tendo direito à sala.
+                    "link_reuniao": lista.link_reuniao,
                 }
             )
 
@@ -655,7 +662,14 @@ def registrar_presenca_facial(request, lista_id):
             )
     except IntegrityError:
         return Response(
-            {"ok": True, "ja_presente": True, "novo": False, "nome": nome_reg}
+            {
+                "ok": True,
+                "ja_presente": True,
+                "novo": False,
+                "nome": nome_reg,
+                # Já estava presente: continua tendo direito à sala.
+                "link_reuniao": lista.link_reuniao,
+            }
         )
 
     # Rosto já conhecido: registra que foi visto de novo nesta assembleia.
@@ -672,6 +686,7 @@ def registrar_presenca_facial(request, lista_id):
             "nome": nome_reg,
             "inadimplente": inadimplente,
             "aviso": MENSAGEM_INADIMPLENTE if inadimplente else "",
+            "link_reuniao": lista.link_reuniao,
         },
         status=status.HTTP_201_CREATED,
     )
