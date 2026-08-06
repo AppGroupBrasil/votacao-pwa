@@ -119,6 +119,16 @@ class Voto(models.Model):
         default=Status.VALIDADO,
         db_index=True,
     )
+    status_pre_inadimplencia = models.CharField(
+        max_length=10,
+        blank=True,
+        default="",
+        help_text=(
+            "Status que o voto tinha antes de ser invalidado por inadimplência. "
+            "Guardado ao marcar a unidade e usado para devolver o voto à "
+            "contagem quando a inadimplência é removida."
+        ),
+    )
     por_procuracao = models.BooleanField(default=False)
     procurador = models.ForeignKey(
         Eleitor,

@@ -7,7 +7,7 @@ from django.db import transaction
 from django_ratelimit.decorators import ratelimit
 
 audit = logging.getLogger("audit")
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.http import Http404
 from django.utils import timezone
 from django.core import signing
@@ -1166,16 +1166,38 @@ def validar_voto_manual(request, assembleia_id):
     # (aquela mora no Eleitor). Por isso é reversível em "regularizar".
     if acao in {"inadimplente", "regularizar"}:
         marcar = acao == "inadimplente"
+        estava_inadimplente = votante.inadimplente
         votante.inadimplente = marcar
         votante.save(update_fields=["inadimplente"])
 
-        atualizados = 0
         if marcar:
+            # Guarda o status original (validado ou pendente) antes de invalidar,
+            # para que "regularizar" devolva o voto exatamente como estava.
             atualizados = (
                 Voto.objects.filter(assembleia=assembleia, votante_manual=votante)
                 .exclude(status=Voto.Status.REJEITADO)
-                .update(status=Voto.Status.REJEITADO)
+                .update(
+                    status_pre_inadimplencia=F("status"),
+                    status=Voto.Status.REJEITADO,
+                )
             )
+        else:
+            rejeitados = Voto.objects.filter(
+                assembleia=assembleia,
+                votante_manual=votante,
+                status=Voto.Status.REJEITADO,
+            )
+            atualizados = rejeitados.exclude(status_pre_inadimplencia="").update(
+                status=F("status_pre_inadimplencia"),
+                status_pre_inadimplencia="",
+            )
+            if estava_inadimplente:
+                # Votos invalidados antes de existir o registro do status
+                # anterior: sem essa volta eles ficariam fora da apuração
+                # para sempre, mesmo com a inadimplência removida.
+                atualizados += rejeitados.filter(status_pre_inadimplencia="").update(
+                    status=Voto.Status.VALIDADO
+                )
 
         # A mesma pessoa costuma estar na lista de presença: realça lá também.
         na = normalizar_unidade(votante.apartamento)
@@ -1200,7 +1222,7 @@ def validar_voto_manual(request, assembleia_id):
             + (
                 f"marcado como INADIMPLENTE, {atualizados} voto(s) invalidado(s)."
                 if marcar
-                else "inadimplência removida."
+                else f"inadimplência removida, {atualizados} voto(s) devolvido(s) à contagem."
             ),
         )
         return Response(
