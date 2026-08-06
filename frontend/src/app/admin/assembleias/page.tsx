@@ -22,6 +22,7 @@ import {
   Share2,
   Ban,
   RotateCcw,
+  Play,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
@@ -203,6 +204,18 @@ export default function AssembleiasHubPage() {
       loadAssembleias();
     } catch {
       alert("Erro ao encerrar assembleia.");
+    }
+  }
+
+  async function handleAbrir(e: React.MouseEvent, id: string, titulo: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`Abrir a votação "${titulo}" agora?\n\nOs moradores só conseguem votar depois desta ação.`)) return;
+    try {
+      await api.abrirAssembleia(id);
+      loadAssembleias();
+    } catch {
+      alert("Erro ao abrir a votação.");
     }
   }
 
@@ -442,8 +455,16 @@ export default function AssembleiasHubPage() {
                         rel="noreferrer"
                         className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-amber-950 shadow-sm ring-1 ring-amber-500/40 hover:bg-amber-300"
                       >
-                        <ExternalLink className="w-4 h-4" /> Abrir votação
+                        <ExternalLink className="w-4 h-4" /> Ver página
                       </a>
+                      {a.status === "rascunho" && (
+                        <button
+                          onClick={(e) => handleAbrir(e, a.id, a.titulo)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-blue-700/30 hover:bg-blue-700"
+                        >
+                          <Play className="w-4 h-4" /> Abrir votação
+                        </button>
+                      )}
                       <button
                         onClick={() => compartilhar(a)}
                         className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-green-700/30 hover:bg-green-700"

@@ -16,6 +16,7 @@ import {
   ClipboardList,
   ListChecks,
   BarChart3,
+  Play,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Condominio, AssembleiaListItem, Questao } from "@/lib/types";
@@ -136,6 +137,19 @@ export default function VotacaoSimplesPage() {
       carregarCards();
     } catch {
       alert("Não foi possível excluir agora. Tente novamente.");
+    }
+  }
+
+  async function abrirVotacao(a: AssembleiaListItem) {
+    if (
+      !confirm(`Abrir a votação "${a.titulo}" agora?\n\nOs moradores só conseguem votar depois desta ação.`)
+    )
+      return;
+    try {
+      await api.abrirAssembleia(a.id);
+      carregarCards();
+    } catch {
+      alert("Não foi possível abrir a votação agora. Tente novamente.");
     }
   }
 
@@ -512,8 +526,17 @@ export default function VotacaoSimplesPage() {
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-amber-950 shadow-sm ring-1 ring-amber-500/40 hover:bg-amber-300"
                   >
-                    <ExternalLink className="h-4 w-4" /> Abrir votação
+                    <ExternalLink className="h-4 w-4" /> Ver página
                   </a>
+                  {a.status === "rascunho" && (
+                    <button
+                      type="button"
+                      onClick={() => abrirVotacao(a)}
+                      className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-blue-700/30 hover:bg-blue-700"
+                    >
+                      <Play className="h-4 w-4" /> Abrir votação
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => compartilhar(url, a.titulo, a.id)}
