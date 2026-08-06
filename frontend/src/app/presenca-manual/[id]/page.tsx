@@ -17,6 +17,8 @@ import { api } from "@/lib/api";
 
 // O face-api só existe no navegador: carregado sob demanda para não quebrar a
 // renderização da página no servidor.
+import { useAutoCaptura, textoDica } from "@/lib/useAutoCaptura";
+
 const faceapiLib = () => import("@/lib/faceapi");
 
 // Cantos de enquadramento (estilo câmera de reconhecimento) desenhados por cima
@@ -180,6 +182,15 @@ export default function PresencaManualPublicaPage() {
       videoRef.current.play().catch(() => {});
     }
   }, [camAtiva]);
+
+  // A foto sai sozinha quando o rosto fica bem enquadrado; o botão "Capturar
+  // agora" continua na tela para quem quiser tirar na hora. Depois de um erro
+  // a automação para, para não ficar repetindo a mesma tentativa.
+  const dicaAuto = useAutoCaptura({
+    video: videoRef,
+    ativo: camAtiva && !lendoRosto && !selfie && !camErro,
+    onCapturar: () => capturarSelfie(),
+  });
 
   async function abrirCamera() {
     setCamErro("");
@@ -657,7 +668,13 @@ export default function PresencaManualPublicaPage() {
                   className="block h-full w-full object-cover"
                 />
                 {/* guia oval do rosto */}
-                <div className="pointer-events-none absolute inset-x-8 inset-y-6 rounded-[50%] border-2 border-dashed border-white/60" />
+                <div
+                  className={`pointer-events-none absolute inset-x-8 inset-y-6 rounded-[50%] border-2 border-dashed transition-colors ${
+                    dicaAuto === "pronto" || dicaAuto === "segure"
+                      ? "border-green-400"
+                      : "border-white/60"
+                  }`}
+                />
                 <CantosFoco cor="border-blue-300/90" />
                 {lendoRosto && (
                   <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
@@ -679,14 +696,15 @@ export default function PresencaManualPublicaPage() {
                   </>
                 ) : (
                   <>
-                    <Camera className="w-4 h-4" /> Capturar
+                    <Camera className="w-4 h-4" /> Capturar agora
                   </>
                 )}
               </button>
               <p className="mt-2 text-xs text-gray-500">
                 {lendoRosto
                   ? "Fique parado, olhando para a câmera."
-                  : "Encaixe o rosto no oval e toque em Capturar."}
+                  : textoDica(dicaAuto) ||
+                    "Encaixe o rosto no oval. A foto sai sozinha."}
               </p>
               {camErro && <p className="mt-2 text-sm text-red-600">{camErro}</p>}
             </div>

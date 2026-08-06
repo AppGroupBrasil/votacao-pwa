@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { api, getDeviceId } from "@/lib/api";
 import { loadModels, detectFaceAveraged } from "@/lib/faceapi";
+import { useAutoCaptura, textoDica } from "@/lib/useAutoCaptura";
 
 const PERFIS = [
   { v: "proprietario", l: "Proprietário" },
@@ -69,6 +70,15 @@ export default function AcessoFacialVotacao({
       videoRef.current.play().catch(() => {});
     }
   }, [camAtiva]);
+
+  // Leitura automática: basta olhar para a câmera. Assim que o rosto fica bem
+  // enquadrado o sistema lê sozinho. Se der erro, a automação para e o morador
+  // decide se tenta de novo pelo botão ou entra por outro caminho.
+  const dicaAuto = useAutoCaptura({
+    video: videoRef,
+    ativo: camAtiva && !processando && !novoRosto && !reconhecido && !erro,
+    onCapturar: () => lerRosto(),
+  });
 
   function pararCamera() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -375,7 +385,7 @@ export default function AcessoFacialVotacao({
       </p>
 
       {camAtiva ? (
-        <div className="mb-3 overflow-hidden rounded-xl bg-black aspect-[3/4] max-h-72 mx-auto">
+        <div className="relative mb-3 overflow-hidden rounded-xl bg-black aspect-[3/4] max-h-72 mx-auto">
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video
             ref={videoRef}
@@ -385,12 +395,29 @@ export default function AcessoFacialVotacao({
             className="w-full h-full object-cover"
             style={{ transform: "scaleX(-1)" }}
           />
+          {/* Guia do enquadramento: fica verde quando a leitura vai disparar. */}
+          <div
+            className={`pointer-events-none absolute inset-x-8 inset-y-6 rounded-[50%] border-2 border-dashed transition-colors ${
+              dicaAuto === "pronto" || dicaAuto === "segure"
+                ? "border-green-400"
+                : "border-white/60"
+            }`}
+          />
         </div>
       ) : (
         <div className="mb-3 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 aspect-[3/4] max-h-72 mx-auto text-gray-400">
           <Camera className="w-10 h-10 mb-2" />
           <span className="text-xs">Câmera desligada</span>
         </div>
+      )}
+
+      {camAtiva && !erro && (
+        <p className="text-sm text-gray-500 mb-3 text-center">
+          {processando
+            ? "Fique parado, olhando para a câmera."
+            : textoDica(dicaAuto) ||
+              "Olhe para a câmera. A leitura acontece sozinha."}
+        </p>
       )}
 
       {erro && <p className="text-sm text-red-600 mb-3">{erro}</p>}
@@ -407,7 +434,7 @@ export default function AcessoFacialVotacao({
             </>
           ) : (
             <>
-              <ScanFace className="w-4 h-4" /> Ler meu rosto e entrar
+              <ScanFace className="w-4 h-4" /> Ler meu rosto agora
             </>
           )}
         </button>

@@ -72,6 +72,36 @@ export async function detectFace(
   return detection.descriptor;
 }
 
+export type CaixaRosto = {
+  x: number;
+  y: number;
+  largura: number;
+  altura: number;
+  score: number;
+};
+
+/**
+ * Só localiza o rosto na imagem (sem landmarks nem descritor) — é a parte
+ * barata da detecção, feita para rodar várias vezes por segundo enquanto a
+ * pessoa se posiciona. Coordenadas em pixels do vídeo original.
+ */
+export async function detectarCaixaRosto(
+  input: FaceInput
+): Promise<CaixaRosto | null> {
+  const d = await faceapi.detectSingleFace(
+    input,
+    new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 })
+  );
+  if (!d) return null;
+  return {
+    x: d.box.x,
+    y: d.box.y,
+    largura: d.box.width,
+    altura: d.box.height,
+    score: d.score,
+  };
+}
+
 /** Detecta tentando todos os ajustes; devolve também qual funcionou. */
 export async function detectFaceTentandoTudo(
   input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement
