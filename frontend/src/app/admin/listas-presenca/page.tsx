@@ -17,6 +17,7 @@ import {
   Users,
   ClipboardList,
   FileSpreadsheet,
+  Video,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import ComoFunciona from "@/components/ComoFunciona";
@@ -58,6 +59,10 @@ export default function ListasPresencaPage() {
   const [importandoPlanilha, setImportandoPlanilha] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [copiado, setCopiado] = useState<string>("");
+  // Sala de vídeo: link colado aqui, entregue ao morador só depois da presença.
+  const [linkSala, setLinkSala] = useState("");
+  const [modalSala, setModalSala] = useState<ListaPresenca | null>(null);
+  const [salvandoSala, setSalvandoSala] = useState(false);
   const router = useRouter();
 
   function carregar() {
@@ -93,10 +98,47 @@ export default function ListasPresencaPage() {
     }
   }
 
+  // Quem cola o link costuma colar "meet.google.com/..." sem o https://, e o
+  // servidor recusa a URL. Completamos aqui para o síndico não travar.
+  function comEsquema(valor: string) {
+    const v = valor.trim();
+    if (!v) return "";
+    return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+  }
+
   function abrirModal() {
     setTitulo("");
+    setLinkSala("");
     preselecionarCondominio();
     setModalOpen(true);
+  }
+
+  function abrirModalSala(l: ListaPresenca) {
+    setLinkSala(l.link_reuniao || "");
+    setModalSala(l);
+  }
+
+  async function salvarSala() {
+    if (!modalSala) return;
+    setSalvandoSala(true);
+    try {
+      const atualizada = await api.updateListaPresenca(modalSala.id, {
+        link_reuniao: comEsquema(linkSala),
+      });
+      setListas((ls) =>
+        ls.map((l) => (l.id === atualizada.id ? { ...l, ...atualizada } : l))
+      );
+      setModalSala(null);
+    } catch (e: any) {
+      const erro = e?.response?.data?.link_reuniao;
+      alert(
+        Array.isArray(erro)
+          ? `Link da sala: ${erro[0]}`
+          : "Não foi possível salvar o link agora. Tente novamente."
+      );
+    } finally {
+      setSalvandoSala(false);
+    }
   }
 
   function abrirModalPlanilha() {
@@ -180,13 +222,21 @@ export default function ListasPresencaPage() {
     }
     setSalvando(true);
     try {
-      await api.createListaPresenca(titulo.trim(), nomeCondominio.trim());
+      await api.createListaPresenca(
+        titulo.trim(),
+        nomeCondominio.trim(),
+        comEsquema(linkSala)
+      );
       setTitulo("");
+      setLinkSala("");
       setModalOpen(false);
       carregar();
-    } catch {
+    } catch (e: any) {
+      const erro = e?.response?.data?.link_reuniao;
       alert(
-        "Não foi possível criar a lista agora. Tente novamente em instantes."
+        Array.isArray(erro)
+          ? `Link da sala: ${erro[0]}`
+          : "Não foi possível criar a lista agora. Tente novamente em instantes."
       );
     } finally {
       setSalvando(false);
@@ -377,6 +427,13 @@ export default function ListasPresencaPage() {
                 <Share2 className="w-4 h-4" /> Compartilhar
               </button>
               <button
+                onClick={() => abrirModalSala(l)}
+                className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white shadow-sm ring-1 ring-indigo-700/30 hover:bg-indigo-700"
+              >
+                <Video className="w-4 h-4" />
+                {l.link_reuniao ? "Alterar sala" : "Link da sala"}
+              </button>
+              <button
                 onClick={() => alternarAtiva(l)}
                 className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
               >
@@ -500,6 +557,22 @@ export default function ListasPresencaPage() {
               className="input-field w-full mb-4"
             />
 
+            <label className="block text-sm font-medium mb-1">
+              Link da sala da assembleia{" "}
+              <span className="font-normal text-gray-400">(opcional)</span>
+            </label>
+            <input
+              value={linkSala}
+              onChange={(e) => setLinkSala(e.target.value)}
+              placeholder="https://meet.google.com/abc-defg-hij"
+              className="input-field w-full mb-1"
+            />
+            <p className="text-xs text-gray-500 mb-4">
+              O botão de entrar na sala aparece para o morador só depois que ele
+              registra a presença. Dá para colar o link depois, no botão
+              &quot;Link da sala&quot;.
+            </p>
+
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setModalOpen(false)}
@@ -513,6 +586,56 @@ export default function ListasPresencaPage() {
                 className="btn-primary disabled:opacity-50"
               >
                 {salvando ? "Criando..." : "Criar e gerar link"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: link da sala de vídeo desta lista */}
+      {modalSala && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <Video className="w-5 h-5 text-indigo-600" /> Sala da assembleia
+              </h2>
+              <button onClick={() => setModalSala(null)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">{modalSala.titulo}</p>
+
+            <label className="block text-sm font-medium mb-1">
+              Endereço da videochamada
+            </label>
+            <input
+              value={linkSala}
+              onChange={(e) => setLinkSala(e.target.value)}
+              placeholder="https://meet.google.com/abc-defg-hij"
+              className="input-field w-full mb-1"
+              autoFocus
+            />
+            <p className="text-xs text-gray-500 mb-4">
+              Assim que o morador terminar a lista de presença, aparece para ele
+              o botão &quot;Entrar na sala da Assembleia&quot;. Antes disso o
+              endereço não fica visível. Para tirar a sala, apague o campo e
+              salve.
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setModalSala(null)}
+                className="btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarSala}
+                disabled={salvandoSala}
+                className="btn-primary disabled:opacity-50"
+              >
+                {salvandoSala ? "Salvando..." : "Salvar link"}
               </button>
             </div>
           </div>

@@ -841,10 +841,18 @@ export const api = {
       import("./types").PaginatedResponse<import("./types").ListaPresenca>
     >("/enquetes/listas-presenca/"),
 
-  createListaPresenca: (titulo: string, nomeCondominio: string) =>
+  createListaPresenca: (
+    titulo: string,
+    nomeCondominio: string,
+    linkReuniao?: string
+  ) =>
     request<import("./types").ListaPresenca>("/enquetes/listas-presenca/", {
       method: "POST",
-      body: JSON.stringify({ titulo, nome_condominio: nomeCondominio }),
+      body: JSON.stringify({
+        titulo,
+        nome_condominio: nomeCondominio,
+        link_reuniao: linkReuniao || "",
+      }),
     }),
 
   // Um clique: importa a planilha e cria condomínio + moradores + lista de
