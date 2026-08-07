@@ -35,6 +35,10 @@ function CantosFoco({ cor }: { cor: string }) {
   );
 }
 
+// Presença só pela foto: sem leitura de rosto, sem comparação com cadastros
+// anteriores. Voltar para true religa o reconhecimento facial.
+const USAR_FACIAL = false;
+
 async function sha256Hex(value: string): Promise<string> {
   const data = new TextEncoder().encode(value.replace(/\D/g, ""));
   const buf = await crypto.subtle.digest("SHA-256", data);
@@ -127,7 +131,8 @@ export default function PresencaManualPublicaPage() {
         // Os modelos do reconhecimento facial pesam ~6 MB. Baixamos assim que a
         // lista abre (enquanto o morador digita nome e apartamento) para a
         // câmera não ficar esperando o download na hora da foto.
-        if (d?.ativa) faceapiLib().then((m) => m.loadModels()).catch(() => {});
+        if (USAR_FACIAL && d?.ativa)
+          faceapiLib().then((m) => m.loadModels()).catch(() => {});
       })
       .catch(() => setErro("Lista de presença não encontrada."))
       .finally(() => setLoading(false));
@@ -198,9 +203,10 @@ export default function PresencaManualPublicaPage() {
     setDescritor(null);
     // Os modelos do reconhecimento facial baixam enquanto a pessoa se ajeita
     // na frente da câmera, para o "Capturar" não ficar esperando.
-    faceapiLib()
-      .then((m) => m.loadModels())
-      .catch(() => {});
+    if (USAR_FACIAL)
+      faceapiLib()
+        .then((m) => m.loadModels())
+        .catch(() => {});
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user" },
@@ -236,6 +242,13 @@ export default function PresencaManualPublicaPage() {
     // Biometria facial: a leitura do rosto acontece aqui no aparelho, com a
     // câmera ainda ligada (várias amostras). Sai só o vetor, nunca a imagem.
     // A foto só é mostrada no fim para o <video> não sumir durante a leitura.
+    if (!USAR_FACIAL) {
+      setDescritor(null);
+      setAvisoFacial("");
+      setSelfie(foto);
+      pararCamera();
+      return;
+    }
     setLendoRosto(true);
     setAvisoFacial("");
     try {
@@ -599,11 +612,12 @@ export default function PresencaManualPublicaPage() {
             </div>
             <div className="min-w-0">
               <h2 className="text-base font-semibold text-gray-900">
-                Reconhecimento facial
+                {USAR_FACIAL ? "Reconhecimento facial" : "Foto de presença"}
               </h2>
               <p className="text-xs text-gray-500">
-                A leitura acontece no seu próprio aparelho e confirma que cada
-                pessoa registra presença uma única vez.
+                {USAR_FACIAL
+                  ? "A leitura acontece no seu próprio aparelho e confirma que cada pessoa registra presença uma única vez."
+                  : "Tire uma foto sua agora. Ela fica na lista de presença como comprovante de que você participou."}
               </p>
             </div>
           </div>
@@ -612,7 +626,9 @@ export default function PresencaManualPublicaPage() {
             <div className="text-center">
               <div
                 className={`relative mx-auto aspect-[4/5] w-full max-w-[16rem] overflow-hidden rounded-3xl border-2 shadow-sm ${
-                  descritor ? "border-green-500" : "border-amber-400"
+                  descritor || !USAR_FACIAL
+                    ? "border-green-500"
+                    : "border-amber-400"
                 }`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -622,7 +638,11 @@ export default function PresencaManualPublicaPage() {
                   className="block h-full w-full object-cover"
                 />
                 <CantosFoco
-                  cor={descritor ? "border-green-300/90" : "border-amber-300/90"}
+                  cor={
+                    descritor || !USAR_FACIAL
+                      ? "border-green-300/90"
+                      : "border-amber-300/90"
+                  }
                 />
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-3 pb-2.5 pt-8">
                   {descritor ? (
@@ -630,8 +650,13 @@ export default function PresencaManualPublicaPage() {
                       <Check className="h-3.5 w-3.5" /> Rosto reconhecido
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/95 px-3 py-1 text-xs font-semibold text-white shadow">
-                      <Camera className="h-3.5 w-3.5" /> Presença pela foto
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-white shadow ${
+                        USAR_FACIAL ? "bg-amber-500/95" : "bg-green-500/95"
+                      }`}
+                    >
+                      <Camera className="h-3.5 w-3.5" />{" "}
+                      {USAR_FACIAL ? "Presença pela foto" : "Foto registrada"}
                     </span>
                   )}
                 </div>
