@@ -135,7 +135,7 @@ export default function ExemploListaPresencaPage() {
             {REGISTROS.map((r, i) => (
               <div
                 key={i}
-                className="flex items-center gap-4 py-3 break-inside-avoid"
+                className="flex flex-wrap items-center gap-3 py-3 break-inside-avoid sm:flex-nowrap sm:gap-4"
               >
                 <span className="w-8 shrink-0 text-right text-sm font-semibold text-blue-700">
                   {i + 1}.
@@ -143,7 +143,7 @@ export default function ExemploListaPresencaPage() {
                 <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-300 bg-white p-1">
                   <RostoSketch variante={i} />
                 </div>
-                <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                <div className="flex min-w-0 flex-1 basis-48 flex-col gap-1 sm:basis-0 sm:flex-row sm:items-center sm:gap-3">
                   <h3
                     className="min-w-0 flex-[1.1] truncate font-semibold print:overflow-visible print:whitespace-normal"
                     title={r.nome}

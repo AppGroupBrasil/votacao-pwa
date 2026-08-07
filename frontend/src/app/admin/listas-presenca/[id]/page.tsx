@@ -408,7 +408,7 @@ export default function RegistrosPresencaPage() {
                 return (
                 <div
                   key={r.id}
-                  className={`flex items-center gap-4 py-3 break-inside-avoid ${
+                  className={`flex flex-wrap items-center gap-3 py-3 break-inside-avoid sm:flex-nowrap sm:gap-4 ${
                     dup ? "bg-amber-50 rounded-lg px-2 ring-1 ring-amber-200" : ""
                   }`}
                 >
@@ -430,7 +430,7 @@ export default function RegistrosPresencaPage() {
                       sozinho para a linha de baixo — nunca é cortado nem
                       reticenciado. Por isso: flex-wrap no lugar de flex-nowrap
                       e break-words no lugar de truncate. */}
-                  <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1">
+                  <div className="flex min-w-0 flex-1 basis-48 flex-col gap-1 sm:basis-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1">
                     <div className="flex min-w-0 items-center gap-2">
                       <h3 className="text-lg font-semibold break-words">
                         {r.nome}
