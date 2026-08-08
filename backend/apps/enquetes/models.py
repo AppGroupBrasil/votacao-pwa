@@ -6,6 +6,17 @@ from apps.assembleias.models import novo_codigo_curto
 from apps.condominios.models import Condominio
 
 
+def chave_unidade(bloco, apartamento):
+    """Identificador estável da unidade ("a|305"), tolerante ao jeito de digitar.
+    Devolve "" quando não há apartamento — sem ele não dá para travar nada."""
+    from apps.eleitores.models import normalizar_unidade
+
+    ap = normalizar_unidade(apartamento)
+    if not ap:
+        return ""
+    return f"{normalizar_unidade(bloco)}|{ap}"
+
+
 class Enquete(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     codigo_curto = models.CharField(
@@ -35,6 +46,27 @@ class Enquete(models.Model):
             "Se True, o morador só vota após se identificar: selfie, nome, "
             "bloco/apartamento, assinatura e aceite da LGPD (mesma comprovação "
             "da votação da assembleia)."
+        ),
+    )
+    um_voto_por_unidade = models.BooleanField(
+        default=True,
+        help_text=(
+            "Se True, cada bloco/apartamento vota uma única vez, mesmo que a "
+            "pessoa troque de aparelho. Só vale quando há identificação."
+        ),
+    )
+    lista_presenca = models.ForeignKey(
+        "ListaPresenca",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="enquetes",
+        help_text="Lista de presença ligada a esta votação.",
+    )
+    exige_presenca = models.BooleanField(
+        default=False,
+        help_text=(
+            "Se True, só vota a unidade que já registrou presença na lista acima."
         ),
     )
     criado_em = models.DateTimeField(auto_now_add=True)
@@ -193,6 +225,16 @@ class EnqueteVoto(models.Model):
         EnqueteOpcao, on_delete=models.CASCADE, related_name="votos"
     )
     device_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    unidade_chave = models.CharField(
+        max_length=48,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text=(
+            "bloco|apartamento normalizados. Preenchido apenas quando a enquete "
+            "trava um voto por unidade; é o que garante a trava no banco."
+        ),
+    )
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     votante_nome = models.CharField(max_length=200, blank=True, default="")
     votante_bloco = models.CharField(max_length=20, blank=True, default="")
@@ -214,5 +256,10 @@ class EnqueteVoto(models.Model):
                 fields=["enquete", "device_id"],
                 condition=~models.Q(device_id=""),
                 name="unique_enquete_device",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["enquete", "unidade_chave"],
+                condition=~models.Q(unidade_chave=""),
+                name="unique_enquete_unidade",
+            ),
         ]

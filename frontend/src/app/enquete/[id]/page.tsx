@@ -100,6 +100,12 @@ export default function EnquetePublicaPage() {
       setJaVotou(true);
       setOpcaoVotada(localStorage.getItem(`enquete_${id}_opcao`) || "");
     }
+    if (
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("resultado") === "1"
+    ) {
+      api.getEnqueteResultado(id).then(setResultado).catch(() => {});
+    }
     api
       .getEnquetePublica(id)
       .then(setEnquete)

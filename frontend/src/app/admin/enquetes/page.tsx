@@ -171,7 +171,7 @@ export default function VotacaoRapidaPage() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <a
-                  href={`/enquete/${e.id}`}
+                  href={`/enquete/${e.id}?resultado=1`}
                   target="_blank"
                   rel="noreferrer"
                   className="btn-secondary inline-flex items-center gap-1 text-sm"

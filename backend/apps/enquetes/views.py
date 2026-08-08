@@ -44,6 +44,7 @@ from .models import (
     EnqueteVoto,
     ListaPresenca,
     PresencaManual,
+    chave_unidade,
 )
 from .serializers import (
     EnqueteSerializer,
@@ -913,6 +914,52 @@ def votar_enquete(request, enquete_id):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+    unidade = chave_unidade(votante_bloco, votante_apartamento)
+
+    if enquete.exige_presenca:
+        lista = enquete.lista_presenca
+        if lista is None:
+            return Response(
+                {
+                    "error": (
+                        "Esta votação exige presença, mas nenhuma lista de presença "
+                        "foi ligada a ela. Avise a mesa."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if not unidade:
+            return Response(
+                {"error": "Informe o bloco e o apartamento para votar."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        presentes = {
+            chave_unidade(b, a)
+            for b, a in PresencaManual.objects.filter(lista=lista).values_list(
+                "bloco", "apartamento"
+            )
+        }
+        if unidade not in presentes:
+            return Response(
+                {
+                    "error": (
+                        "Esta unidade não está na lista de presença. Registre a "
+                        "presença antes de votar ou procure a mesa."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    if (
+        enquete.um_voto_por_unidade
+        and unidade
+        and EnqueteVoto.objects.filter(enquete=enquete, unidade_chave=unidade).exists()
+    ):
+        return Response(
+            {"error": "Esta unidade já votou nesta votação."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
     if exige:
         selfie = str(request.data.get("selfie", ""))
         assinatura = str(request.data.get("assinatura", ""))
@@ -954,6 +1001,7 @@ def votar_enquete(request, enquete_id):
             enquete=enquete,
             opcao=opcao,
             device_id=device_id,
+            unidade_chave=unidade if enquete.um_voto_por_unidade else "",
             ip_address=get_client_ip(request),
             votante_nome=votante_nome,
             votante_bloco=votante_bloco,
@@ -969,9 +1017,9 @@ def votar_enquete(request, enquete_id):
             geo_lng=geo_lng,
         )
     except IntegrityError:
-        # Corrida: o mesmo dispositivo enviou dois votos quase simultâneos.
+        # Corrida: dois votos quase simultâneos do mesmo aparelho ou da mesma unidade.
         return Response(
-            {"error": "Você já votou nesta enquete."},
+            {"error": "Já existe um voto registrado para você ou para esta unidade."},
             status=status.HTTP_409_CONFLICT,
         )
     return Response(_resultado_payload(enquete), status=status.HTTP_201_CREATED)
