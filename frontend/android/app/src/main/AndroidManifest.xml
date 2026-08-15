@@ -42,6 +42,10 @@
     <!-- Câmera: biometria facial e selfie da lista de presença (getUserMedia na WebView) -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Localização: a lista de presença grava onde o celular estava, para a
+         mesa auditar depois. Sem declarar aqui, a WebView nega sozinha. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
