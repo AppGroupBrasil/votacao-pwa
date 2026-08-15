@@ -124,6 +124,59 @@ def tem_biometria(identidade):
     return bool(templates_de(identidade))
 
 
+def salvar_identidade_nova(ident, leituras=()):
+    """Grava um cadastro de rosto novo sem correr o risco de criar dois.
+
+    Dois envios ao mesmo tempo — duplo clique, duas abas, celular repetindo o
+    pedido em rede ruim — chegavam juntos, os dois liam "não existe" e os dois
+    gravavam. O condomínio ficava com dois cadastros do mesmo CPF, cada um
+    marcando a sua presença, e o quórum subia com gente que não existe.
+
+    O banco agora recusa o segundo. Aqui a gente aproveita o cadastro que já
+    está lá — com as leituras desta tentativa — em vez de mostrar erro para um
+    morador que não fez nada de errado.
+
+    Devolve (identidade, criada)."""
+    from django.db import IntegrityError, transaction
+
+    for v in leituras:
+        ident.guardar_leitura(v)
+
+    if not ident.cpf_hash:
+        # Condomínio sem planilha: a trava não vale e não há como saber que dois
+        # cadastros são a mesma pessoa.
+        ident.save()
+        return ident, True
+
+    try:
+        with transaction.atomic():
+            ident.save(force_insert=True)
+        return ident, True
+    except IntegrityError:
+        existente = (
+            type(ident)
+            ._default_manager.filter(
+                condominio_id=ident.condominio_id, cpf_hash=ident.cpf_hash
+            )
+            .order_by("criado_em")
+            .first()
+        )
+        if existente is None:
+            # Bateu em outra trava qualquer: não é o caso que sabemos resolver.
+            raise
+
+    for v in templates_de(ident):
+        existente.guardar_leitura(v)
+    existente.nome = ident.nome or existente.nome
+    existente.bloco = ident.bloco or existente.bloco
+    existente.apartamento = ident.apartamento or existente.apartamento
+    existente.perfil = ident.perfil or existente.perfil
+    if ident.selfie and not existente.selfie:
+        existente.selfie = ident.selfie
+    existente.save()
+    return existente, False
+
+
 def distancia_ate(descriptor, identidade):
     """Distância do rosto lido até o cadastro — usando a leitura mais parecida
     das que estão guardadas para aquela pessoa."""

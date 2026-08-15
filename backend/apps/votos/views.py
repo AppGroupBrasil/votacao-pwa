@@ -29,6 +29,7 @@ from apps.eleitores.models import (
 from apps.eleitores.facial import (
     LIMIAR_BUSCA,
     melhor_correspondencia,
+    salvar_identidade_nova,
     tem_biometria,
     validar_descriptor,
     validar_lista_descriptors,
@@ -1190,10 +1191,9 @@ def acesso_facial(request, assembleia_id):
                 consentimento_lgpd=True,
                 consentimento_em=timezone.now(),
             )
-            for v in leituras:
-                ident.guardar_leitura(v)
-            ident.save()
-            novo = True
+            # Se outro envio do mesmo morador chegou primeiro (duplo clique, duas
+            # abas), aproveita o cadastro dele em vez de criar um segundo.
+            ident, novo = salvar_identidade_nova(ident, leituras)
     else:
         # ---- Condomínio sem planilha de CPF: só aqui ainda procuramos o rosto
         # entre todos, com limiar rígido e recusa em caso de empate.

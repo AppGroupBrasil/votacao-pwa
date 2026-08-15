@@ -19,6 +19,7 @@ from rest_framework.response import Response
 from apps.eleitores.facial import (
     LIMIAR_BUSCA,
     melhor_correspondencia,
+    salvar_identidade_nova,
     tem_biometria,
     validar_descriptor,
     validar_lista_descriptors,
@@ -759,10 +760,9 @@ def registrar_presenca_facial(request, lista_id):
                 consentimento_lgpd=True,
                 consentimento_em=agora,
             )
-            for v in leituras:
-                ident.guardar_leitura(v)
-            ident.save()
-            novo = True
+            # Se outro envio do mesmo morador chegou primeiro (duplo clique, duas
+            # abas), aproveita o cadastro dele em vez de criar um segundo.
+            ident, novo = salvar_identidade_nova(ident, leituras)
 
         nome_reg, bloco_reg, apto_reg, perfil_reg = (
             nome_dig,

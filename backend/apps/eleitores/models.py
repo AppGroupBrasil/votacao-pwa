@@ -125,6 +125,19 @@ class IdentidadeFacial(models.Model):
         ordering = ["nome"]
         verbose_name = "Identidade facial"
         verbose_name_plural = "Identidades faciais"
+        constraints = [
+            # Um CPF, um cadastro de rosto por condomínio. Sem isto, dois envios
+            # ao mesmo tempo (duplo clique, duas abas, celular repetindo o pedido
+            # em rede ruim) criavam dois cadastros do mesmo morador — e cada um
+            # deles marcava presença, inflando o quórum.
+            # A trava vale só para quem tem CPF: condomínio sem planilha continua
+            # cadastrando pelo rosto, e ali o cpf_hash fica vazio para todos.
+            models.UniqueConstraint(
+                fields=["condominio", "cpf_hash"],
+                condition=~models.Q(cpf_hash=""),
+                name="uniq_identidade_cpf_por_condominio",
+            )
+        ]
 
     def guardar_leitura(self, vetor, maximo=5):
         """Acrescenta mais uma leitura do rosto ao cadastro (sem salvar).

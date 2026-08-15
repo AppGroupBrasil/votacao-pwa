@@ -58,6 +58,8 @@ const MOTIVO_LABEL: Record<string, string> = {
   unidade_alterada: "Unidade alterada pelo morador",
   rosto_nao_confere: "Rosto não confirmou",
   rosto_ambiguo: "Rosto parecido com outro",
+  sem_cpf: "Entrou sem informar o CPF",
+  duplicidade: "Cadastro repetido do mesmo CPF",
 };
 
 export default function RegistrosPresencaPage() {
