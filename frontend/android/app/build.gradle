@@ -7,19 +7,27 @@ android {
         applicationId "com.appvotacao.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
-        versionName "1.0.4"
+        versionCode 6
+        versionName "1.0.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Senhas ficam em android/keystore.properties (fora do git). Sem o arquivo,
+    // cai nas variáveis de ambiente, como antes.
+    def ksProps = new Properties()
+    def ksFile = rootProject.file("keystore.properties")
+    if (ksFile.exists()) {
+        // UTF-8 explícito: o caminho da chave passa por "Área de Trabalho".
+        ksFile.withReader("UTF-8") { ksProps.load(it) }
+    }
     signingConfigs {
         release {
-            storeFile file(System.getenv("APPVOTACAO_KEYSTORE_PATH") ?: "../../appvotacao-release.jks")
-            storePassword System.getenv("APPVOTACAO_KEYSTORE_PASSWORD") ?: ""
-            keyAlias System.getenv("APPVOTACAO_KEY_ALIAS") ?: "appvotacao"
-            keyPassword System.getenv("APPVOTACAO_KEY_PASSWORD") ?: ""
+            storeFile file(ksProps.getProperty("storeFile") ?: System.getenv("APPVOTACAO_KEYSTORE_PATH") ?: "../../appvotacao-release.jks")
+            storePassword ksProps.getProperty("storePassword") ?: System.getenv("APPVOTACAO_KEYSTORE_PASSWORD") ?: ""
+            keyAlias ksProps.getProperty("keyAlias") ?: System.getenv("APPVOTACAO_KEY_ALIAS") ?: "appvotacao"
+            keyPassword ksProps.getProperty("keyPassword") ?: System.getenv("APPVOTACAO_KEY_PASSWORD") ?: ""
         }
     }
     buildTypes {
