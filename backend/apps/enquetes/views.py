@@ -476,9 +476,12 @@ def registrar_presenca_manual(request, lista_id):
             {"error": "É necessário confirmar a identidade (selfie, biometria facial, digital ou código por e-mail)."},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    if metodo_auth == "selfie" and not selfie:
+    # Este caminho é o de quem não informou o CPF: nada foi conferido contra a
+    # planilha, então a foto é obrigatória em qualquer forma de identificação —
+    # é ela que a mesa compara com o documento no fechamento da lista.
+    if not selfie.startswith("data:image/"):
         return Response(
-            {"error": "A selfie é obrigatória."},
+            {"error": "A selfie é obrigatória: tire a foto para registrar a presença."},
             status=status.HTTP_400_BAD_REQUEST,
         )
     if metodo_auth == "facial" and not assinatura_facial:
@@ -777,6 +780,18 @@ def registrar_presenca_facial(request, lista_id):
         # Se o condomínio TEM planilha com CPF, quem chegou aqui usou o botão
         # "não tenho o CPF em mãos" e pulou a conferência que evita a troca de
         # nomes. A presença entra do mesmo jeito, com selo laranja para a mesa.
+        # Sem CPF a foto é obrigatória: ela é a única prova de quem entrou para
+        # a mesa comparar com o documento no fechamento da lista.
+        if not selfie.startswith("data:image/"):
+            return Response(
+                {
+                    "error": (
+                        "Para registrar a presença sem informar o CPF é preciso "
+                        "tirar a foto. A mesa confere o rosto com o documento."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if (
             lista.condominio_id
             and Eleitor.objects.filter(condominio_id=lista.condominio_id)

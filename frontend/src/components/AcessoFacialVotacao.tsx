@@ -298,6 +298,10 @@ export default function AcessoFacialVotacao({
         descriptor: arr,
         descriptors: todas,
         device_id: getDeviceId(),
+        // A foto vai sempre, com CPF ou sem. Quem entra sem o CPF não passou
+        // por nenhuma conferência: a foto de agora é a única prova de quem
+        // estava na porta para a mesa comparar com o documento.
+        selfie: selfieData,
         ...(cpfHash
           ? {
               cpf_hash: cpfHash,
@@ -305,7 +309,6 @@ export default function AcessoFacialVotacao({
               bloco: bloco.trim(),
               apartamento: apartamento.trim(),
               perfil,
-              selfie: selfieData,
               consentimento_lgpd: true,
             }
           : {}),

@@ -1216,6 +1216,20 @@ def acesso_facial(request, assembleia_id):
             # Chegou perto de alguém mas sem certeza: não chuta um nome.
             conferir, motivo = True, "rosto_ambiguo"
 
+    # Sem CPF a foto é obrigatória: ninguém entra sem deixar o rosto registrado
+    # para a mesa conferir com o documento. A primeira leitura, que só pergunta
+    # se o rosto já é conhecido, continua passando sem foto.
+    if not cpf_hash and (ident is not None or nome) and not selfie.startswith("data:image/"):
+        return Response(
+            {
+                "error": (
+                    "Para entrar sem informar o CPF é preciso tirar a foto. "
+                    "A mesa confere o rosto com o documento."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     if ident is None:
         # Rosto desconhecido: sem nome, avisa o front que precisa do 1º cadastro.
         if not nome:
@@ -1273,7 +1287,9 @@ def acesso_facial(request, assembleia_id):
 
     # 1 votante por rosto por assembleia (reaproveita quem já entrou antes).
     user_agent = get_client_user_agent(request)
-    selfie_ident = (
+    # Vale a foto de hoje: é ela que mostra quem está na porta agora. A do
+    # cadastro só entra quando esta chegada não trouxe foto nenhuma.
+    selfie_ident = selfie if selfie.startswith("data:image/") else (
         IdentidadeFacial.objects.values_list("selfie", flat=True).get(id=ident.id) or ""
     )
     votante, criado = VotanteManual.objects.get_or_create(
