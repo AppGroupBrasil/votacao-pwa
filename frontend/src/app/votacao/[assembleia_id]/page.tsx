@@ -68,6 +68,8 @@ export default function VotacaoPage() {
   const [inadModal, setInadModal] = useState<
     { msg: string; whatsapp: string } | null
   >(null);
+  // Selo laranja: entrou na assembleia, mas o voto da unidade espera a mesa.
+  const [mesaModal, setMesaModal] = useState("");
 
   // Voto por procuração / mais de uma unidade
   const [ehProcuracao, setEhProcuracao] = useState(false);
@@ -972,6 +974,14 @@ export default function VotacaoPage() {
             msg: data.error || "Entre em contato com sua administradora.",
             whatsapp: (data.whatsapp || "").replace(/\D/g, ""),
           });
+        } else if (data?.code === "conferir_na_mesa") {
+          // Selo laranja: um alert() do navegador fazia isto parecer erro do
+          // sistema. É uma instrução — procurar a mesa com o documento.
+          setMesaModal(
+            data.error ||
+              "Seu voto está aguardando a conferência da mesa. Procure a mesa com um documento."
+          );
+          setSelectedOpcao(null);
         } else {
           alert(data?.error || "Erro ao registrar voto.");
         }
@@ -1021,6 +1031,34 @@ export default function VotacaoPage() {
                   Contato da administradora não configurado.
                 </p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {mesaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 relative">
+            <button
+              onClick={() => setMesaModal("")}
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+              aria-label="Fechar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="text-center">
+              <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                <Shield className="w-6 h-6 text-amber-600" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-900 mb-2">
+                Procure a mesa para liberar seu voto
+              </h2>
+              <p className="text-sm text-gray-600 mb-5">{mesaModal}</p>
+              <button
+                onClick={() => setMesaModal("")}
+                className="w-full rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-medium px-4 py-3"
+              >
+                Entendi
+              </button>
             </div>
           </div>
         </div>

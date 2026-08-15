@@ -115,6 +115,15 @@ def templates_de(identidade):
     return vetores
 
 
+def tem_biometria(identidade):
+    """Diz se há algum vetor guardado para comparar.
+
+    Quem entrou pela selfie (a câmera não leu o rosto naquele dia) fica com o
+    cadastro sem nenhum vetor. Comparar com isso devolve distância infinita, o
+    que reprovaria a pessoa certa em toda assembleia seguinte."""
+    return bool(templates_de(identidade))
+
+
 def distancia_ate(descriptor, identidade):
     """Distância do rosto lido até o cadastro — usando a leitura mais parecida
     das que estão guardadas para aquela pessoa."""

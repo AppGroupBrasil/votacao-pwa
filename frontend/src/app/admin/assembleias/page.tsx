@@ -287,7 +287,17 @@ export default function AssembleiasHubPage() {
       )
     )
       return;
-    await api.validarVotoManual(selected, votante.id, acao);
+    try {
+      await api.validarVotoManual(selected, votante.id, acao);
+    } catch (e: any) {
+      // Na mesa, uma falha silenciosa é pior que um aviso: o operador clicaria
+      // "Conferido", veria o selo continuar aceso e não saberia por quê.
+      alert(
+        e?.response?.data?.error ||
+          "Não foi possível concluir. Verifique a conexão e tente de novo."
+      );
+      return;
+    }
     carregarPendentes(selected);
     api.getResultados(selected).then(setResultados);
   }

@@ -19,6 +19,7 @@ from rest_framework.response import Response
 from apps.eleitores.facial import (
     LIMIAR_BUSCA,
     melhor_correspondencia,
+    tem_biometria,
     validar_descriptor,
     validar_lista_descriptors,
     verificar,
@@ -325,6 +326,10 @@ AVISOS_CONFERENCIA = {
         "Presença registrada pela sua foto. O sistema não teve certeza de quem era "
         "e preferiu não registrar um nome errado — a mesa confere no fechamento."
     ),
+    "sem_cpf": (
+        "Presença registrada. Como você entrou sem informar o CPF, a mesa confere "
+        "seus dados no fechamento da lista. Você não precisa fazer mais nada agora."
+    ),
 }
 
 
@@ -507,6 +512,16 @@ def registrar_presenca_manual(request, lista_id):
         )
 
     user_agent = get_client_user_agent(request)
+    # Caminho simples: sem CPF e sem leitura de rosto. Se o condomínio tem a
+    # planilha com CPF, este registro pulou toda a conferência — entra, mas com
+    # selo laranja para a mesa olhar no fechamento da lista.
+    sem_conferencia = bool(
+        lista.condominio_id
+        and Eleitor.objects.filter(condominio_id=lista.condominio_id)
+        .exclude(cpf_hash__isnull=True)
+        .exclude(cpf_hash="")
+        .exists()
+    )
     PresencaManual.objects.create(
         lista=lista,
         nome=nome,
@@ -517,6 +532,8 @@ def registrar_presenca_manual(request, lista_id):
         selfie=selfie,
         assinatura=assinatura,
         metodo_auth=metodo_auth,
+        conferir_na_mesa=sem_conferencia,
+        motivo_conferencia="sem_cpf" if sem_conferencia else "",
         assinatura_facial=assinatura_facial,
         marca_aparelho=marca_aparelho or infer_device_info(user_agent),
         user_agent=user_agent,
@@ -534,6 +551,10 @@ def registrar_presenca_manual(request, lista_id):
             "ok": True,
             "inadimplente": inadimplente,
             "aviso": MENSAGEM_INADIMPLENTE if inadimplente else "",
+            "conferir_na_mesa": sem_conferencia,
+            "aviso_conferencia": (
+                AVISOS_CONFERENCIA["sem_cpf"] if sem_conferencia else ""
+            ),
             # Presença registrada: agora sim o morador recebe a sala da assembleia.
             "link_reuniao": lista.link_reuniao,
         },
@@ -690,13 +711,21 @@ def registrar_presenca_facial(request, lista_id):
                     f"{u0['bloco']} {u0['apartamento']}".strip()[:60]
                 )
 
+        if descriptor is None and not conferir:
+            # A câmera não leu o rosto e a pessoa entrou pela selfie: a foto
+            # vale como comprovante e a mesa confere. Vale também no primeiro
+            # cadastro — antes, quem ainda não tinha rosto guardado entrava sem
+            # nenhuma conferência.
+            conferir, motivo = True, "rosto_nao_confere"
+
         if ident is not None:
-            if descriptor is None:
-                # Tem rosto guardado mas a câmera não leu agora: a foto vale
-                # como comprovante e a mesa confere.
-                if not conferir:
-                    conferir, motivo = True, "rosto_nao_confere"
-            else:
+            if descriptor is not None and not tem_biometria(ident):
+                # Cadastro antigo feito só com selfie: não existe vetor guardado
+                # para comparar. A leitura boa de agora vira o cadastro, em vez
+                # de marcar "rosto não confere" em toda assembleia, para sempre.
+                for v in leituras or [descriptor]:
+                    ident.guardar_leitura(v)
+            elif descriptor is not None:
                 confere, d = verificar(descriptor, ident)
                 dist_medida = None if d == float("inf") else round(d, 4)
                 if confere:
@@ -712,6 +741,12 @@ def registrar_presenca_facial(request, lista_id):
             ident.save()
         else:
             # Primeira assembleia deste CPF: a foto de agora vira o cadastro.
+            # Guardar rosto é dado sensível — sem o aceite explícito, não grava.
+            if not bool(request.data.get("consentimento_lgpd")):
+                return Response(
+                    {"error": "É necessário concordar com o uso dos dados (LGPD)."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             ident = IdentidadeFacial(
                 condominio_id=lista.condominio_id,
                 cpf_hash=cpf_hash,
@@ -739,6 +774,17 @@ def registrar_presenca_facial(request, lista_id):
         # ---- Sem CPF na base do condomínio: só aqui ainda procuramos o rosto
         # entre todos. Agora com limiar rígido e recusa em caso de empate — se
         # duas pessoas ficam parecidas, o sistema não escolhe, marca para a mesa.
+        # Se o condomínio TEM planilha com CPF, quem chegou aqui usou o botão
+        # "não tenho o CPF em mãos" e pulou a conferência que evita a troca de
+        # nomes. A presença entra do mesmo jeito, com selo laranja para a mesa.
+        if (
+            lista.condominio_id
+            and Eleitor.objects.filter(condominio_id=lista.condominio_id)
+            .exclude(cpf_hash__isnull=True)
+            .exclude(cpf_hash="")
+            .exists()
+        ):
+            conferir, motivo = True, "sem_cpf"
         if descriptor is not None and lista.condominio_id:
             identidades = IdentidadeFacial.objects.filter(
                 condominio_id=lista.condominio_id
@@ -805,6 +851,24 @@ def registrar_presenca_facial(request, lista_id):
     if ident is not None:
         ja = PresencaManual.objects.filter(lista=lista, identidade=ident).first()
         if ja is not None:
+            if (
+                conferir
+                and not ja.conferir_na_mesa
+                and ja.conferido_em is None
+            ):
+                # Entrou limpo antes, mas a tentativa de agora não confere: acende
+                # o selo para a mesa olhar, em vez de deixar a segunda entrada
+                # passar em silêncio por já haver alguém na lista com este CPF.
+                ja.conferir_na_mesa = True
+                ja.motivo_conferencia = motivo
+                ja.unidade_original = unidade_original or ja.unidade_original
+                ja.save(
+                    update_fields=[
+                        "conferir_na_mesa",
+                        "motivo_conferencia",
+                        "unidade_original",
+                    ]
+                )
             # Devolve o nome de quem já consta na lista: se o rosto foi confundido
             # com outra pessoa, o morador vê o nome errado e procura a mesa.
             return Response(

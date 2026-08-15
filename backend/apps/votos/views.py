@@ -29,6 +29,7 @@ from apps.eleitores.models import (
 from apps.eleitores.facial import (
     LIMIAR_BUSCA,
     melhor_correspondencia,
+    tem_biometria,
     validar_descriptor,
     validar_lista_descriptors,
     verificar,
@@ -974,6 +975,11 @@ AVISOS_CONFERENCIA = {
         "Você está na assembleia. O sistema não teve certeza de quem era e preferiu "
         "não registrar um nome errado — procure a mesa para liberar o seu voto."
     ),
+    "sem_cpf": (
+        "Você está na assembleia. Como você entrou sem informar o CPF, a mesa "
+        "confere seus dados antes de liberar o voto da unidade. Procure a mesa com "
+        "um documento."
+    ),
     "padrao": (
         "Você está na assembleia. A mesa precisa conferir seus dados antes de "
         "liberar o voto da sua unidade. Procure a mesa com um documento."
@@ -1135,11 +1141,21 @@ def acesso_facial(request, assembleia_id):
                 u0 = unidades_planilha[0]
                 unidade_original = f"{u0['bloco']} {u0['apartamento']}".strip()[:60]
 
+        if descriptor is None and not conferir:
+            # Entrou pela selfie porque a câmera não leu o rosto. Não há vetor
+            # para conferir, então a foto vale como comprovante e a mesa olha o
+            # documento. Vale também no primeiro cadastro: antes, quem ainda não
+            # tinha rosto guardado entrava sem nenhuma conferência.
+            conferir, motivo = True, "rosto_nao_confere"
+
         if ident is not None:
-            if descriptor is None:
-                if not conferir:
-                    conferir, motivo = True, "rosto_nao_confere"
-            else:
+            if descriptor is not None and not tem_biometria(ident):
+                # Cadastro antigo feito só com selfie: não existe vetor guardado
+                # para comparar. A leitura boa de agora vira o cadastro, em vez
+                # de marcar "rosto não confere" em toda assembleia, para sempre.
+                for v in leituras or [descriptor]:
+                    ident.guardar_leitura(v)
+            elif descriptor is not None:
                 confere, d = verificar(descriptor, ident)
                 dist_medida = None if d == float("inf") else round(d, 4)
                 if confere:
@@ -1181,6 +1197,16 @@ def acesso_facial(request, assembleia_id):
     else:
         # ---- Condomínio sem planilha de CPF: só aqui ainda procuramos o rosto
         # entre todos, com limiar rígido e recusa em caso de empate.
+        # Se o condomínio TEM a planilha com CPF, quem chegou aqui usou o botão
+        # "não tenho o CPF em mãos" e pulou a conferência que evita a troca de
+        # nomes. Entra do mesmo jeito, mas com selo laranja para a mesa.
+        if (
+            Eleitor.objects.filter(condominio_id=assembleia.condominio_id)
+            .exclude(cpf_hash__isnull=True)
+            .exclude(cpf_hash="")
+            .exists()
+        ):
+            conferir, motivo = True, "sem_cpf"
         identidades = IdentidadeFacial.objects.filter(
             condominio_id=assembleia.condominio_id
         ).defer("selfie")
@@ -1268,6 +1294,32 @@ def acesso_facial(request, assembleia_id):
             unidade_original=unidade_original,
         ),
     )
+    if (
+        not criado
+        and conferir
+        and not votante.conferir_na_mesa
+        and votante.conferido_em is None
+    ):
+        # Já tinha entrado antes sem pendência, mas a entrada de agora não
+        # confere (rosto que não bate, unidade trocada na mão). Sem isto, quem
+        # chegasse depois com o CPF de outro morador herdava a entrada limpa da
+        # primeira pessoa e saía com o voto liberado. Se a mesa já conferiu o
+        # documento (conferido_em preenchido), o selo não volta — senão o
+        # morador seria barrado de novo a cada recarga da página.
+        votante.conferir_na_mesa = True
+        votante.motivo_conferencia = motivo
+        votante.unidade_original = unidade_original or votante.unidade_original
+        if dist_medida is not None:
+            votante.distancia_facial = dist_medida
+        votante.save(
+            update_fields=[
+                "conferir_na_mesa",
+                "motivo_conferencia",
+                "unidade_original",
+                "distancia_facial",
+            ]
+        )
+
     if criado:
         Presenca.objects.create(
             assembleia=assembleia,
