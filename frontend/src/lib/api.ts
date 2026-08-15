@@ -865,10 +865,13 @@ export const api = {
     }),
 
   // Listas de presença manual (Votação Simples)
-  getListasPresenca: () =>
+  getListasPresenca: (opts?: { rapido?: boolean }) =>
     request<
       import("./types").PaginatedResponse<import("./types").ListaPresenca>
-    >("/enquetes/listas-presenca/"),
+    >(
+      "/enquetes/listas-presenca/" +
+        (opts?.rapido === undefined ? "" : `?rapido=${opts.rapido ? 1 : 0}`)
+    ),
 
   createListaPresenca: (
     titulo: string,

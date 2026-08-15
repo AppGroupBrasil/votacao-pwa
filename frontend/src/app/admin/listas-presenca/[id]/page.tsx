@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, Loader2, Pencil, Printer, Trash2, Users, Video } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Loader2, MapPin, Pencil, Printer, Trash2, Users, Video } from "lucide-react";
 import { api } from "@/lib/api";
 import LinkDestaque from "@/components/LinkDestaque";
 import type { ListaPresenca, PresencaManualRegistro } from "@/lib/types";
@@ -526,6 +526,18 @@ export default function RegistrosPresencaPage() {
                         <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded bg-gray-100 px-2 py-0.5 text-sm text-gray-600">
                           IP {r.ip_address}
                         </span>
+                      )}
+                      {r.geo_lat != null && r.geo_lng != null && (
+                        <a
+                          href={`https://www.google.com/maps?q=${r.geo_lat},${r.geo_lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Ver no mapa onde o celular estava"
+                          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded bg-gray-100 px-2 py-0.5 text-sm text-gray-600 hover:bg-gray-200 print:no-underline"
+                        >
+                          <MapPin className="w-4 h-4" />
+                          Localização
+                        </a>
                       )}
                       {r.conferir_na_mesa && (
                         <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded bg-orange-100 px-2 py-0.5 text-sm font-semibold text-orange-800 ring-1 ring-orange-300">

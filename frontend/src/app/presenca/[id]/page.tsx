@@ -124,13 +124,19 @@ export default function PresencaRapidaPage() {
       .then((d) => {
         // Link de lista completa aberto aqui: manda para a tela certa, com CPF
         // e conferência de rosto, em vez de registrar sem conferir nada.
-        if (d && d.modo_rapido === false) {
+        if (!d?.modo_rapido) {
           router.replace(`/presenca-manual/${listaId}`);
           return;
         }
         setLista(d as Publica);
       })
-      .catch(() => setErro("Lista não encontrada."))
+      .catch((e: any) =>
+        setErro(
+          e?.response?.status === 429
+            ? "Muita gente entrando ao mesmo tempo. Aguarde alguns segundos e recarregue a página."
+            : "Lista não encontrada."
+        )
+      )
       .finally(() => setCarregando(false));
   }, [listaId, router]);
 
@@ -352,7 +358,7 @@ export default function PresencaRapidaPage() {
           </div>
         )}
 
-        {lista.ativa && pronto && (
+        {pronto && (
           <div className="rounded-2xl bg-white p-6 text-center shadow-lg ring-1 ring-black/5">
             <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
               <CheckCircle2 className="h-12 w-12 text-green-600" strokeWidth={2.2} />
@@ -662,7 +668,14 @@ export default function PresencaRapidaPage() {
                   )}
                 </button>
                 <button
-                  onClick={() => setEtapa(2)}
+                  onClick={() => {
+                    // O quadro volta em branco quando ela retorna: a assinatura
+                    // guardada tem que sumir junto, senão salva um traço que
+                    // não está mais na tela.
+                    setAssinatura("");
+                    setErro("");
+                    setEtapa(2);
+                  }}
                   className="mt-3 w-full text-sm text-gray-500 hover:underline"
                 >
                   Voltar

@@ -45,6 +45,7 @@ export default function VotacaoRapidaPage() {
   const [listas, setListas] = useState<ListaPresenca[]>([]);
   const [modalLista, setModalLista] = useState(false);
   const [condNome, setCondNome] = useState("");
+  const [condPadrao, setCondPadrao] = useState("");
   const [tipoAssembleia, setTipoAssembleia] = useState(TIPOS_ASSEMBLEIA[0]);
   const [tipoOutro, setTipoOutro] = useState("");
   const [salvandoLista, setSalvandoLista] = useState(false);
@@ -59,20 +60,26 @@ export default function VotacaoRapidaPage() {
       .then((d) => setEnquetes(d.results || (d as any)))
       .finally(() => setLoading(false));
     api
-      .getListasPresenca()
-      .then((d) => {
-        const todas = (d.results || (d as any)) as ListaPresenca[];
-        setListas(todas.filter((l) => l.modo_rapido));
-      })
+      .getListasPresenca({ rapido: true })
+      .then((d) => setListas((d.results || (d as any)) as ListaPresenca[]))
       .catch(() => setListas([]));
   }
 
   useEffect(() => {
     carregar();
+    // Guarda o condomínio da conta para já vir preenchido no modal: digitar
+    // outro nome aqui viraria um condomínio novo (ou renomearia o dele).
+    api
+      .getCondominios()
+      .then((d) => {
+        const lista = (d.results || (d as any)) as { nome: string }[];
+        if (lista?.length === 1) setCondPadrao(lista[0].nome || "");
+      })
+      .catch(() => {});
   }, []);
 
   function abrirModalLista() {
-    setCondNome("");
+    setCondNome(condPadrao);
     setTipoAssembleia(TIPOS_ASSEMBLEIA[0]);
     setTipoOutro("");
     setErroLista("");

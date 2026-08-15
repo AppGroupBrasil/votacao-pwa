@@ -68,7 +68,8 @@ export default function ListasPresencaPage() {
   function carregar() {
     setLoading(true);
     api
-      .getListasPresenca()
+      // As listas rápidas moram na tela de Votação rápida.
+      .getListasPresenca({ rapido: false })
       .then((d) => setListas(d.results || (d as any)))
       .finally(() => setLoading(false));
   }

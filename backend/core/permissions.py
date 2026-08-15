@@ -73,9 +73,15 @@ def resolver_condominio_por_nome(user, nome_cond):
         cond = get_or_create_user_condominio(user)
         if cond is None:
             raise PermissionDenied("Nenhum condomínio associado ao seu usuário.")
+        # Só renomeia enquanto o condomínio ainda é um rascunho. Depois que a
+        # planilha de moradores entrou, o nome é o nome oficial: um título de
+        # reunião digitado às pressas não pode reescrever o condomínio inteiro.
         if nome_cond and cond.nome != nome_cond:
-            cond.nome = nome_cond
-            cond.save(update_fields=["nome", "atualizado_em"])
+            from apps.eleitores.models import Eleitor
+
+            if not Eleitor.objects.filter(condominio_id=cond.id).exists():
+                cond.nome = nome_cond
+                cond.save(update_fields=["nome", "atualizado_em"])
         return cond
 
     cond = Condominio.objects.create(

@@ -139,6 +139,13 @@ class ListaPresencaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = ListaPresenca.objects.all()
+        # Filtro no banco: a paginação corta em 20 e filtrar no navegador
+        # some com as listas rápidas de quem já tem muitas listas.
+        rapido = self.request.query_params.get("rapido")
+        if rapido in ("1", "true"):
+            qs = qs.filter(modo_rapido=True)
+        elif rapido in ("0", "false"):
+            qs = qs.filter(modo_rapido=False)
         condominios = get_user_condominios(self.request.user)
         if condominios is None:
             return qs
@@ -349,7 +356,10 @@ AVISOS_CONFERENCIA = {
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
-@ratelimit(key="ip", rate="60/m", block=True)
+# Numa assembleia todo mundo entra pelo mesmo Wi-Fi, então o IP é o mesmo
+# para a sala inteira: o teto tem que caber a lista abrindo em dezenas de
+# celulares ao mesmo tempo (o registro já usa 120/m pelo mesmo motivo).
+@ratelimit(key="ip", rate="240/m", block=True)
 def lista_presenca_publica(request, lista_id):
     try:
         lista = ListaPresenca.objects.select_related("condominio").get(id=lista_id)
