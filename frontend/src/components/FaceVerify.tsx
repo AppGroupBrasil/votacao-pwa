@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { ScanFace, Loader2, CheckCircle, AlertTriangle, RotateCcw } from "lucide-react";
 import {
   loadModels,
-  detectFace,
+  lerRosto,
   getDescriptorLocal,
   isSamePerson,
   hashDescriptor,
@@ -19,6 +19,7 @@ type Status =
   | "success"
   | "no-match"
   | "no-face"
+  | "foto-ruim"
   | "no-descriptor"
   | "error"
   | "no-camera";
@@ -119,15 +120,27 @@ export default function FaceVerify({
     try {
       setStatus("verifying");
 
-      const newDescriptor = await detectFace(videoRef.current);
+      const leitura = await lerRosto(videoRef.current);
 
-      if (!newDescriptor) {
+      if (!leitura) {
         setStatus("no-face");
         return;
       }
 
-      // Comparação client-side por distância euclidiana
-      const match = isSamePerson(newDescriptor, storedDescriptor.current);
+      // Leitura ruim não vai para comparação: rosto escuro ou pequeno gera um
+      // vetor impreciso, que tanto reprova a pessoa certa quanto aprova a
+      // errada. Melhor pedir outra foto.
+      if (!leitura.boa) {
+        setStatus("foto-ruim");
+        return;
+      }
+
+      // Comparação client-side por distância euclidiana. Basta uma das leituras
+      // bater — são a mesma pessoa em poses ligeiramente diferentes, e exigir
+      // que a primeira acerte reprovava morador de verdade sem motivo.
+      const match = leitura.leituras.some((l) =>
+        isSamePerson(l.descriptor, storedDescriptor.current!)
+      );
 
       if (!match) {
         setStatus("no-match");
@@ -246,6 +259,13 @@ export default function FaceVerify({
         </div>
       )}
 
+      {status === "foto-ruim" && (
+        <div className="bg-amber-50 text-amber-700 text-sm rounded-lg p-3 text-center">
+          A imagem ficou escura ou o rosto ficou pequeno na tela. Chegue mais
+          perto, olhe para a câmera e tente de novo.
+        </div>
+      )}
+
       {status === "no-match" && (
         <div className="bg-red-50 text-red-700 text-sm rounded-lg p-3 text-center">
           Rosto não corresponde ao cadastrado. Tente novamente.
@@ -253,7 +273,10 @@ export default function FaceVerify({
       )}
 
       <div className="flex gap-3">
-        {(status === "no-face" || status === "no-match" || status === "error") && (
+        {(status === "no-face" ||
+          status === "foto-ruim" ||
+          status === "no-match" ||
+          status === "error") && (
           <button
             onClick={() => {
               setError("");
@@ -271,6 +294,7 @@ export default function FaceVerify({
           disabled={
             status !== "ready" &&
             status !== "no-face" &&
+            status !== "foto-ruim" &&
             status !== "no-match" &&
             status !== "error"
           }

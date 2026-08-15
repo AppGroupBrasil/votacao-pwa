@@ -23,6 +23,7 @@ import {
   Ban,
   RotateCcw,
   Play,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
@@ -32,6 +33,14 @@ import type {
   VotanteManualAdmin,
 } from "@/lib/types";
 import { clsx } from "clsx";
+
+// Por que este votante entrou com selo laranja (o voto espera a mesa conferir).
+const MOTIVO_CONFERENCIA: Record<string, string> = {
+  sem_cadastro: "CPF fora da planilha",
+  unidade_alterada: "Unidade alterada pelo morador",
+  rosto_nao_confere: "Rosto não confirmou",
+  rosto_ambiguo: "Rosto parecido com outro",
+};
 
 type Tab = "votacao" | "resultados" | "relatorio";
 
@@ -260,8 +269,16 @@ export default function AssembleiasHubPage() {
 
   async function validarManual(
     votante: VotanteManualAdmin,
-    acao: "aprovar" | "rejeitar" | "inadimplente" | "regularizar"
+    acao: "aprovar" | "rejeitar" | "inadimplente" | "regularizar" | "conferir"
   ) {
+    if (
+      acao === "conferir" &&
+      !confirm(
+        `Liberar o voto de ${votante.nome} (${votante.bloco ? `${votante.bloco} / ` : ""}${votante.apartamento})?\n\n` +
+          "Confira o documento com o morador antes. Depois de liberado, o voto da unidade passa a valer."
+      )
+    )
+      return;
     if (
       acao === "inadimplente" &&
       !confirm(
@@ -587,6 +604,24 @@ export default function AssembleiasHubPage() {
                 unidade estiver em débito: o voto é invalidado, a linha fica
                 vermelha e a unidade não vota mais nesta assembleia.
               </p>
+              {manuais.some((v) => v.conferir_na_mesa) && (
+                <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    <b>
+                      {manuais.filter((v) => v.conferir_na_mesa).length}{" "}
+                      {manuais.filter((v) => v.conferir_na_mesa).length === 1
+                        ? "morador aguarda"
+                        : "moradores aguardam"}{" "}
+                      conferência da mesa.
+                    </b>{" "}
+                    Estão marcados em laranja: o CPF não estava na planilha, a
+                    unidade foi alterada na hora ou o rosto não confirmou. Peça o
+                    documento e toque em <b>Conferido</b> para o voto da unidade
+                    passar a valer.
+                  </span>
+                </div>
+              )}
               <div className="space-y-2">
                 {manuais.map((v) => (
                   <div
@@ -597,6 +632,8 @@ export default function AssembleiasHubPage() {
                       // achar de longe quem está impedido de votar.
                       v.inadimplente
                         ? "border-red-400 bg-red-50 ring-1 ring-red-200"
+                        : v.conferir_na_mesa
+                        ? "border-amber-400 bg-amber-50 ring-1 ring-amber-200"
                         : "border-gray-200"
                     )}
                   >
@@ -625,7 +662,33 @@ export default function AssembleiasHubPage() {
                               Inadimplente
                             </span>
                           )}
+                          {v.conferir_na_mesa && (
+                            <span className="ml-2 rounded bg-amber-500 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+                              Conferir na mesa
+                              {v.motivo_conferencia
+                                ? ` · ${
+                                    MOTIVO_CONFERENCIA[v.motivo_conferencia] ||
+                                    v.motivo_conferencia
+                                  }`
+                                : ""}
+                            </span>
+                          )}
                         </p>
+                        {v.conferir_na_mesa && v.unidade_original && (
+                          <p className="text-xs text-amber-700">
+                            Na planilha: {v.unidade_original}
+                          </p>
+                        )}
+                        {!v.conferir_na_mesa && v.conferido_em && (
+                          <p className="text-xs text-gray-500">
+                            Conferido{" "}
+                            {new Date(v.conferido_em).toLocaleTimeString("pt-BR", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                            {v.conferido_por ? ` · ${v.conferido_por}` : ""}
+                          </p>
+                        )}
                         <p
                           className={clsx(
                             "text-xs truncate",
@@ -659,6 +722,14 @@ export default function AssembleiasHubPage() {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                      {v.conferir_na_mesa && !v.inadimplente && (
+                        <button
+                          onClick={() => validarManual(v, "conferir")}
+                          className="inline-flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
+                        >
+                          <Check className="w-4 h-4" /> Conferido
+                        </button>
+                      )}
                       {v.inadimplente ? (
                         <button
                           onClick={() => validarManual(v, "regularizar")}

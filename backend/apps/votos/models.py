@@ -39,6 +39,17 @@ class VotanteManual(models.Model):
             "invalidados e a unidade fica impedida de votar."
         ),
     )
+    # ----- Selo laranja: entrou, mas a mesa precisa olhar antes de o voto valer.
+    # Nasceu da assembleia de 08/08/2026, em que o rosto sozinho escolhia o nome
+    # errado. Agora, quando algo não fecha (CPF fora da planilha, unidade trocada
+    # na mão, rosto que não confirmou), a pessoa entra e participa, mas o voto
+    # espera alguém da mesa conferir o documento.
+    conferir_na_mesa = models.BooleanField(default=False, db_index=True)
+    motivo_conferencia = models.CharField(max_length=40, blank=True, default="")
+    conferido_em = models.DateTimeField(null=True, blank=True)
+    conferido_por = models.CharField(max_length=200, blank=True, default="")
+    distancia_facial = models.FloatField(null=True, blank=True)
+    unidade_original = models.CharField(max_length=60, blank=True, default="")
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:

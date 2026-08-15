@@ -23,7 +23,12 @@ export async function loadModels(): Promise<void> {
     try {
       await Promise.all([
         faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-        faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
+        // Modelo COMPLETO de 68 pontos (348 KB) em vez da versão reduzida.
+        // O reconhecedor foi treinado esperando o rosto alinhado por ele; com a
+        // versão "tiny" o alinhamento sai torto e pessoas diferentes acabam com
+        // vetores parecidos — foi uma das causas da troca de nomes na
+        // assembleia de 08/08/2026. O download extra acontece uma única vez.
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
         faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
       ]);
       modelsLoaded = true;
@@ -63,13 +68,49 @@ export async function detectFace(
   input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
   opcoes: { inputSize: number; scoreThreshold: number } = AJUSTES[0]
 ): Promise<Float32Array | null> {
+  const r = await detectFaceComQualidade(input, opcoes);
+  return r ? r.descriptor : null;
+}
+
+/** Uma leitura do rosto com os dados que dizem se ela presta. */
+export type Leitura = {
+  descriptor: Float32Array;
+  /** Confiança da detecção (0 a 1). Abaixo de ~0.6 costuma ser rosto de lado. */
+  score: number;
+  /** Largura do rosto em pixels. Rosto pequeno = vetor pobre. */
+  largura: number;
+};
+
+/**
+ * Detecta o rosto e devolve, junto com o vetor, a qualidade da leitura. Medir a
+ * qualidade é o que permite recusar foto ruim ANTES de comparar: rosto pequeno,
+ * escuro ou de perfil gera um vetor impreciso, e vetor impreciso foi o que
+ * fazia o sistema confundir uma pessoa com outra.
+ */
+export async function detectFaceComQualidade(
+  input: FaceInput,
+  opcoes: { inputSize: number; scoreThreshold: number } = AJUSTES[0]
+): Promise<Leitura | null> {
   const detection = await faceapi
     .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions(opcoes))
-    .withFaceLandmarks(true) // useTinyModel = true
+    .withFaceLandmarks() // modelo completo de 68 pontos
     .withFaceDescriptor();
 
   if (!detection) return null;
-  return detection.descriptor;
+  return {
+    descriptor: detection.descriptor,
+    score: detection.detection.score,
+    largura: detection.detection.box.width,
+  };
+}
+
+/** Rosto menor que isto na imagem não tem detalhe suficiente para comparar. */
+export const LARGURA_MINIMA_ROSTO = 90;
+/** Abaixo desta confiança normalmente é rosto de lado, escuro ou tremido. */
+export const SCORE_MINIMO = 0.6;
+
+export function leituraBoa(l: Leitura): boolean {
+  return l.score >= SCORE_MINIMO && l.largura >= LARGURA_MINIMA_ROSTO;
 }
 
 export type CaixaRosto = {
@@ -104,25 +145,29 @@ export async function detectarCaixaRosto(
 
 /** Detecta tentando todos os ajustes; devolve também qual funcionou. */
 export async function detectFaceTentandoTudo(
-  input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement
-): Promise<{ descriptor: Float32Array; ajuste: (typeof AJUSTES)[number] } | null> {
+  input: FaceInput
+): Promise<{ leitura: Leitura; ajuste: (typeof AJUSTES)[number] } | null> {
   for (const ajuste of AJUSTES) {
-    const d = await detectFace(input, ajuste);
-    if (d) return { descriptor: d, ajuste };
+    const l = await detectFaceComQualidade(input, ajuste);
+    if (l) return { leitura: l, ajuste };
   }
   return null;
 }
 
 /**
- * Lê o rosto várias vezes e devolve a MÉDIA dos descritores. Cada leitura tem um
- * ruído pequeno (luz/tremor/ângulo); tirar a média aproxima o vetor do "rosto
- * real" da pessoa e reduz a distância na comparação — reconhece com mais
- * facilidade a mesma pessoa. Retorna null se não achar rosto em nenhuma amostra.
+ * Lê o rosto algumas vezes e devolve as leituras SEPARADAS, da melhor para a
+ * pior.
+ *
+ * Antes daqui saía a média das leituras, para "facilitar o reconhecimento". Só
+ * que a média puxa todo rosto na direção de um rosto médio: encurta a distância
+ * para a pessoa certa e para todas as outras junto, o que ajudou a produzir os
+ * nomes trocados na assembleia de 08/08/2026. Guardando as leituras inteiras, o
+ * servidor compara contra a mais parecida e cada rosto continua sendo ele mesmo.
  */
-export async function detectFaceAveraged(
+export async function capturarLeituras(
   entrada: FaceInput | FaceInput[],
-  amostras = 4
-): Promise<Float32Array | null> {
+  amostras = 3
+): Promise<Leitura[]> {
   const entradas = Array.isArray(entrada) ? entrada : [entrada];
 
   // Primeira leitura: descobre em qual entrada (vídeo ao vivo ou foto já
@@ -130,35 +175,49 @@ export async function detectFaceAveraged(
   // certo, em vez de gastar tempo tentando tudo de novo.
   let alvo: FaceInput | null = null;
   let ajuste: (typeof AJUSTES)[number] | null = null;
-  const descritores: Float32Array[] = [];
+  const leituras: Leitura[] = [];
 
   for (const e of entradas) {
     const r = await detectFaceTentandoTudo(e);
     if (r) {
       alvo = e;
       ajuste = r.ajuste;
-      descritores.push(r.descriptor);
+      leituras.push(r.leitura);
       break;
     }
   }
-  if (!alvo || !ajuste) return null;
+  if (!alvo || !ajuste) return [];
 
   // Imagem parada não muda entre leituras — repetir daria o mesmo vetor.
-  const aoVivo = typeof HTMLVideoElement !== "undefined" && alvo instanceof HTMLVideoElement;
+  const aoVivo =
+    typeof HTMLVideoElement !== "undefined" && alvo instanceof HTMLVideoElement;
   if (aoVivo) {
     for (let i = 1; i < amostras; i++) {
-      await new Promise((r) => setTimeout(r, 160));
-      const d = await detectFace(alvo, ajuste);
-      if (d) descritores.push(d);
+      // 120 ms dá tempo de a pessoa mudar minimamente de posição, o que torna
+      // as leituras diferentes entre si — é isso que faz o cadastro cobrir mais
+      // situações depois.
+      await new Promise((r) => setTimeout(r, 120));
+      const l = await detectFaceComQualidade(alvo, ajuste);
+      if (l) leituras.push(l);
     }
   }
-  if (!descritores.length) return null;
-  const media = new Float32Array(descritores[0].length);
-  for (const d of descritores) {
-    for (let j = 0; j < media.length; j++) media[j] += d[j];
-  }
-  for (let j = 0; j < media.length; j++) media[j] /= descritores.length;
-  return media;
+
+  // Melhor primeiro: mais confiança e rosto maior valem mais.
+  leituras.sort((a, b) => b.score * b.largura - a.score * a.largura);
+  return leituras;
+}
+
+/**
+ * A melhor leitura do rosto — é ela que vai para a confirmação um-contra-um.
+ * Devolve também se a qualidade ficou aceitável, para a tela poder avisar em vez
+ * de mandar um vetor ruim para comparação.
+ */
+export async function lerRosto(
+  entrada: FaceInput | FaceInput[]
+): Promise<{ leituras: Leitura[]; boa: boolean } | null> {
+  const leituras = await capturarLeituras(entrada);
+  if (!leituras.length) return null;
+  return { leituras, boa: leituraBoa(leituras[0]) };
 }
 
 /**

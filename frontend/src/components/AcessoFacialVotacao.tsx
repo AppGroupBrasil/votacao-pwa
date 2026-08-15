@@ -8,9 +8,13 @@ import {
   Mail,
   ShieldCheck,
   CheckCircle2,
+  CreditCard,
+  AlertTriangle,
+  UserCheck,
+  Pencil,
 } from "lucide-react";
 import { api, getDeviceId } from "@/lib/api";
-import { loadModels, detectFaceAveraged } from "@/lib/faceapi";
+import { loadModels, lerRosto as lerRostoCamera } from "@/lib/faceapi";
 import { useAutoCaptura, textoDica } from "@/lib/useAutoCaptura";
 
 const PERFIS = [
@@ -21,19 +25,49 @@ const PERFIS = [
   { v: "outro", l: "Outro" },
 ];
 
+function textoUnidade(bloco: string, apartamento: string) {
+  return [
+    bloco?.trim() && `Bloco ${bloco.trim()}`,
+    apartamento?.trim() && `Apto ${apartamento.trim()}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value.replace(/\D/g, ""));
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+type Unidade = {
+  nome: string;
+  bloco: string;
+  apartamento: string;
+  perfil?: string;
+};
+
 /**
- * Entrada da votação pelo rosto (reconhecimento 1:N no servidor).
- * - Reconheceu o rosto → entra e vota na hora.
- * - Rosto novo → cadastra ali (nome/unidade/selfie/LGPD) e entra.
- * - Não quer/não consegue pelo rosto → cai para o e-mail (onEmail).
+ * Entrada da votação: o CPF diz quem é a pessoa, o rosto só CONFIRMA (um contra
+ * um). Antes o rosto era procurado no meio de centenas de cadastros e escolhia
+ * o nome mais parecido — foi o que trocou nomes na assembleia de 08/08/2026.
+ *
+ * CPF → "é você, Fulano?" → foto que confirma → vota.
+ * Dados errados na planilha, CPF fora da relação ou rosto que não confirma não
+ * barram ninguém: entra com selo laranja e a mesa libera o voto depois.
+ * Condomínio sem planilha de CPF cai no caminho antigo (busca pelo rosto).
  */
 export default function AcessoFacialVotacao({
   assembleiaId,
+  temCpf = false,
   onSuccess,
   onEmail,
   onManual,
 }: {
   assembleiaId: string;
+  temCpf?: boolean;
   onSuccess: (token: string, votanteId: string, avisoUnidade?: string) => void;
   onEmail: () => void;
   onManual: () => void;
@@ -43,7 +77,6 @@ export default function AcessoFacialVotacao({
   const [camAtiva, setCamAtiva] = useState(false);
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState("");
-  const [novoRosto, setNovoRosto] = useState(false);
   const [descriptor, setDescriptor] = useState<number[] | null>(null);
   const [selfie, setSelfie] = useState("");
   const [nome, setNome] = useState("");
@@ -51,12 +84,37 @@ export default function AcessoFacialVotacao({
   const [apartamento, setApartamento] = useState("");
   const [perfil, setPerfil] = useState("proprietario");
   const [lgpd, setLgpd] = useState(false);
-  // Confirmação visível de que o rosto foi reconhecido, com o nome de quem
-  // entrou: o morador precisa ver que é ele mesmo antes de votar.
-  const [reconhecido, setReconhecido] = useState<{
+  // Falhas seguidas de leitura: depois de duas, a selfie entra no lugar da
+  // biometria em vez de deixar o morador preso na câmera.
+  const [falhas, setFalhas] = useState(0);
+
+  // --- portão de CPF ---
+  const [etapa, setEtapa] = useState<
+    "cpf" | "naoconsta" | "confirmar" | "corrigir" | "camera" | "novoRosto"
+  >(temCpf ? "cpf" : "camera");
+  const [cpf, setCpf] = useState("");
+  const [cpfHash, setCpfHash] = useState("");
+  const [consultandoCpf, setConsultandoCpf] = useState(false);
+  const [erroCpf, setErroCpf] = useState("");
+  const [unidadesCpf, setUnidadesCpf] = useState<Unidade[] | null>(null);
+  const [mensagemCpf, setMensagemCpf] = useState("");
+  const [temRostoCadastrado, setTemRostoCadastrado] = useState(false);
+  const [dadosPlanilha, setDadosPlanilha] = useState<Unidade | null>(null);
+  const [motivoCorrecao, setMotivoCorrecao] = useState<
+    "divergencia" | "sem_cadastro"
+  >("divergencia");
+
+  // Tela final: confirma quem entrou (verde) ou avisa que a mesa vai conferir
+  // antes de o voto valer (laranja).
+  const [resultado, setResultado] = useState<{
     nome: string;
+    aviso: string;
     entrar: () => void;
   } | null>(null);
+
+  // Primeira vez deste CPF: a foto de agora vira o cadastro, então precisa do
+  // consentimento LGPD antes de ler o rosto.
+  const precisaLgpd = !!cpfHash && !temRostoCadastrado;
 
   useEffect(() => {
     loadModels().catch(() => {});
@@ -76,7 +134,13 @@ export default function AcessoFacialVotacao({
   // decide se tenta de novo pelo botão ou entra por outro caminho.
   const dicaAuto = useAutoCaptura({
     video: videoRef,
-    ativo: camAtiva && !processando && !novoRosto && !reconhecido && !erro,
+    ativo:
+      camAtiva &&
+      etapa === "camera" &&
+      !processando &&
+      !resultado &&
+      !erro &&
+      (!precisaLgpd || lgpd),
     onCapturar: () => lerRosto(),
   });
 
@@ -117,10 +181,92 @@ export default function AcessoFacialVotacao({
     return canvas;
   }
 
+  async function consultarCpf() {
+    const digitos = cpf.replace(/\D/g, "");
+    if (digitos.length !== 11 && digitos.length !== 14) {
+      setErroCpf("Digite os 11 números do seu CPF.");
+      return;
+    }
+    setConsultandoCpf(true);
+    setErroCpf("");
+    try {
+      const hash = await sha256Hex(digitos);
+      const res = await api.consultarCpfVotacao(assembleiaId, hash);
+      // O hash acompanha o resto do fluxo: é ele que faz o rosto ser apenas
+      // CONFIRMADO depois, em vez de procurado no meio de todos os moradores.
+      setCpfHash(hash);
+      setTemRostoCadastrado(!!res.tem_rosto);
+      setUnidadesCpf(res.unidades || []);
+      setMensagemCpf(res.mensagem || "");
+      if (!res.unidades?.length) {
+        setEtapa("naoconsta");
+      } else if (res.unidades.length === 1) {
+        prepararUnidade(res.unidades[0]);
+        setEtapa("confirmar");
+      }
+    } catch {
+      setErroCpf("Não consegui consultar agora. Tente de novo em instantes.");
+    } finally {
+      setConsultandoCpf(false);
+    }
+  }
+
+  function prepararUnidade(u: Unidade) {
+    setNome(u.nome || "");
+    setBloco(u.bloco || "");
+    setApartamento(u.apartamento || "");
+    setPerfil(u.perfil || "proprietario");
+    setDadosPlanilha({
+      nome: u.nome || "",
+      bloco: u.bloco || "",
+      apartamento: u.apartamento || "",
+    });
+  }
+
+  function irParaCamera() {
+    setErro("");
+    setEtapa("camera");
+    if (!camAtiva) abrirCamera();
+  }
+
+  // Resposta do servidor: entrou (verde) ou entrou com selo laranja.
+  function aplicarResposta(r: {
+    encontrado: boolean;
+    token?: string;
+    nome?: string;
+    votante_manual_id?: string;
+    aviso_unidade?: string;
+    conferir_na_mesa?: boolean;
+    aviso_conferencia?: string;
+  }) {
+    if (!r.encontrado || !r.token) return false;
+    pararCamera();
+    const token = r.token;
+    const votanteId = r.votante_manual_id || "";
+    const avisoUnidade = r.aviso_unidade || "";
+    setResultado({
+      nome: r.nome || nome,
+      aviso: r.conferir_na_mesa ? r.aviso_conferencia || "" : "",
+      entrar: () => onSuccess(token, votanteId, avisoUnidade),
+    });
+    return true;
+  }
+
+  function textoErroServidor(e: any, padrao: string) {
+    // O motivo costuma vir do servidor ("assembleia não está aberta",
+    // "registre a presença primeiro"). Escondê-lo atrás de um texto genérico
+    // faz parecer defeito da câmera quando é regra da votação.
+    return e?.response?.data?.error || e?.response?.data?.detail || padrao;
+  }
+
   async function lerRosto() {
     const video = videoRef.current;
     if (!video || !video.videoWidth) {
       setErro("Aguarde a imagem da câmera aparecer e tente de novo.");
+      return;
+    }
+    if (precisaLgpd && !lgpd) {
+      setErro("É necessário concordar com o uso dos dados (LGPD).");
       return;
     }
     setErro("");
@@ -128,48 +274,89 @@ export default function AcessoFacialVotacao({
     try {
       const canvas = capturarFrame(video);
       if (!canvas) return;
+      const selfieData = canvas.toDataURL("image/jpeg", 0.7);
+      setSelfie(selfieData);
       await loadModels();
-      // Média de várias leituras do rosto ao vivo: vetor mais estável, reconhece
-      // a mesma pessoa com mais facilidade. Se a imagem ao vivo não render o
-      // rosto, tenta na foto parada, que é a mesma usada como selfie.
-      const desc = await detectFaceAveraged([video, canvas], 4);
-      if (!desc) {
+      // Várias leituras do rosto ao vivo, guardadas SEPARADAS — a média que
+      // ficava aqui aproximava rostos diferentes e ajudou a trocar nomes na
+      // assembleia de 08/08/2026. Se a imagem ao vivo não render o rosto, tenta
+      // na foto parada, que é a mesma usada como selfie.
+      const leitura = await lerRostoCamera([video, canvas]);
+      if (!leitura || !leitura.boa) {
+        setFalhas((n) => n + 1);
         setErro(
-          "Não reconheci um rosto. Aproxime-se, melhore a luz e tente de novo."
+          !leitura
+            ? "Não reconheci um rosto. Aproxime-se, melhore a luz e tente de novo."
+            : "A imagem ficou escura ou o rosto ficou pequeno na tela. Chegue mais perto, procure um lugar mais claro e tente de novo."
         );
         return;
       }
-      const arr = Array.from(desc);
-      const selfieData = canvas.toDataURL("image/jpeg", 0.7);
+      const todas = leitura.leituras.map((l) => Array.from(l.descriptor));
+      const arr = todas[0];
       setDescriptor(arr);
-      setSelfie(selfieData);
       const r = await api.acessoFacialVotacao(assembleiaId, {
         descriptor: arr,
+        descriptors: todas,
+        device_id: getDeviceId(),
+        ...(cpfHash
+          ? {
+              cpf_hash: cpfHash,
+              nome: nome.trim(),
+              bloco: bloco.trim(),
+              apartamento: apartamento.trim(),
+              perfil,
+              selfie: selfieData,
+              consentimento_lgpd: true,
+            }
+          : {}),
+      });
+      if (aplicarResposta(r)) return;
+      // Rosto novo em condomínio sem planilha: pede nome/unidade uma única vez.
+      pararCamera();
+      setEtapa("novoRosto");
+    } catch (e: any) {
+      setErro(
+        textoErroServidor(
+          e,
+          "Não foi possível processar o rosto. Tente de novo ou use o e-mail."
+        )
+      );
+    } finally {
+      setProcessando(false);
+    }
+  }
+
+  // A selfie no lugar da biometria: contraluz do salão, óculos, tremor. Entra
+  // do mesmo jeito, com selo laranja para a mesa conferir o documento.
+  async function entrarComSelfie() {
+    const video = videoRef.current;
+    const canvas = video && video.videoWidth ? capturarFrame(video) : null;
+    const selfieData = canvas ? canvas.toDataURL("image/jpeg", 0.7) : selfie;
+    if (!selfieData) {
+      setErro("Abra a câmera para tirar a foto antes de continuar.");
+      return;
+    }
+    if (precisaLgpd && !lgpd) {
+      setErro("É necessário concordar com o uso dos dados (LGPD).");
+      return;
+    }
+    setErro("");
+    setProcessando(true);
+    try {
+      const r = await api.acessoFacialVotacao(assembleiaId, {
+        cpf_hash: cpfHash,
+        nome: nome.trim(),
+        bloco: bloco.trim(),
+        apartamento: apartamento.trim(),
+        perfil,
+        selfie: selfieData,
+        consentimento_lgpd: true,
         device_id: getDeviceId(),
       });
-      if (r.encontrado && r.token) {
-        pararCamera();
-        const token = r.token;
-        const votanteId = r.votante_manual_id || "";
-        const aviso = r.aviso_unidade || "";
-        setReconhecido({
-          nome: r.nome || "",
-          entrar: () => onSuccess(token, votanteId, aviso),
-        });
-        return;
-      }
-      // Rosto novo: pede nome/unidade uma única vez, depois entra e vota.
-      pararCamera();
-      setNovoRosto(true);
+      if (aplicarResposta(r)) return;
+      setErro("Não foi possível concluir. Tente novamente.");
     } catch (e: any) {
-      // O motivo costuma vir do servidor ("assembleia não está aberta",
-      // "registre a presença primeiro"). Escondê-lo atrás de um texto genérico
-      // faz parecer defeito da câmera quando é regra da votação.
-      setErro(
-        e?.response?.data?.error ||
-          e?.response?.data?.detail ||
-          "Não foi possível processar o rosto. Tente de novo ou use o e-mail."
-      );
+      setErro(textoErroServidor(e, "Não foi possível concluir. Tente novamente."));
     } finally {
       setProcessando(false);
     }
@@ -198,38 +385,57 @@ export default function AcessoFacialVotacao({
         consentimento_lgpd: true,
         device_id: getDeviceId(),
       });
-      if (r.encontrado && r.token) {
-        onSuccess(r.token, r.votante_manual_id || "", r.aviso_unidade || "");
-        return;
-      }
+      if (aplicarResposta(r)) return;
       setErro("Não foi possível concluir. Tente novamente.");
     } catch (e: any) {
-      setErro(
-        e?.response?.data?.error || "Não foi possível concluir. Tente novamente."
-      );
+      setErro(textoErroServidor(e, "Não foi possível concluir. Tente novamente."));
     } finally {
       setProcessando(false);
     }
   }
 
-  // Reconhecido: confirma na tela quem entrou antes de abrir a votação.
-  if (reconhecido) {
+  const nomePerfil = PERFIS.find((p) => p.v === perfil)?.l || "Proprietário";
+
+  // Entrou. Verde quando está tudo certo; laranja quando a mesa precisa
+  // conferir antes de o voto valer.
+  if (resultado) {
+    const laranja = !!resultado.aviso;
     return (
       <div className="text-center">
-        <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
-          <CheckCircle2 className="h-12 w-12 text-green-600" strokeWidth={2.2} />
+        <div
+          className={`mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full ${
+            laranja ? "bg-amber-100" : "bg-green-100"
+          }`}
+        >
+          {laranja ? (
+            <AlertTriangle className="h-11 w-11 text-amber-600" strokeWidth={2.2} />
+          ) : (
+            <CheckCircle2 className="h-12 w-12 text-green-600" strokeWidth={2.2} />
+          )}
         </div>
-        <h1 className="text-2xl font-extrabold text-green-700">
-          Rosto reconhecido
+        <h1
+          className={`text-2xl font-extrabold ${
+            laranja ? "text-amber-700" : "text-green-700"
+          }`}
+        >
+          {laranja ? "Entrada registrada" : "Identidade confirmada"}
         </h1>
-        {reconhecido.nome && (
+        {resultado.nome && (
           <p className="mt-1 text-lg font-semibold text-gray-900">
-            {reconhecido.nome}
+            {resultado.nome}
+          </p>
+        )}
+        {textoUnidade(bloco, apartamento) && (
+          <p className="text-sm text-gray-600">
+            {textoUnidade(bloco, apartamento)}
           </p>
         )}
         <p className="mx-auto mt-2 max-w-xs text-sm text-gray-600">
-          Sua identificação foi confirmada pela biometria facial. Você já pode
-          votar.
+          {laranja
+            ? resultado.aviso
+            : cpfHash
+            ? "Seu CPF e sua foto conferem. Você já pode votar."
+            : "Sua identificação foi confirmada pela biometria facial. Você já pode votar."}
         </p>
 
         {selfie && (
@@ -237,12 +443,14 @@ export default function AcessoFacialVotacao({
           <img
             src={selfie}
             alt="Sua foto"
-            className="mx-auto mt-4 h-24 w-24 rounded-xl border-2 border-green-500 object-cover"
+            className={`mx-auto mt-4 h-24 w-24 rounded-xl border-2 object-cover ${
+              laranja ? "border-amber-500" : "border-green-500"
+            }`}
           />
         )}
 
         <button
-          onClick={reconhecido.entrar}
+          onClick={resultado.entrar}
           className="btn-primary mt-6 w-full py-3 text-base"
         >
           Continuar para a votação
@@ -251,15 +459,214 @@ export default function AcessoFacialVotacao({
     );
   }
 
-  // Passo 2: rosto novo — cadastro rápido para poder votar.
-  if (novoRosto) {
+  // "É você, Fulano?" — o passo que faltava. Antes o sistema decidia sozinho
+  // quem era a pessoa pelo rosto; agora mostra o que encontrou pelo CPF e
+  // espera a confirmação. Se estiver errado, o próprio morador corrige.
+  if (etapa === "confirmar") {
     return (
       <div>
-        <div className="flex items-center gap-2 mb-1">
-          <ScanFace className="w-6 h-6 text-primary-600" />
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
+          <UserCheck className="h-4 w-4 text-primary-600" />
+          Confirme se é você
+        </div>
+        <div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3">
+          <p className="text-lg font-semibold leading-tight text-gray-900">
+            {nome || "—"}
+          </p>
+          <p className="mt-1 text-sm text-gray-700">
+            {textoUnidade(bloco, apartamento) || "Unidade não informada"}
+          </p>
+          <p className="mt-0.5 text-xs text-gray-500">{nomePerfil}</p>
+        </div>
+        <button onClick={irParaCamera} className="btn-primary mt-4 w-full">
+          Sim, sou eu
+        </button>
+        <button
+          onClick={() => {
+            setMotivoCorrecao("divergencia");
+            setEtapa("corrigir");
+          }}
+          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+        >
+          <Pencil className="h-4 w-4" /> Não sou eu / corrigir meus dados
+        </button>
+        <p className="mt-4 px-1 text-xs text-gray-500">
+          {temRostoCadastrado
+            ? "Na próxima tela você tira uma foto. Ela serve só para confirmar que é você mesmo, comparando com a foto do seu próprio cadastro."
+            : "Na próxima tela você tira uma foto. Como é a sua primeira vez, ela fica guardada como o seu cadastro para as próximas assembleias."}
+        </p>
+      </div>
+    );
+  }
+
+  // CPF que não está na relação da administradora. O morador entra do mesmo
+  // jeito; o texto explica de onde vem a falha para ele não achar que é o
+  // sistema que está errado.
+  if (etapa === "naoconsta") {
+    return (
+      <div>
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            {mensagemCpf ||
+              "Seu CPF não consta na planilha de moradores. Verifique junto à administração do seu condomínio ou sua administradora, porque seu nome não consta na relação."}{" "}
+            Você pode votar preenchendo os dados abaixo — a mesa confere antes de
+            o voto valer.
+          </span>
+        </div>
+        <button
+          onClick={() => {
+            setMotivoCorrecao("sem_cadastro");
+            setEtapa("corrigir");
+          }}
+          className="btn-primary mt-4 w-full"
+        >
+          Preencher meus dados e continuar
+        </button>
+        <button
+          onClick={() => {
+            setUnidadesCpf(null);
+            setMensagemCpf("");
+            setCpfHash("");
+            setEtapa("cpf");
+          }}
+          className="mt-3 w-full text-sm text-gray-500 underline underline-offset-2"
+        >
+          Digitar o CPF de novo
+        </button>
+      </div>
+    );
+  }
+
+  // Correção manual: nome, unidade e perfil na mão. É a saída para quando a
+  // planilha veio errada ou o CPF não consta. Nada disso barra o morador — ele
+  // entra e participa; o voto é que espera a mesa conferir.
+  if (etapa === "corrigir") {
+    const mudou =
+      !!dadosPlanilha &&
+      (dadosPlanilha.nome.trim() !== nome.trim() ||
+        dadosPlanilha.bloco.trim() !== bloco.trim() ||
+        dadosPlanilha.apartamento.trim() !== apartamento.trim());
+    return (
+      <div>
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-xs leading-relaxed text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            {motivoCorrecao === "sem_cadastro" ? (
+              mensagemCpf ||
+              "Seu CPF não consta na planilha de moradores. Verifique junto à administração do seu condomínio ou sua administradora, porque seu nome não consta na relação."
+            ) : (
+              <>
+                <b>Atenção:</b> os dados que aparecem aqui vêm da planilha de
+                moradores enviada pela administração do condomínio. Se estiver
+                alguma coisa diferente, a divergência é dessa planilha — corrija
+                abaixo e siga normalmente. A mesa da assembleia confere o que foi
+                alterado antes de o voto valer.
+              </>
+            )}
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              Nome completo
+            </label>
+            <input
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              className="input-field w-full"
+              placeholder="Como está no seu documento"
+              maxLength={200}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Bloco
+              </label>
+              <input
+                value={bloco}
+                onChange={(e) => setBloco(e.target.value)}
+                className="input-field w-full"
+                placeholder="A"
+                maxLength={20}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Apartamento
+              </label>
+              <input
+                value={apartamento}
+                onChange={(e) => setApartamento(e.target.value)}
+                className="input-field w-full"
+                placeholder="305"
+                maxLength={20}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              Você é o que na unidade?
+            </label>
+            <select
+              value={perfil}
+              onChange={(e) => setPerfil(e.target.value)}
+              className="input-field w-full"
+            >
+              {PERFIS.map((p) => (
+                <option key={p.v} value={p.v}>
+                  {p.l}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {mudou && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-white px-3 py-2.5 text-xs text-gray-600">
+            Na planilha consta <b>{dadosPlanilha!.nome || "sem nome"}</b> —{" "}
+            {textoUnidade(dadosPlanilha!.bloco, dadosPlanilha!.apartamento) ||
+              "sem unidade"}
+            . Você entra normalmente; o voto da unidade fica sinalizado para a
+            mesa conferir.
+          </div>
+        )}
+
+        <button
+          onClick={irParaCamera}
+          disabled={!nome.trim() || !apartamento.trim()}
+          className="btn-primary mt-4 w-full disabled:opacity-50"
+        >
+          Continuar
+        </button>
+        {dadosPlanilha && (
+          <button
+            onClick={() => {
+              setNome(dadosPlanilha.nome);
+              setBloco(dadosPlanilha.bloco);
+              setApartamento(dadosPlanilha.apartamento);
+              setEtapa("confirmar");
+            }}
+            className="mt-3 w-full text-sm text-gray-500 underline underline-offset-2"
+          >
+            Voltar sem alterar
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // Rosto novo em condomínio sem planilha de CPF: cadastro rápido para votar.
+  if (etapa === "novoRosto") {
+    return (
+      <div>
+        <div className="mb-1 flex items-center gap-2">
+          <ScanFace className="h-6 w-6 text-primary-600" />
           <h1 className="text-lg font-bold">Primeiro acesso</h1>
         </div>
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="mb-4 text-sm text-gray-500">
           Ainda não te conhecemos. Informe seu nome e unidade — na próxima
           assembleia é só mostrar o rosto.
         </p>
@@ -269,13 +676,13 @@ export default function AcessoFacialVotacao({
           <img
             src={selfie}
             alt="Sua foto"
-            className="w-24 h-24 rounded-xl object-cover border border-gray-200 mx-auto mb-4"
+            className="mx-auto mb-4 h-24 w-24 rounded-xl border border-gray-200 object-cover"
           />
         )}
 
         <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="mb-1 block text-sm font-medium text-gray-700">
               Nome completo
             </label>
             <input
@@ -287,7 +694,7 @@ export default function AcessoFacialVotacao({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
                 Bloco
               </label>
               <input
@@ -298,7 +705,7 @@ export default function AcessoFacialVotacao({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
                 Apartamento
               </label>
               <input
@@ -310,7 +717,7 @@ export default function AcessoFacialVotacao({
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="mb-1 block text-sm font-medium text-gray-700">
               Perfil
             </label>
             <select
@@ -330,7 +737,7 @@ export default function AcessoFacialVotacao({
               type="checkbox"
               checked={lgpd}
               onChange={(e) => setLgpd(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
             <span>
               Concordo que meu rosto e minha foto sejam usados para me identificar
@@ -339,60 +746,154 @@ export default function AcessoFacialVotacao({
           </label>
         </div>
 
-        {erro && <p className="text-sm text-red-600 mt-3">{erro}</p>}
+        {erro && <p className="mt-3 text-sm text-red-600">{erro}</p>}
 
         <button
           onClick={cadastrarEEntrar}
           disabled={processando}
-          className="btn-primary w-full mt-4 flex items-center justify-center gap-2 disabled:opacity-50"
+          className="btn-primary mt-4 flex w-full items-center justify-center gap-2 disabled:opacity-50"
         >
           {processando ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Entrando...
+              <Loader2 className="h-4 w-4 animate-spin" /> Entrando...
             </>
           ) : (
             <>
-              <ShieldCheck className="w-4 h-4" /> Confirmar e votar
+              <ShieldCheck className="h-4 w-4" /> Confirmar e votar
             </>
           )}
         </button>
         <button
           onClick={onManual}
-          className="w-full mt-3 text-sm text-primary-600 hover:text-primary-700 inline-flex items-center justify-center gap-1 font-medium"
+          className="mt-3 inline-flex w-full items-center justify-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700"
         >
-          <Camera className="w-4 h-4" /> Prefiro tirar só a selfie
+          <Camera className="h-4 w-4" /> Prefiro tirar só a selfie
         </button>
         <button
           onClick={onEmail}
-          className="w-full mt-2 text-sm text-gray-500 hover:text-gray-700 inline-flex items-center justify-center gap-1"
+          className="mt-2 inline-flex w-full items-center justify-center gap-1 text-sm text-gray-500 hover:text-gray-700"
         >
-          <Mail className="w-4 h-4" /> Ou entrar pelo e-mail
+          <Mail className="h-4 w-4" /> Ou entrar pelo e-mail
         </button>
       </div>
     );
   }
 
-  // Passo 1: leitura do rosto.
+  // Portão de CPF: primeiro passo. O morador digita o CPF e o sistema já traz
+  // nome/bloco/apartamento; a foto vem depois, só para confirmar.
+  if (etapa === "cpf") {
+    const digitos = cpf.replace(/\D/g, "");
+    const cpfValido = digitos.length === 11 || digitos.length === 14;
+    return (
+      <div>
+        <label className="mb-2 flex items-center gap-2 text-sm font-semibold">
+          <CreditCard className="h-4 w-4 text-primary-600" />
+          Digite o seu CPF
+        </label>
+        <p className="mb-3 text-xs text-gray-500">
+          É só digitar o CPF que o sistema encontra a sua unidade. Na tela
+          seguinte você confere se os dados estão certos — se não estiverem,
+          corrige na hora. Depois é a foto, que só confirma que é você.
+        </p>
+        <input
+          inputMode="numeric"
+          autoComplete="off"
+          value={cpf}
+          onChange={(e) => {
+            setCpf(e.target.value);
+            setErroCpf("");
+            setUnidadesCpf(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && cpfValido && !consultandoCpf) consultarCpf();
+          }}
+          placeholder="000.000.000-00"
+          className="input-field w-full text-center text-lg tracking-widest"
+          disabled={consultandoCpf}
+        />
+        <button
+          onClick={consultarCpf}
+          disabled={!cpfValido || consultandoCpf}
+          className="btn-primary mt-3 w-full disabled:opacity-50"
+        >
+          {consultandoCpf ? (
+            <span className="flex items-center justify-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Procurando...
+            </span>
+          ) : (
+            "Continuar"
+          )}
+        </button>
+        {erroCpf && <p className="mt-2 text-sm text-red-600">{erroCpf}</p>}
+
+        {unidadesCpf && unidadesCpf.length > 1 && (
+          <div className="mt-4 space-y-2">
+            <p className="text-sm font-medium">
+              Escolha a unidade (uma de cada vez):
+            </p>
+            {unidadesCpf.map((u, i) => (
+              <button
+                key={i}
+                onClick={() => {
+                  prepararUnidade(u);
+                  setEtapa("confirmar");
+                }}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-primary-400 hover:bg-primary-50"
+              >
+                <span className="block font-medium text-gray-800">{u.nome}</span>
+                <span className="block text-xs text-gray-500">
+                  {textoUnidade(u.bloco, u.apartamento)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={onManual}
+          className="mt-4 inline-flex w-full items-center justify-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700"
+        >
+          <Camera className="h-4 w-4" /> Não tenho o CPF em mãos — tirar só a
+          selfie
+        </button>
+        <button
+          onClick={onEmail}
+          className="mt-2 inline-flex w-full items-center justify-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+        >
+          <Mail className="h-4 w-4" /> Ou entrar pelo e-mail
+        </button>
+      </div>
+    );
+  }
+
+  // Etapa da câmera: com CPF, a foto só CONFIRMA quem já foi identificado.
   return (
     <div>
-      <div className="flex items-center gap-2 mb-1">
-        <ScanFace className="w-6 h-6 text-primary-600" />
-        <h1 className="text-lg font-bold">Identifique-se pelo rosto</h1>
+      <div className="mb-1 flex items-center gap-2">
+        <ScanFace className="h-6 w-6 text-primary-600" />
+        <h1 className="text-lg font-bold">
+          {cpfHash ? "Agora é só a foto" : "Identifique-se pelo rosto"}
+        </h1>
       </div>
-      <p className="text-sm text-gray-500 mb-4">
-        Olhe para a câmera para entrar e votar. Se já participou antes, é
-        reconhecido na hora.
+      <p className="mb-4 text-sm text-gray-500">
+        {cpfHash
+          ? temRostoCadastrado
+            ? `Olhe para a câmera: a foto confirma que é você, ${
+                nome.split(" ")[0] || "morador"
+              }.`
+            : "Olhe para a câmera. Esta primeira foto fica guardada como o seu cadastro."
+          : "Olhe para a câmera para entrar e votar. Se já participou antes, é reconhecido na hora."}
       </p>
 
       {camAtiva ? (
-        <div className="relative mb-3 overflow-hidden rounded-xl bg-black aspect-[3/4] max-h-72 mx-auto">
+        <div className="relative mx-auto mb-3 aspect-[3/4] max-h-72 overflow-hidden rounded-xl bg-black">
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video
             ref={videoRef}
             autoPlay
             playsInline
             muted
-            className="w-full h-full object-cover"
+            className="h-full w-full object-cover"
             style={{ transform: "scaleX(-1)" }}
           />
           {/* Guia do enquadramento: fica verde quando a leitura vai disparar. */}
@@ -405,59 +906,93 @@ export default function AcessoFacialVotacao({
           />
         </div>
       ) : (
-        <div className="mb-3 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 aspect-[3/4] max-h-72 mx-auto text-gray-400">
-          <Camera className="w-10 h-10 mb-2" />
+        <div className="mx-auto mb-3 flex aspect-[3/4] max-h-72 flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 text-gray-400">
+          <Camera className="mb-2 h-10 w-10" />
           <span className="text-xs">Câmera desligada</span>
         </div>
       )}
 
+      {precisaLgpd && (
+        <label className="mb-3 flex items-start gap-2 text-sm text-gray-600">
+          <input
+            type="checkbox"
+            checked={lgpd}
+            onChange={(e) => setLgpd(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+          <span>
+            Concordo que meu rosto e minha foto sejam usados para me identificar
+            nas assembleias deste condomínio (LGPD).
+          </span>
+        </label>
+      )}
+
       {camAtiva && !erro && (
-        <p className="text-sm text-gray-500 mb-3 text-center">
+        <p className="mb-3 text-center text-sm text-gray-500">
           {processando
             ? "Fique parado, olhando para a câmera."
+            : precisaLgpd && !lgpd
+            ? "Marque o aceite acima para a foto ser tirada."
             : textoDica(dicaAuto) ||
               "Olhe para a câmera. A leitura acontece sozinha."}
         </p>
       )}
 
-      {erro && <p className="text-sm text-red-600 mb-3">{erro}</p>}
+      {erro && <p className="mb-3 text-sm text-red-600">{erro}</p>}
 
       {camAtiva ? (
         <button
           onClick={lerRosto}
-          disabled={processando}
-          className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50"
+          disabled={processando || (precisaLgpd && !lgpd)}
+          className="btn-primary flex w-full items-center justify-center gap-2 disabled:opacity-50"
         >
           {processando ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Lendo rosto...
+              <Loader2 className="h-4 w-4 animate-spin" /> Lendo rosto...
             </>
           ) : (
             <>
-              <ScanFace className="w-4 h-4" /> Ler meu rosto agora
+              <ScanFace className="h-4 w-4" /> Tirar a foto agora
             </>
           )}
         </button>
       ) : (
         <button
           onClick={abrirCamera}
-          className="btn-primary w-full flex items-center justify-center gap-2"
+          className="btn-primary flex w-full items-center justify-center gap-2"
         >
-          <Camera className="w-4 h-4" /> Abrir câmera
+          <Camera className="h-4 w-4" /> Abrir câmera
         </button>
       )}
 
-      <button
-        onClick={onManual}
-        className="w-full mt-3 text-sm text-primary-600 hover:text-primary-700 inline-flex items-center justify-center gap-1 font-medium"
-      >
-        <Camera className="w-4 h-4" /> Não consigo pelo rosto — tirar só a selfie
-      </button>
+      {/* Sem CPF não dá para entrar só com a selfie por aqui: sem o rosto o
+          servidor não saberia quem é a pessoa. Com CPF, a selfie substitui a
+          biometria e a mesa confere. */}
+      {cpfHash && falhas >= 2 && (
+        <button
+          onClick={entrarComSelfie}
+          disabled={processando}
+          className="mt-3 inline-flex w-full items-center justify-center gap-1 text-sm font-medium text-amber-700 hover:text-amber-800 disabled:opacity-50"
+        >
+          <Camera className="h-4 w-4" /> A câmera não está reconhecendo — entrar
+          com a selfie
+        </button>
+      )}
+
+      {!cpfHash && (
+        <button
+          onClick={onManual}
+          className="mt-3 inline-flex w-full items-center justify-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700"
+        >
+          <Camera className="h-4 w-4" /> Não consigo pelo rosto — tirar só a
+          selfie
+        </button>
+      )}
       <button
         onClick={onEmail}
-        className="w-full mt-2 text-sm text-gray-500 hover:text-gray-700 inline-flex items-center justify-center gap-1"
+        className="mt-2 inline-flex w-full items-center justify-center gap-1 text-sm text-gray-500 hover:text-gray-700"
       >
-        <Mail className="w-4 h-4" /> Ou entrar pelo e-mail
+        <Mail className="h-4 w-4" /> Ou entrar pelo e-mail
       </button>
     </div>
   );

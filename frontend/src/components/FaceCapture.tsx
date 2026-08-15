@@ -4,7 +4,9 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Camera, Loader2, CheckCircle, AlertTriangle, RotateCcw } from "lucide-react";
 import {
   loadModels,
-  detectFace,
+  lerRosto,
+  detectarCaixaRosto,
+  LARGURA_MINIMA_ROSTO,
   hashDescriptor,
   saveDescriptorLocal,
 } from "@/lib/faceapi";
@@ -17,6 +19,7 @@ type Status =
   | "success"
   | "error"
   | "no-face"
+  | "foto-ruim"
   | "no-camera";
 
 interface FaceCaptureProps {
@@ -96,12 +99,22 @@ export default function FaceCapture({ eleitorId, onCapture }: FaceCaptureProps) 
     try {
       setStatus("capturing");
 
-      const descriptor = await detectFace(videoRef.current);
+      const leitura = await lerRosto(videoRef.current);
 
-      if (!descriptor) {
+      if (!leitura) {
         setStatus("no-face");
         return;
       }
+
+      // Cadastro é a base de tudo: vetor tirado de foto escura ou de rosto
+      // pequeno na tela faz a verificação falhar depois (ou casar com quem não
+      // deve). Melhor recusar aqui e pedir outra foto.
+      if (!leitura.boa) {
+        setStatus("foto-ruim");
+        return;
+      }
+
+      const descriptor = leitura.leituras[0].descriptor;
 
       // 1. Gerar hash SHA-256 (idêntico ao backend)
       const hash = await hashDescriptor(descriptor);
@@ -139,8 +152,12 @@ export default function FaceCapture({ eleitorId, onCapture }: FaceCaptureProps) 
       if (!autoCapturing.current || !videoRef.current) return;
 
       try {
-        const descriptor = await detectFace(videoRef.current);
-        if (!descriptor || !autoCapturing.current) return;
+        // Só localizar o rosto (sem landmarks nem vetor) — é a parte barata da
+        // detecção e é tudo que este laço precisa saber. Antes daqui saía um
+        // descritor completo a cada 800 ms, que travava celular fraco.
+        const caixa = await detectarCaixaRosto(videoRef.current);
+        if (!caixa || caixa.largura < LARGURA_MINIMA_ROSTO) return;
+        if (!autoCapturing.current) return;
 
         // Rosto detectado — iniciar contagem regressiva
         autoCapturing.current = false;
@@ -257,9 +274,16 @@ export default function FaceCapture({ eleitorId, onCapture }: FaceCaptureProps) 
         </div>
       )}
 
+      {status === "foto-ruim" && (
+        <div className="bg-amber-50 text-amber-700 text-sm rounded-lg p-3 text-center">
+          A imagem ficou escura ou o rosto ficou pequeno na tela. Chegue mais
+          perto, olhe para a câmera e tente de novo.
+        </div>
+      )}
+
       {/* Botões */}
       <div className="flex gap-3">
-        {status === "no-face" && (
+        {(status === "no-face" || status === "foto-ruim") && (
           <button
             onClick={() => setStatus("ready")}
             className="btn-secondary flex-1 flex items-center justify-center gap-2"
@@ -271,7 +295,9 @@ export default function FaceCapture({ eleitorId, onCapture }: FaceCaptureProps) 
 
         <button
           onClick={handleCapture}
-          disabled={status !== "ready" && status !== "no-face"}
+          disabled={
+            status !== "ready" && status !== "no-face" && status !== "foto-ruim"
+          }
           className="btn-primary flex-1 flex items-center justify-center gap-2"
         >
           <Camera className="w-4 h-4" />

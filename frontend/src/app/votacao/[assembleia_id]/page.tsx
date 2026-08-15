@@ -216,6 +216,7 @@ export default function VotacaoPage() {
           {entryMode === "facial" && (
             <AcessoFacialVotacao
               assembleiaId={assembleiaId}
+              temCpf={!!assembleia.tem_cpf}
               onSuccess={(token, id, aviso) => {
                 setManualId(id);
                 setVotosPermitidos(1);

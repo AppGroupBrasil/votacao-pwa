@@ -133,6 +133,9 @@ export interface Assembleia {
   quorum_segunda_chamada: number;
   segunda_chamada_qualquer_numero: boolean;
   exigir_confirmacao_email?: boolean;
+  // Condomínio tem planilha de moradores com CPF: a entrada começa pelo CPF
+  // (o rosto só confirma) em vez de procurar o rosto entre todos.
+  tem_cpf?: boolean;
   total_votantes: number;
   total_presentes: number;
   quorum: Quorum;
@@ -210,6 +213,14 @@ export interface VotanteManualAdmin {
   // Marcado à mão pelo síndico no painel: votos invalidados e unidade
   // impedida de votar (linha vermelha na lista).
   inadimplente?: boolean;
+  // Selo laranja: entrou, mas alguma coisa não fechou (CPF fora da planilha,
+  // unidade trocada na mão, rosto que não confirmou). O voto só vale depois de
+  // a mesa conferir o documento.
+  conferir_na_mesa?: boolean;
+  motivo_conferencia?: string;
+  unidade_original?: string;
+  conferido_em?: string | null;
+  conferido_por?: string;
   total_votos: number;
   votos: { questao: string; status: string }[];
 }
@@ -357,6 +368,12 @@ export interface PresencaManualRegistro {
   ip_address?: string | null;
   consentimento_lgpd?: boolean;
   declaracao_veracidade?: boolean;
+  conferir_na_mesa?: boolean;
+  motivo_conferencia?: string;
+  conferido_em?: string | null;
+  conferido_por?: string;
+  distancia_facial?: number | null;
+  unidade_original?: string;
   criado_em: string;
 }
 

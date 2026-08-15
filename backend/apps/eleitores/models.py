@@ -98,8 +98,20 @@ class IdentidadeFacial(models.Model):
     bloco = models.CharField(max_length=20, blank=True, default="")
     apartamento = models.CharField(max_length=20, blank=True, default="")
     perfil = models.CharField(max_length=20, blank=True, default="proprietario")
+    cpf_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Hash SHA-256 do CPF do morador. É por ele que o rosto é localizado para a confirmação um-contra-um.",
+    )
     descriptor = models.JSONField(
-        help_text="Vetor facial 128-D (face-api). Base da comparação para reconhecer a pessoa."
+        help_text="Vetor facial 128-D (face-api). Leitura principal, mantida por compatibilidade."
+    )
+    descriptors = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Várias leituras do mesmo rosto (luz/ângulo diferentes). A comparação usa a mais parecida.",
     )
     selfie = models.TextField(
         blank=True, default="", help_text="Foto-comprovante capturada no cadastro."
@@ -113,6 +125,21 @@ class IdentidadeFacial(models.Model):
         ordering = ["nome"]
         verbose_name = "Identidade facial"
         verbose_name_plural = "Identidades faciais"
+
+    def guardar_leitura(self, vetor, maximo=5):
+        """Acrescenta mais uma leitura do rosto ao cadastro (sem salvar).
+
+        Guardar leituras separadas é melhor que tirar a média delas: a média
+        empurra todo mundo para um 'rosto médio' e aproxima pessoas diferentes,
+        que era parte do problema antigo. Assim cada foto continua sendo ela
+        mesma e a comparação usa a mais parecida."""
+        if not vetor:
+            return
+        lista = self.descriptors if isinstance(self.descriptors, list) else []
+        if any(v == vetor for v in lista):
+            return
+        # Mantém as mais recentes: rosto muda com o tempo (barba, óculos, peso).
+        self.descriptors = ([*lista, vetor])[-maximo:]
 
     def __str__(self):
         return f"{self.nome} - {self.apartamento}"

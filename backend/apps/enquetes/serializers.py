@@ -95,6 +95,12 @@ class PresencaManualSerializer(serializers.ModelSerializer):
             "ip_address",
             "consentimento_lgpd",
             "declaracao_veracidade",
+            "conferir_na_mesa",
+            "motivo_conferencia",
+            "conferido_em",
+            "conferido_por",
+            "distancia_facial",
+            "unidade_original",
             "criado_em",
         ]
 

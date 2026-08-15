@@ -42,8 +42,22 @@ const PERFIL_LABEL: Record<string, string> = {
 const METODO_LABEL: Record<string, string> = {
   selfie: "Selfie",
   facial: "Biometria facial",
+  cpf: "CPF",
+  cpf_facial: "CPF + rosto",
   webauthn: "Digital do aparelho",
   otp: "Código por e-mail",
+};
+
+/**
+ * Selo laranja: o motivo pelo qual a mesa precisa olhar este registro. A pessoa
+ * já está presente na lista; o que fica pendente é o voto da unidade, liberado
+ * no botão "Conferido".
+ */
+const MOTIVO_LABEL: Record<string, string> = {
+  sem_cadastro: "CPF fora da planilha",
+  unidade_alterada: "Unidade alterada pelo morador",
+  rosto_nao_confere: "Rosto não confirmou",
+  rosto_ambiguo: "Rosto parecido com outro",
 };
 
 export default function RegistrosPresencaPage() {
@@ -111,6 +125,11 @@ export default function RegistrosPresencaPage() {
     return { grupos, posicaoPorId };
   }, [registros]);
 
+  const [conferindo, setConferindo] = useState("");
+  const pendentesConferencia = useMemo(
+    () => registros.filter((r) => r.conferir_na_mesa).length,
+    [registros]
+  );
   const [editando, setEditando] = useState(false);
   const [tituloEdit, setTituloEdit] = useState("");
   const [descricaoEdit, setDescricaoEdit] = useState("");
@@ -162,6 +181,25 @@ export default function RegistrosPresencaPage() {
       setRegistros((prev) => prev.filter((x) => x.id !== r.id));
     } catch {
       alert("Não foi possível excluir. Tente novamente.");
+    }
+  }
+
+  async function conferirRegistro(r: PresencaManualRegistro) {
+    if (
+      !confirm(
+        `Liberar o voto de "${r.nome}" (${r.bloco ? `Bloco ${r.bloco} · ` : ""}Ap. ${r.apartamento})?\n\n` +
+          "Confira o documento com o morador antes. Depois de liberado, o voto da unidade passa a contar."
+      )
+    )
+      return;
+    setConferindo(r.id);
+    try {
+      const atualizado = await api.conferirRegistroPresenca(id, r.id);
+      setRegistros((prev) => prev.map((x) => (x.id === r.id ? atualizado : x)));
+    } catch {
+      alert("Não foi possível liberar. Tente novamente.");
+    } finally {
+      setConferindo("");
     }
   }
 
@@ -396,6 +434,21 @@ export default function RegistrosPresencaPage() {
           {registros.length !== 1 ? "s" : ""}
         </div>
 
+        {pendentesConferencia > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b-2 border-orange-200 bg-orange-50 px-6 py-3 text-sm text-orange-900 print:hidden">
+            <AlertTriangle className="w-5 h-5 shrink-0 text-orange-600" />
+            <span>
+              <strong>
+                {pendentesConferencia} presença
+                {pendentesConferencia !== 1 ? "s" : ""} para conferir na mesa.
+              </strong>{" "}
+              Estão na lista (marcadas em laranja), mas o voto da unidade só
+              conta depois que alguém da mesa conferir o documento e tocar em
+              &quot;Conferido&quot;.
+            </span>
+          </div>
+        )}
+
         <div className="p-4 bg-white">
           {registros.length === 0 ? (
             <div className="text-center py-10 text-gray-500">
@@ -409,7 +462,11 @@ export default function RegistrosPresencaPage() {
                 <div
                   key={r.id}
                   className={`flex flex-wrap items-center gap-3 py-3 break-inside-avoid sm:flex-nowrap sm:gap-4 ${
-                    dup ? "bg-amber-50 rounded-lg px-2 ring-1 ring-amber-200" : ""
+                    r.conferir_na_mesa
+                      ? "bg-orange-50 rounded-lg px-2 ring-2 ring-orange-300"
+                      : dup
+                        ? "bg-amber-50 rounded-lg px-2 ring-1 ring-amber-200"
+                        : ""
                   }`}
                 >
                   <span className="w-8 text-sm font-semibold text-blue-700 shrink-0 text-right">
@@ -468,8 +525,38 @@ export default function RegistrosPresencaPage() {
                           IP {r.ip_address}
                         </span>
                       )}
+                      {r.conferir_na_mesa && (
+                        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded bg-orange-100 px-2 py-0.5 text-sm font-semibold text-orange-800 ring-1 ring-orange-300">
+                          <AlertTriangle className="w-4 h-4" />
+                          Conferir na mesa
+                          {r.motivo_conferencia
+                            ? ` · ${MOTIVO_LABEL[r.motivo_conferencia] || r.motivo_conferencia}`
+                            : ""}
+                        </span>
+                      )}
+                      {r.conferir_na_mesa && r.unidade_original && (
+                        <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded bg-orange-50 px-2 py-0.5 text-sm text-orange-800 ring-1 ring-orange-200">
+                          Na planilha: {r.unidade_original}
+                        </span>
+                      )}
+                      {!r.conferir_na_mesa && r.conferido_em && (
+                        <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded bg-green-50 px-2 py-0.5 text-sm text-green-700 ring-1 ring-green-200">
+                          Conferido {horaBrasilia(r.conferido_em)}
+                          {r.conferido_por ? ` · ${r.conferido_por}` : ""}
+                        </span>
+                      )}
                     </div>
                   </div>
+                  {r.conferir_na_mesa && (
+                    <button
+                      onClick={() => conferirRegistro(r)}
+                      disabled={conferindo === r.id}
+                      title="Já conferi o documento: liberar o voto desta unidade"
+                      className="shrink-0 rounded-lg bg-orange-600 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-50 print:hidden"
+                    >
+                      {conferindo === r.id ? "Liberando..." : "Conferido"}
+                    </button>
+                  )}
                   {r.assinatura && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img

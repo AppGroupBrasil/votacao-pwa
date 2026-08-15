@@ -509,10 +509,28 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  consultarCpfVotacao: (assembleiaId: string, cpfHash: string) =>
+    request<{
+      unidades: {
+        nome: string;
+        bloco: string;
+        apartamento: string;
+        perfil?: string;
+      }[];
+      encontrado?: boolean;
+      tem_rosto?: boolean;
+      mensagem?: string;
+    }>(`/votos/${assembleiaId}/consultar-cpf/`, {
+      method: "POST",
+      body: JSON.stringify({ cpf_hash: cpfHash }),
+    }),
+
   acessoFacialVotacao: (
     assembleiaId: string,
     data: {
-      descriptor: number[];
+      descriptor?: number[];
+      descriptors?: number[][];
+      cpf_hash?: string;
       nome?: string;
       bloco?: string;
       apartamento?: string;
@@ -530,6 +548,9 @@ export const api = {
       nome?: string;
       votante_manual_id?: string;
       aviso_unidade?: string;
+      conferir_na_mesa?: boolean;
+      motivo_conferencia?: string;
+      aviso_conferencia?: string;
       token?: string;
     }>(`/votos/${assembleiaId}/acesso-facial/`, {
       method: "POST",
@@ -545,7 +566,12 @@ export const api = {
   validarVotoManual: (
     assembleiaId: string,
     votanteManualId: string,
-    acao: "aprovar" | "rejeitar" | "inadimplente" | "regularizar"
+    acao:
+      | "aprovar"
+      | "rejeitar"
+      | "inadimplente"
+      | "regularizar"
+      | "conferir"
   ) =>
     request<{ status: string; votos_atualizados: number }>(
       `/votos/${assembleiaId}/votos-manuais/validar/`,
@@ -925,6 +951,12 @@ export const api = {
       { method: "DELETE" }
     ),
 
+  conferirRegistroPresenca: (listaId: string, registroId: string) =>
+    request<import("./types").PresencaManualRegistro>(
+      `/enquetes/listas-presenca/${listaId}/registros/${registroId}/conferir/`,
+      { method: "POST" }
+    ),
+
   getListaPresencaPublica: (id: string) =>
     request<{
       id: string;
@@ -943,6 +975,12 @@ export const api = {
         apartamento: string;
         perfil: string;
       }[];
+      encontrado?: boolean;
+      // Se este CPF já tem rosto guardado: define se a etapa da câmera vai
+      // CONFIRMAR o rosto (um-contra-um) ou cadastrá-lo pela primeira vez.
+      tem_rosto?: boolean;
+      // Texto pronto para a tela quando o CPF não está na planilha.
+      mensagem?: string;
     }>(`/enquetes/listas-presenca/${id}/consultar-cpf/`, {
       method: "POST",
       body: JSON.stringify({ cpf_hash }),
@@ -986,7 +1024,12 @@ export const api = {
   registrarPresencaFacial: (
     id: string,
     data: {
-      descriptor: number[];
+      // O rosto virou opcional: quando a câmera não lê, a presença entra pela
+      // foto e a mesa confere. Quem diz o nome é o cpf_hash.
+      descriptor?: number[];
+      // Várias leituras do mesmo rosto (nunca a média delas).
+      descriptors?: number[][];
+      cpf_hash?: string;
       nome?: string;
       bloco?: string;
       apartamento?: string;
@@ -1007,6 +1050,11 @@ export const api = {
       apartamento?: string;
       inadimplente?: boolean;
       aviso?: string;
+      // Registro que entrou, mas com selo para a mesa olhar (unidade corrigida,
+      // rosto não conferido, CPF fora da planilha).
+      conferir_na_mesa?: boolean;
+      motivo_conferencia?: string;
+      aviso_conferencia?: string;
       link_reuniao?: string;
     }>(
       `/enquetes/listas-presenca/${id}/facial/registrar/`,

@@ -17,9 +17,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.eleitores.facial import (
-    LIMIAR_PRESENCA,
+    LIMIAR_BUSCA,
     melhor_correspondencia,
     validar_descriptor,
+    validar_lista_descriptors,
+    verificar,
 )
 from apps.eleitores.models import (
     Eleitor,
@@ -153,6 +155,33 @@ class ListaPresencaViewSet(viewsets.ModelViewSet):
         registro.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="registros/(?P<registro_id>[^/.]+)/conferir",
+    )
+    def conferir_registro(self, request, pk=None, registro_id=None):
+        """A mesa libera um registro que entrou com selo laranja.
+
+        O morador já consta presente desde que se cadastrou; o selo só marca que
+        alguém da mesa precisa olhar (unidade alterada na mão, CPF fora da
+        planilha, rosto que não bateu). Enquanto o selo estiver aceso, o voto da
+        unidade não é contado — este endpoint é o que apaga o selo.
+        """
+        lista = self.get_object()
+        registro = get_object_or_404(lista.registros, id=registro_id)
+        registro.conferir_na_mesa = False
+        registro.conferido_em = timezone.now()
+        registro.conferido_por = (
+            getattr(request.user, "get_full_name", lambda: "")()
+            or getattr(request.user, "email", "")
+            or str(request.user)
+        )[:200]
+        registro.save(
+            update_fields=["conferir_na_mesa", "conferido_em", "conferido_por"]
+        )
+        return Response(PresencaManualSerializer(registro).data)
+
 
 @api_view(["POST"])
 @permission_classes([IsAdminWithRole])
@@ -273,6 +302,32 @@ def importar_planilha_completa(request):
     )
 
 
+# O que o morador lê quando a presença entra marcada para a mesa conferir.
+# Nenhum destes casos impede a presença — todos explicam o motivo em português,
+# sem jargão e sem dar a entender que o morador fez algo errado.
+AVISOS_CONFERENCIA = {
+    "unidade_alterada": (
+        "Presença registrada. Como a unidade que você informou está diferente da "
+        "planilha da administradora, a mesa vai conferir a alteração antes da "
+        "votação. Você não precisa fazer mais nada agora."
+    ),
+    "rosto_nao_confere": (
+        "Presença registrada pela sua foto. Não deu para confirmar pelo rosto — a "
+        "foto que você acabou de tirar fica como comprovante e a mesa confere no "
+        "fechamento da lista."
+    ),
+    "sem_cadastro": (
+        "Presença registrada. Seu CPF não consta na planilha de moradores enviada "
+        "pela administradora, então a mesa vai conferir. Procure a administração do "
+        "seu condomínio para atualizar seu cadastro."
+    ),
+    "rosto_ambiguo": (
+        "Presença registrada pela sua foto. O sistema não teve certeza de quem era "
+        "e preferiu não registrar um nome errado — a mesa confere no fechamento."
+    ),
+}
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 @ratelimit(key="ip", rate="60/m", block=True)
@@ -329,7 +384,7 @@ def consultar_cpf_presenca(request, lista_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
     if lista.condominio_id is None:
-        return Response({"unidades": []})
+        return Response({"unidades": [], "encontrado": False, "tem_rosto": False})
     unidades = list(
         Eleitor.objects.filter(
             condominio_id=lista.condominio_id, cpf_hash=cpf_hash
@@ -337,7 +392,27 @@ def consultar_cpf_presenca(request, lista_id):
         .order_by("bloco", "apartamento")
         .values("nome", "bloco", "apartamento", "perfil")
     )
-    return Response({"unidades": unidades})
+    # Se este CPF já tem rosto guardado, a próxima etapa é só CONFIRMAR que é a
+    # mesma pessoa (comparação um-contra-um). Se não tem, a foto de agora vira o
+    # cadastro dele. O front usa isto para escolher o texto da tela.
+    tem_rosto = IdentidadeFacial.objects.filter(
+        condominio_id=lista.condominio_id, cpf_hash=cpf_hash
+    ).exists()
+    return Response(
+        {
+            "unidades": unidades,
+            "encontrado": bool(unidades),
+            "tem_rosto": tem_rosto,
+            "mensagem": ""
+            if unidades
+            else (
+                "Seu CPF não consta na planilha de moradores. Verifique junto à "
+                "administração do seu condomínio ou sua administradora, porque seu "
+                "nome não consta na relação. Você pode registrar sua presença "
+                "preenchendo os dados abaixo — a mesa confere depois."
+            ),
+        }
+    )
 
 
 @api_view(["POST"])
@@ -495,7 +570,7 @@ def presenca_reconhecer_facial(request, lista_id):
     identidades = IdentidadeFacial.objects.filter(
         condominio_id=lista.condominio_id
     ).defer("selfie")
-    ident, _dist = melhor_correspondencia(descriptor, identidades, LIMIAR_PRESENCA)
+    ident, _dist = melhor_correspondencia(descriptor, identidades, LIMIAR_BUSCA)
     # Só informamos SE o rosto é conhecido — nunca o nome/unidade de quem foi
     # reconhecido (LGPD: quem está com o aparelho não deve ver dados de outra
     # pessoa). Na hora de registrar, o servidor reusa os dados guardados.
@@ -521,12 +596,16 @@ def registrar_presenca_facial(request, lista_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # O rosto deixou de ser obrigatório. Quando a câmera não consegue ler, a
+    # presença é registrada do mesmo jeito pela foto e vai marcada para a mesa
+    # conferir — ninguém fica de fora da assembleia por causa da câmera.
     descriptor = validar_descriptor(request.data.get("descriptor"))
-    if descriptor is None:
-        return Response(
-            {"error": "Não foi possível ler o rosto. Tente novamente."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    leituras = validar_lista_descriptors(request.data.get("descriptors"))
+    if descriptor is not None:
+        if descriptor not in leituras:
+            leituras = [descriptor, *leituras][:5]
+    elif leituras:
+        descriptor = leituras[0]
 
     consentimento_lgpd = bool(request.data.get("consentimento_lgpd"))
     if not consentimento_lgpd:
@@ -550,71 +629,177 @@ def registrar_presenca_facial(request, lista_id):
     perfis_validos = {"proprietario", "locatario", "conjuge", "procurador", "outro"}
     agora = timezone.now()
 
-    # Procura se esse rosto já é conhecido no condomínio.
-    ident = None
-    if lista.condominio_id:
-        identidades = IdentidadeFacial.objects.filter(
-            condominio_id=lista.condominio_id
-        ).defer("selfie")
-        ident, _dist = melhor_correspondencia(descriptor, identidades, LIMIAR_PRESENCA)
+    cpf_hash = str(request.data.get("cpf_hash", "")).strip().lower()
+    if len(cpf_hash) != 64 or any(c not in "0123456789abcdef" for c in cpf_hash):
+        cpf_hash = ""
 
-    if ident is None:
-        # Primeira vez: precisa de nome e apartamento para cadastrar a identidade.
-        nome = str(request.data.get("nome", "")).strip()[:200]
-        if not nome:
+    # O que o morador confirmou (ou corrigiu) na tela.
+    nome_dig = str(request.data.get("nome", "")).strip()[:200]
+    bloco_dig = str(request.data.get("bloco", "")).strip()[:20]
+    apto_dig = str(request.data.get("apartamento", "")).strip()[:20]
+    perfil_dig = str(request.data.get("perfil", "")).strip().lower()
+    if perfil_dig not in perfis_validos:
+        perfil_dig = "proprietario"
+
+    ident = None
+    novo = False
+    conferir = False
+    motivo = ""
+    dist_medida = None
+    unidade_original = ""
+
+    if lista.condominio_id and cpf_hash:
+        # ---- Caminho normal: o CPF diz quem é a pessoa, o rosto só confirma. ----
+        # É esta inversão que acaba com a troca de nomes: não há mais escolha
+        # entre centenas de rostos parecidos, só uma pergunta de sim ou não.
+        ident = (
+            IdentidadeFacial.objects.filter(
+                condominio_id=lista.condominio_id, cpf_hash=cpf_hash
+            )
+            .order_by("criado_em")
+            .first()
+        )
+        unidades_planilha = list(
+            Eleitor.objects.filter(
+                condominio_id=lista.condominio_id, cpf_hash=cpf_hash
+            ).values("nome", "bloco", "apartamento")
+        )
+
+        if not nome_dig:
             return Response(
-                {"error": "Informe o nome para o primeiro cadastro."},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"error": "Informe o nome."}, status=status.HTTP_400_BAD_REQUEST
             )
-        bloco = str(request.data.get("bloco", "")).strip()[:20]
-        apartamento = str(request.data.get("apartamento", "")).strip()[:20]
-        perfil = str(request.data.get("perfil", "")).strip().lower()
-        if perfil not in perfis_validos:
-            perfil = "proprietario"
-        if lista.condominio_id:
-            # Duplo clique/duas abas: se já existe identidade da mesma pessoa na
-            # mesma unidade, reaproveita em vez de criar uma segunda.
-            ident = (
-                IdentidadeFacial.objects.filter(
-                    condominio_id=lista.condominio_id,
-                    nome__iexact=nome,
-                    bloco__iexact=bloco,
-                    apartamento__iexact=apartamento,
-                )
-                .order_by("id")
-                .first()
+
+        if not unidades_planilha:
+            # CPF fora da relação da administradora: registra assim mesmo e
+            # deixa visível para a mesa, em vez de barrar quem é morador de fato.
+            conferir, motivo = True, "sem_cadastro"
+        else:
+            # Trocou de unidade em relação à planilha? A unidade é o único dado
+            # que decide direito a voto — então entra, mas passa pela mesa.
+            alvo = (normalizar_unidade(bloco_dig), normalizar_unidade(apto_dig))
+            casou = any(
+                (normalizar_unidade(u["bloco"]), normalizar_unidade(u["apartamento"]))
+                == alvo
+                for u in unidades_planilha
             )
-            if ident is None:
-                ident = IdentidadeFacial.objects.create(
-                    condominio_id=lista.condominio_id,
-                    nome=nome,
-                    bloco=bloco,
-                    apartamento=apartamento,
-                    perfil=perfil,
-                    descriptor=descriptor,
-                    selfie=selfie,
-                    consentimento_lgpd=True,
-                    consentimento_em=agora,
+            if not casou:
+                conferir, motivo = True, "unidade_alterada"
+                u0 = unidades_planilha[0]
+                unidade_original = (
+                    f"{u0['bloco']} {u0['apartamento']}".strip()[:60]
                 )
-        nome_reg, bloco_reg, apto_reg, perfil_reg = nome, bloco, apartamento, perfil
-        novo = True
+
+        if ident is not None:
+            if descriptor is None:
+                # Tem rosto guardado mas a câmera não leu agora: a foto vale
+                # como comprovante e a mesa confere.
+                if not conferir:
+                    conferir, motivo = True, "rosto_nao_confere"
+            else:
+                confere, d = verificar(descriptor, ident)
+                dist_medida = None if d == float("inf") else round(d, 4)
+                if confere:
+                    # Acertou: guarda esta leitura para reconhecer melhor da
+                    # próxima vez (luz e ângulo diferentes do cadastro).
+                    ident.guardar_leitura(descriptor)
+                elif not conferir:
+                    conferir, motivo = True, "rosto_nao_confere"
+            ident.nome = nome_dig or ident.nome
+            ident.bloco = bloco_dig or ident.bloco
+            ident.apartamento = apto_dig or ident.apartamento
+            ident.perfil = perfil_dig
+            ident.save()
+        else:
+            # Primeira assembleia deste CPF: a foto de agora vira o cadastro.
+            ident = IdentidadeFacial(
+                condominio_id=lista.condominio_id,
+                cpf_hash=cpf_hash,
+                nome=nome_dig,
+                bloco=bloco_dig,
+                apartamento=apto_dig,
+                perfil=perfil_dig,
+                descriptor=descriptor or [],
+                selfie=selfie,
+                consentimento_lgpd=True,
+                consentimento_em=agora,
+            )
+            for v in leituras:
+                ident.guardar_leitura(v)
+            ident.save()
+            novo = True
+
+        nome_reg, bloco_reg, apto_reg, perfil_reg = (
+            nome_dig,
+            bloco_dig,
+            apto_dig,
+            perfil_dig,
+        )
     else:
-        # Rosto já conhecido: vale o que o morador digitou agora (nome/unidade
-        # podem ter sido corrigidos); o cadastro antigo só preenche o que veio
-        # em branco. O perfil também é o declarado agora — pode participar como
-        # procurador/cônjuge mesmo tendo cadastro como proprietário.
-        nome_reg = str(request.data.get("nome", "")).strip()[:200] or ident.nome
-        bloco_reg = str(request.data.get("bloco", "")).strip()[:20] or ident.bloco
-        apto_reg = (
-            str(request.data.get("apartamento", "")).strip()[:20] or ident.apartamento
-        )
-        perfil_req = str(request.data.get("perfil", "")).strip().lower()
-        perfil_reg = (
-            perfil_req
-            if perfil_req in perfis_validos
-            else (ident.perfil if ident.perfil in perfis_validos else "proprietario")
-        )
-        novo = False
+        # ---- Sem CPF na base do condomínio: só aqui ainda procuramos o rosto
+        # entre todos. Agora com limiar rígido e recusa em caso de empate — se
+        # duas pessoas ficam parecidas, o sistema não escolhe, marca para a mesa.
+        if descriptor is not None and lista.condominio_id:
+            identidades = IdentidadeFacial.objects.filter(
+                condominio_id=lista.condominio_id
+            ).defer("selfie")
+            ident, d = melhor_correspondencia(descriptor, identidades, LIMIAR_BUSCA)
+            dist_medida = None if d == float("inf") else round(d, 4)
+            if ident is None and d < LIMIAR_BUSCA + 0.1:
+                # Chegou perto de alguém mas sem certeza: não chuta.
+                conferir, motivo = True, "rosto_ambiguo"
+
+        if ident is None:
+            if not nome_dig:
+                return Response(
+                    {"error": "Informe o nome para o primeiro cadastro."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if lista.condominio_id:
+                # Duplo clique/duas abas: se já existe identidade da mesma pessoa
+                # na mesma unidade, reaproveita em vez de criar uma segunda.
+                ident = (
+                    IdentidadeFacial.objects.filter(
+                        condominio_id=lista.condominio_id,
+                        nome__iexact=nome_dig,
+                        bloco__iexact=bloco_dig,
+                        apartamento__iexact=apto_dig,
+                    )
+                    .order_by("id")
+                    .first()
+                )
+                if ident is None:
+                    ident = IdentidadeFacial(
+                        condominio_id=lista.condominio_id,
+                        nome=nome_dig,
+                        bloco=bloco_dig,
+                        apartamento=apto_dig,
+                        perfil=perfil_dig,
+                        descriptor=descriptor or [],
+                        selfie=selfie,
+                        consentimento_lgpd=True,
+                        consentimento_em=agora,
+                    )
+                    for v in leituras:
+                        ident.guardar_leitura(v)
+                    ident.save()
+            nome_reg, bloco_reg, apto_reg, perfil_reg = (
+                nome_dig,
+                bloco_dig,
+                apto_dig,
+                perfil_dig,
+            )
+            novo = True
+        else:
+            # Rosto reconhecido com folga: vale o que o morador digitou agora
+            # (pode ter corrigido); o cadastro antigo preenche o que veio vazio.
+            nome_reg = nome_dig or ident.nome
+            bloco_reg = bloco_dig or ident.bloco
+            apto_reg = apto_dig or ident.apartamento
+            perfil_reg = perfil_dig
+            if descriptor is not None:
+                ident.guardar_leitura(descriptor)
+                ident.save(update_fields=["descriptors"])
 
     # Evita presença duplicada na mesma lista.
     if ident is not None:
@@ -650,9 +835,21 @@ def registrar_presenca_facial(request, lista_id):
                 apartamento=apto_reg,
                 selfie=selfie or (ident.selfie if ident else ""),
                 assinatura=assinatura,
-                # Sem condomínio na lista não há base facial para comparar: a
-                # presença vale pela foto, e não pode ser rotulada de biometria.
-                metodo_auth="facial" if ident is not None else "selfie",
+                # Só chamamos de biometria quando o rosto realmente conferiu.
+                # Registro por foto não pode ser rotulado de facial na ata.
+                metodo_auth=(
+                    "cpf_facial"
+                    if (cpf_hash and descriptor is not None and motivo != "rosto_nao_confere")
+                    else "cpf"
+                    if cpf_hash
+                    else "facial"
+                    if (ident is not None and descriptor is not None and not conferir)
+                    else "selfie"
+                ),
+                conferir_na_mesa=conferir,
+                motivo_conferencia=motivo,
+                distancia_facial=dist_medida,
+                unidade_original=unidade_original,
                 marca_aparelho=marca_aparelho or infer_device_info(user_agent),
                 user_agent=user_agent,
                 device_info=infer_device_info(user_agent),
@@ -687,6 +884,9 @@ def registrar_presenca_facial(request, lista_id):
             "nome": nome_reg,
             "inadimplente": inadimplente,
             "aviso": MENSAGEM_INADIMPLENTE if inadimplente else "",
+            "conferir_na_mesa": conferir,
+            "motivo_conferencia": motivo,
+            "aviso_conferencia": AVISOS_CONFERENCIA.get(motivo, "") if conferir else "",
             "link_reuniao": lista.link_reuniao,
         },
         status=status.HTTP_201_CREATED,
@@ -933,13 +1133,29 @@ def votar_enquete(request, enquete_id):
                 {"error": "Informe o bloco e o apartamento para votar."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        presentes = {
-            chave_unidade(b, a)
-            for b, a in PresencaManual.objects.filter(lista=lista).values_list(
-                "bloco", "apartamento"
-            )
-        }
+        # Registro com selo laranja (unidade alterada na mão, CPF fora da
+        # planilha, rosto que não confirmou) conta como presente na lista, mas
+        # não libera o voto: a mesa precisa conferir o documento primeiro. Basta
+        # UM registro liberado na unidade para ela poder votar.
+        presentes = set()
+        aguardando_mesa = set()
+        for b, a, conferir in PresencaManual.objects.filter(lista=lista).values_list(
+            "bloco", "apartamento", "conferir_na_mesa"
+        ):
+            chave = chave_unidade(b, a)
+            (aguardando_mesa if conferir else presentes).add(chave)
         if unidade not in presentes:
+            if unidade in aguardando_mesa:
+                return Response(
+                    {
+                        "error": (
+                            "Sua presença está registrada, mas aguarda conferência "
+                            "da mesa. Procure a mesa com um documento para liberar "
+                            "o voto da sua unidade."
+                        )
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             return Response(
                 {
                     "error": (

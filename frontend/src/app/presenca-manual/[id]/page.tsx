@@ -12,6 +12,9 @@ import {
   ScanFace,
   Video,
   Lock,
+  UserCheck,
+  Pencil,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -35,9 +38,25 @@ function CantosFoco({ cor }: { cor: string }) {
   );
 }
 
-// Presença só pela foto: sem leitura de rosto, sem comparação com cadastros
-// anteriores. Voltar para true religa o reconhecimento facial.
-const USAR_FACIAL = false;
+// Reconhecimento facial religado no desenho novo: o CPF diz quem é a pessoa e o
+// rosto só CONFIRMA (um contra um). Não existe mais busca de rosto no meio de
+// centenas de cadastros, que foi o que trocou nomes na assembleia de 08/08/2026.
+// Voltar para false desliga a leitura e a presença passa a valer só pela foto.
+const USAR_FACIAL = true;
+
+const PERFIS = [
+  { valor: "proprietario", texto: "Proprietário(a)" },
+  { valor: "locatario", texto: "Locatário(a)" },
+  { valor: "conjuge", texto: "Cônjuge" },
+  { valor: "procurador", texto: "Procurador(a)" },
+  { valor: "outro", texto: "Outro" },
+];
+
+function textoUnidade(bloco: string, apartamento: string) {
+  return [bloco?.trim() && `Bloco ${bloco.trim()}`, apartamento?.trim() && `Apto ${apartamento.trim()}`]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 async function sha256Hex(value: string): Promise<string> {
   const data = new TextEncoder().encode(value.replace(/\D/g, ""));
@@ -87,9 +106,12 @@ export default function PresencaManualPublicaPage() {
   const [nome, setNome] = useState("");
   const [bloco, setBloco] = useState("");
   const [apartamento, setApartamento] = useState("");
+  const [perfil, setPerfil] = useState("proprietario");
   const [selfie, setSelfie] = useState("");
   const [consentimento, setConsentimento] = useState(false);
   const marcaAparelho = useRef("");
+  // Aviso que o servidor devolve quando o registro entra com selo de conferência.
+  const [avisoConferencia, setAvisoConferencia] = useState("");
 
   // --- portão de CPF: morador digita o CPF e o sistema traz a unidade ---
   const [cpf, setCpf] = useState("");
@@ -99,6 +121,27 @@ export default function PresencaManualPublicaPage() {
     { nome: string; bloco: string; apartamento: string; perfil: string }[] | null
   >(null);
   const [erroCpf, setErroCpf] = useState("");
+  // O hash do CPF acompanha a presença até o fim: é ele que diz ao servidor
+  // QUEM é a pessoa, para o rosto só precisar confirmar (um contra um).
+  const [cpfHash, setCpfHash] = useState("");
+  // Este CPF já tem rosto guardado? Muda o texto da etapa da câmera.
+  const [temRostoCadastrado, setTemRostoCadastrado] = useState(false);
+  // Texto do servidor para CPF que não está na planilha da administradora.
+  const [mensagemCpf, setMensagemCpf] = useState("");
+  // Etapa da tela: cpf -> confirmar (é você?) -> corrigir (dados na mão) -> form.
+  const [etapa, setEtapa] = useState<
+    "cpf" | "naoconsta" | "confirmar" | "corrigir" | "form"
+  >("cpf");
+  // Dados como vieram da planilha, para mostrar o que foi alterado.
+  const [dadosPlanilha, setDadosPlanilha] = useState<{
+    nome: string;
+    bloco: string;
+    apartamento: string;
+  } | null>(null);
+  // Por que o morador caiu na tela de correção — muda o aviso mostrado.
+  const [motivoCorrecao, setMotivoCorrecao] = useState<
+    "divergencia" | "sem_cpf" | "sem_cadastro"
+  >("divergencia");
 
   // --- câmera / selfie ---
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -107,7 +150,10 @@ export default function PresencaManualPublicaPage() {
   const [camErro, setCamErro] = useState("");
 
   // --- biometria facial (vetor do rosto, lido no próprio aparelho) ---
+  // Guardamos as leituras SEPARADAS (não a média): a média aproxima rostos
+  // diferentes. O servidor compara contra a leitura mais parecida.
   const [descritor, setDescritor] = useState<number[] | null>(null);
+  const [leituras, setLeituras] = useState<number[][]>([]);
   const [lendoRosto, setLendoRosto] = useState(false);
   const [avisoFacial, setAvisoFacial] = useState("");
 
@@ -149,7 +195,20 @@ export default function PresencaManualPublicaPage() {
     try {
       const hash = await sha256Hex(digitos);
       const res = await api.consultarCpfPresenca(id, hash);
+      // O hash fica guardado: é ele que faz o rosto ser apenas CONFIRMADO
+      // depois, em vez de procurado no meio de todos os moradores.
+      setCpfHash(hash);
+      setTemRostoCadastrado(!!res.tem_rosto);
       setUnidadesCpf(res.unidades);
+      setMensagemCpf(res.mensagem || "");
+      if (!res.unidades?.length) {
+        // CPF fora da relação da administradora: explicamos o motivo antes de
+        // pedir os dados na mão, para ninguém achar que é falha do sistema.
+        setEtapa("naoconsta");
+      } else if (res.unidades.length === 1) {
+        prepararUnidade(res.unidades[0]);
+        setEtapa("confirmar");
+      }
     } catch {
       setErroCpf("Não consegui consultar agora. Tente de novo em instantes.");
     } finally {
@@ -157,20 +216,50 @@ export default function PresencaManualPublicaPage() {
     }
   }
 
-  function escolherUnidade(u: {
+  function prepararUnidade(u: {
     nome: string;
     bloco: string;
     apartamento: string;
+    perfil?: string;
   }) {
     setNome(u.nome || "");
     setBloco(u.bloco || "");
     setApartamento(u.apartamento || "");
+    setPerfil(u.perfil || "proprietario");
+    setDadosPlanilha({
+      nome: u.nome || "",
+      bloco: u.bloco || "",
+      apartamento: u.apartamento || "",
+    });
+  }
+
+  function escolherUnidade(u: {
+    nome: string;
+    bloco: string;
+    apartamento: string;
+    perfil?: string;
+  }) {
+    prepararUnidade(u);
+    setEtapa("confirmar");
+  }
+
+  // "Sim, sou eu": segue para a foto e a assinatura.
+  function confirmarDados() {
     setCpfConfirmado(true);
+    setEtapa("form");
+  }
+
+  // "Não sou eu / corrigir": o morador arruma nome, unidade e perfil na mão.
+  function corrigirDados(motivo: "divergencia" | "sem_cpf" | "sem_cadastro") {
+    setMotivoCorrecao(motivo);
+    setEtapa("corrigir");
   }
 
   function pularCpf() {
     // Cadastro na hora: segue com os campos em branco para o morador digitar.
-    setCpfConfirmado(true);
+    setCpfHash("");
+    setDadosPlanilha(null);
+    corrigirDados("sem_cpf");
   }
 
   const pararCamera = useCallback(() => {
@@ -201,6 +290,7 @@ export default function PresencaManualPublicaPage() {
     setCamErro("");
     setAvisoFacial("");
     setDescritor(null);
+    setLeituras([]);
     // Os modelos do reconhecimento facial baixam enquanto a pessoa se ajeita
     // na frente da câmera, para o "Capturar" não ficar esperando.
     if (USAR_FACIAL)
@@ -244,6 +334,7 @@ export default function PresencaManualPublicaPage() {
     // A foto só é mostrada no fim para o <video> não sumir durante a leitura.
     if (!USAR_FACIAL) {
       setDescritor(null);
+      setLeituras([]);
       setAvisoFacial("");
       setSelfie(foto);
       pararCamera();
@@ -252,21 +343,30 @@ export default function PresencaManualPublicaPage() {
     setLendoRosto(true);
     setAvisoFacial("");
     try {
-      const { loadModels, detectFaceAveraged } = await faceapiLib();
+      const { loadModels, lerRosto } = await faceapiLib();
       await loadModels();
       // Procura o rosto no vídeo ao vivo e também na foto que acabou de sair:
       // a foto está parada e nítida, então salva quando a imagem ao vivo treme.
-      const d = await detectFaceAveraged([video, canvas], 4);
-      if (d) {
-        setDescritor(Array.from(d));
+      // Voltam VÁRIAS leituras, da melhor para a pior — nunca a média delas.
+      const r = await lerRosto([video, canvas]);
+      if (r) {
+        const vetores = r.leituras.map((l) => Array.from(l.descriptor));
+        setLeituras(vetores);
+        setDescritor(vetores[0]);
+        if (!r.boa)
+          setAvisoFacial(
+            "A foto ficou um pouco escura ou o rosto ficou pequeno na tela. A presença vale assim mesmo; se puder, tire outra mais perto e num lugar mais claro."
+          );
       } else {
         setDescritor(null);
+        setLeituras([]);
         setAvisoFacial(
-          "Não consegui ler o seu rosto (luz ou ângulo). A presença vale pela foto, mas para conferir por biometria tire outra em um lugar mais claro, de frente para a câmera."
+          "Não consegui ler o seu rosto (luz ou ângulo). Sem problema: a sua foto vale como comprovante e a mesa confere. Se quiser, tire outra em um lugar mais claro, de frente para a câmera."
         );
       }
     } catch (e) {
       setDescritor(null);
+      setLeituras([]);
       // Falha técnica (modelo não baixou, navegador sem suporte). O detalhe curto
       // separa isso de "estava escuro demais" na hora de socorrer o síndico.
       const detalhe = e instanceof Error && e.message ? ` (${e.message.slice(0, 90)})` : "";
@@ -354,32 +454,39 @@ export default function PresencaManualPublicaPage() {
     const assinatura = canvasRef.current?.toDataURL("image/png") || "";
     setEnviando(true);
     try {
-      // Com o rosto lido, a presença entra pela biometria facial: o servidor
-      // compara com os rostos já cadastrados e barra a mesma pessoa duas vezes.
-      // Sem leitura do rosto, cai no registro simples (foto + assinatura).
-      const r = descritor
-        ? await api.registrarPresencaFacial(id, {
-            descriptor: descritor,
-            nome: nome.trim(),
-            bloco: bloco.trim(),
-            apartamento: apartamento.trim(),
-            selfie,
-            assinatura,
-            marca_aparelho: marcaAparelho.current,
-            consentimento_lgpd: consentimento,
-            declaracao_veracidade: consentimento,
-          })
-        : await api.registrarPresencaManual(id, {
-            nome: nome.trim(),
-            bloco: bloco.trim(),
-            apartamento: apartamento.trim(),
-            selfie,
-            assinatura,
-            metodo_auth: "selfie",
-            marca_aparelho: marcaAparelho.current,
-            consentimento_lgpd: consentimento,
-            declaracao_veracidade: consentimento,
-          });
+      // Com CPF ou com rosto lido, a presença entra pelo caminho do servidor que
+      // confere a identidade: o CPF diz quem é, o rosto confirma um-contra-um e
+      // qualquer divergência entra assim mesmo, marcada para a mesa conferir.
+      // Sem CPF e sem rosto, cai no registro simples (foto + assinatura).
+      const r =
+        cpfHash || descritor
+          ? await api.registrarPresencaFacial(id, {
+              ...(descritor ? { descriptor: descritor } : {}),
+              ...(leituras.length ? { descriptors: leituras } : {}),
+              ...(cpfHash ? { cpf_hash: cpfHash } : {}),
+              nome: nome.trim(),
+              bloco: bloco.trim(),
+              apartamento: apartamento.trim(),
+              perfil,
+              selfie,
+              assinatura,
+              marca_aparelho: marcaAparelho.current,
+              consentimento_lgpd: consentimento,
+              declaracao_veracidade: consentimento,
+            })
+          : await api.registrarPresencaManual(id, {
+              nome: nome.trim(),
+              bloco: bloco.trim(),
+              apartamento: apartamento.trim(),
+              perfil,
+              selfie,
+              assinatura,
+              metodo_auth: "selfie",
+              marca_aparelho: marcaAparelho.current,
+              consentimento_lgpd: consentimento,
+              declaracao_veracidade: consentimento,
+            });
+      setAvisoConferencia(String((r as any)?.aviso_conferencia || ""));
       if ((r as any)?.ja_presente) {
         setJaPresente(true);
         setJaPresenteNome(String((r as any).nome || ""));
@@ -442,6 +549,13 @@ export default function PresencaManualPublicaPage() {
               você, procure a mesa da assembleia para registrar a sua presença.
             </div>
           )}
+        {/* Selo laranja: a presença ESTÁ registrada; só passa pela vista da mesa
+            antes de valer para o voto da unidade. */}
+        {avisoConferencia && (
+          <div className="mt-5 max-w-sm rounded-lg border border-amber-300 bg-amber-50 p-4 text-left text-sm text-amber-900">
+            {avisoConferencia}
+          </div>
+        )}
         {avisoInadimplente && (
           <div className="mt-5 max-w-sm rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
             {avisoInadimplente}
@@ -489,8 +603,216 @@ export default function PresencaManualPublicaPage() {
     </div>
   ) : null;
 
+  // Moldura comum das telas do começo (CPF → confirmação → correção).
+  // É uma função, não um componente: componente declarado aqui dentro seria
+  // recriado a cada tecla digitada e o campo perderia o foco.
+  const moldura = (conteudo: React.ReactNode) => (
+    <div className="min-h-screen bg-gray-50 py-6 px-4">
+      <div className="max-w-md mx-auto">
+        <h1 className="text-xl font-bold mb-1">Lista de presença</h1>
+        {lista?.titulo && (
+          <p className="text-sm text-gray-500 mb-4">{lista.titulo}</p>
+        )}
+        {avisoSala}
+        {conteudo}
+      </div>
+    </div>
+  );
+
+  const nomePerfil =
+    PERFIS.find((p) => p.valor === perfil)?.texto || "Proprietário(a)";
+
+  // "É você, Fulano?" — o passo que faltava. Antes o sistema decidia sozinho
+  // quem era a pessoa pelo rosto; agora ele mostra o que encontrou pelo CPF e
+  // espera a pessoa confirmar. Se estiver errado, ela mesma corrige.
+  if (lista && lista.ativa && !cpfConfirmado && etapa === "confirmar") {
+    return moldura(
+      <>
+        <div className="card mb-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <UserCheck className="h-4 w-4 text-primary-600" />
+            Confirme se é você
+          </div>
+          <div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3">
+            <p className="text-lg font-semibold leading-tight text-gray-900">
+              {nome || "—"}
+            </p>
+            <p className="mt-1 text-sm text-gray-700">
+              {textoUnidade(bloco, apartamento) || "Unidade não informada"}
+            </p>
+            <p className="mt-0.5 text-xs text-gray-500">{nomePerfil}</p>
+          </div>
+          <button onClick={confirmarDados} className="btn-primary mt-4 w-full">
+            Sim, sou eu
+          </button>
+          <button
+            onClick={() => corrigirDados("divergencia")}
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+          >
+            <Pencil className="h-4 w-4" /> Não sou eu / corrigir meus dados
+          </button>
+        </div>
+        <p className="px-1 text-xs text-gray-500">
+          {temRostoCadastrado
+            ? "Na próxima tela você tira uma foto. Ela serve só para confirmar que é você mesmo, comparando com a foto do seu próprio cadastro."
+            : "Na próxima tela você tira uma foto. Como é a sua primeira vez, ela fica guardada como o seu cadastro para as próximas assembleias."}
+        </p>
+      </>
+    );
+  }
+
+  // CPF que não está na relação da administradora. O morador entra do mesmo
+  // jeito; o texto explica de onde vem a falha para ele não achar que é o
+  // sistema que está errado.
+  if (lista && lista.ativa && !cpfConfirmado && etapa === "naoconsta") {
+    return moldura(
+      <div className="card mb-4">
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            {mensagemCpf ||
+              "Seu CPF não consta na planilha de moradores. Verifique junto à administração do seu condomínio ou sua administradora, porque seu nome não consta na relação. Você pode registrar sua presença preenchendo os dados abaixo — a mesa confere depois."}
+          </span>
+        </div>
+        <button
+          onClick={() => corrigirDados("sem_cadastro")}
+          className="btn-primary mt-4 w-full"
+        >
+          Preencher meus dados e continuar
+        </button>
+        <button
+          onClick={() => {
+            setUnidadesCpf(null);
+            setMensagemCpf("");
+            setEtapa("cpf");
+          }}
+          className="mt-3 w-full text-sm text-gray-500 underline underline-offset-2"
+        >
+          Digitar o CPF de novo
+        </button>
+      </div>
+    );
+  }
+
+  // Correção manual: nome, unidade e perfil na mão. É a saída para quando a
+  // planilha veio errada, quando o CPF não consta ou quando o morador não tem
+  // o CPF em mãos. Nada disso barra a presença — ela entra marcada para a mesa.
+  if (lista && lista.ativa && !cpfConfirmado && etapa === "corrigir") {
+    const mudou =
+      !!dadosPlanilha &&
+      (dadosPlanilha.nome.trim() !== nome.trim() ||
+        dadosPlanilha.bloco.trim() !== bloco.trim() ||
+        dadosPlanilha.apartamento.trim() !== apartamento.trim());
+    return moldura(
+      <>
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-xs leading-relaxed text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            {motivoCorrecao === "sem_cadastro" ? (
+              mensagemCpf ||
+              "Seu CPF não consta na planilha de moradores. Verifique junto à administração do seu condomínio ou sua administradora, porque seu nome não consta na relação."
+            ) : motivoCorrecao === "sem_cpf" ? (
+              "Sem o CPF não conseguimos trazer os seus dados automaticamente. Preencha abaixo: a presença é registrada e a mesa confere na hora."
+            ) : (
+              <>
+                <b>Atenção:</b> os dados que aparecem aqui vêm da planilha de
+                moradores enviada pela administração do condomínio. Se estiver
+                alguma coisa diferente, a divergência é dessa planilha — corrija
+                abaixo e siga normalmente. A mesa da assembleia confere o que foi
+                alterado.
+              </>
+            )}
+          </span>
+        </div>
+
+        <div className="card mb-4 space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Nome completo
+            </label>
+            <input
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              className="input-field w-full"
+              placeholder="Como está no seu documento"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Bloco</label>
+              <input
+                value={bloco}
+                onChange={(e) => setBloco(e.target.value)}
+                className="input-field w-full"
+                placeholder="A"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Apartamento
+              </label>
+              <input
+                value={apartamento}
+                onChange={(e) => setApartamento(e.target.value)}
+                className="input-field w-full"
+                placeholder="305"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Você é o que na unidade?
+            </label>
+            <select
+              value={perfil}
+              onChange={(e) => setPerfil(e.target.value)}
+              className="input-field w-full"
+            >
+              {PERFIS.map((p) => (
+                <option key={p.valor} value={p.valor}>
+                  {p.texto}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {mudou && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-white px-3 py-2.5 text-xs text-gray-600">
+            Na planilha consta <b>{dadosPlanilha!.nome || "sem nome"}</b> —{" "}
+            {textoUnidade(dadosPlanilha!.bloco, dadosPlanilha!.apartamento) ||
+              "sem unidade"}
+            . Sua presença é registrada normalmente e fica sinalizada para a mesa
+            conferir a unidade antes do voto.
+          </div>
+        )}
+
+        <button
+          onClick={confirmarDados}
+          disabled={!nome.trim() || !apartamento.trim()}
+          className="btn-primary w-full disabled:opacity-50"
+        >
+          Continuar
+        </button>
+        {dadosPlanilha && (
+          <button
+            onClick={() => {
+              setNome(dadosPlanilha.nome);
+              setBloco(dadosPlanilha.bloco);
+              setApartamento(dadosPlanilha.apartamento);
+              setEtapa("confirmar");
+            }}
+            className="mt-3 w-full text-sm text-gray-500 underline underline-offset-2"
+          >
+            Voltar sem alterar
+          </button>
+        )}
+      </>
+    );
+  }
+
   // Portão de CPF: primeiro passo. O morador digita o CPF e o sistema já traz
-  // nome/bloco/apartamento; depois é só a selfie e a assinatura.
+  // nome/bloco/apartamento; depois ele confirma que é ele.
   if (lista && lista.ativa && lista.tem_cpf && !cpfConfirmado) {
     const digitos = cpf.replace(/\D/g, "");
     const cpfValido = digitos.length === 11 || digitos.length === 14;
@@ -509,8 +831,9 @@ export default function PresencaManualPublicaPage() {
               Digite o seu CPF
             </label>
             <p className="mb-3 text-xs text-gray-500">
-              É só digitar o CPF que o sistema encontra a sua unidade e preenche
-              tudo automaticamente. Depois você tira a selfie e assina.
+              É só digitar o CPF que o sistema encontra a sua unidade. Na tela
+              seguinte você confere se os dados estão certos — se não estiverem,
+              corrige na hora. Depois é a foto e a assinatura.
             </p>
             <input
               inputMode="numeric"
@@ -576,21 +899,13 @@ export default function PresencaManualPublicaPage() {
               </div>
             )}
 
-            {unidadesCpf && unidadesCpf.length === 0 && (
-              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-                Não encontramos esse CPF na lista. Sem problema — você pode se
-                cadastrar na hora no botão abaixo.
-              </div>
-            )}
           </div>
 
           <button
             onClick={pularCpf}
             className="w-full text-sm text-gray-500 underline underline-offset-2"
           >
-            {unidadesCpf && unidadesCpf.length === 0
-              ? "Cadastrar meus dados na hora"
-              : "Não tenho o CPF em mãos / cadastrar na hora"}
+            Não tenho o CPF em mãos / cadastrar na hora
           </button>
         </div>
       </div>
@@ -604,6 +919,30 @@ export default function PresencaManualPublicaPage() {
         <p className="text-sm text-gray-500 mb-4">{lista?.titulo}</p>
         {avisoSala}
 
+        {/* Quem está registrando — fica à vista o tempo todo, e o botão volta
+            para a correção se a pessoa perceber algo errado agora. */}
+        {cpfConfirmado && nome.trim() && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-gray-900">
+                {nome}
+              </p>
+              <p className="truncate text-xs text-gray-600">
+                {textoUnidade(bloco, apartamento)}
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setCpfConfirmado(false);
+                corrigirDados(dadosPlanilha ? "divergencia" : "sem_cpf");
+              }}
+              className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary-700 underline underline-offset-2"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Corrigir
+            </button>
+          </div>
+        )}
+
         {/* Reconhecimento facial */}
         <div className="card mb-4">
           <div className="mb-4 flex items-center gap-3">
@@ -612,12 +951,18 @@ export default function PresencaManualPublicaPage() {
             </div>
             <div className="min-w-0">
               <h2 className="text-base font-semibold text-gray-900">
-                {USAR_FACIAL ? "Reconhecimento facial" : "Foto de presença"}
+                {!USAR_FACIAL
+                  ? "Foto de presença"
+                  : temRostoCadastrado
+                  ? "Confirmação pelo rosto"
+                  : "Foto de presença"}
               </h2>
               <p className="text-xs text-gray-500">
-                {USAR_FACIAL
-                  ? "A leitura acontece no seu próprio aparelho e confirma que cada pessoa registra presença uma única vez."
-                  : "Tire uma foto sua agora. Ela fica na lista de presença como comprovante de que você participou."}
+                {!USAR_FACIAL
+                  ? "Tire uma foto sua agora. Ela fica na lista de presença como comprovante de que você participou."
+                  : temRostoCadastrado
+                  ? "A leitura acontece no seu próprio aparelho e só compara com a foto do seu próprio cadastro. Se não bater, a sua foto de agora vale como comprovante e a mesa confere."
+                  : "Tire uma foto sua agora. Ela fica na lista como comprovante e passa a ser o seu cadastro para as próximas assembleias."}
               </p>
             </div>
           </div>
@@ -647,7 +992,7 @@ export default function PresencaManualPublicaPage() {
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-3 pb-2.5 pt-8">
                   {descritor ? (
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/95 px-3 py-1 text-xs font-semibold text-white shadow">
-                      <Check className="h-3.5 w-3.5" /> Rosto reconhecido
+                      <Check className="h-3.5 w-3.5" /> Rosto lido
                     </span>
                   ) : (
                     <span
@@ -663,13 +1008,15 @@ export default function PresencaManualPublicaPage() {
               </div>
               {descritor && (
                 <p className="mt-2 text-xs text-gray-500">
-                  Biometria facial confirmada neste aparelho.
+                  Rosto lido neste aparelho. A imagem não sai daqui — só o código
+                  de leitura.
                 </p>
               )}
               <button
                 onClick={() => {
                   setSelfie("");
                   setDescritor(null);
+                  setLeituras([]);
                   abrirCamera();
                 }}
                 className="mt-3 inline-flex w-full items-center justify-center gap-1 text-sm font-medium text-primary-600"

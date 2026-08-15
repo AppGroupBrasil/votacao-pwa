@@ -190,6 +190,34 @@ class PresencaManual(models.Model):
         default="",
         help_text="Hash SHA-256 do vetor facial capturado (biometria facial).",
     )
+    conferir_na_mesa = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Registro que a mesa precisa olhar antes de valer para quórum/voto (unidade alterada, rosto não conferido, CPF fora da planilha).",
+    )
+    motivo_conferencia = models.CharField(
+        max_length=40,
+        blank=True,
+        default="",
+        help_text="Por que precisa de conferência: unidade_alterada, rosto_nao_confere, sem_cadastro, rosto_ambiguo.",
+    )
+    conferido_em = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Quando a mesa liberou o registro. Vazio = ainda pendente.",
+    )
+    conferido_por = models.CharField(max_length=200, blank=True, default="")
+    distancia_facial = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Distância medida entre o rosto lido e o cadastro (menor = mais parecido). Fica gravada para auditoria.",
+    )
+    unidade_original = models.CharField(
+        max_length=60,
+        blank=True,
+        default="",
+        help_text="Bloco/apto que a planilha trazia, quando o morador corrigiu na hora.",
+    )
     marca_aparelho = models.CharField(max_length=120, blank=True, default="")
     user_agent = models.TextField(blank=True, default="")
     device_info = models.CharField(max_length=255, blank=True, default="")

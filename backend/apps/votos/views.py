@@ -26,7 +26,13 @@ from apps.eleitores.models import (
     normalizar_unidade,
     unidade_inadimplente,
 )
-from apps.eleitores.facial import melhor_correspondencia, validar_descriptor
+from apps.eleitores.facial import (
+    LIMIAR_BUSCA,
+    melhor_correspondencia,
+    validar_descriptor,
+    validar_lista_descriptors,
+    verificar,
+)
 from core.permissions import IsAdminWithRole, get_user_condominios
 
 from .models import VotanteManual, Voto
@@ -664,6 +670,21 @@ def _registrar_voto_manual(request, assembleia, serializer, auth_context):
             status=status.HTTP_403_FORBIDDEN,
         )
 
+    # Selo laranja: entrou na assembleia, mas algo não fechou (CPF fora da
+    # planilha, unidade trocada na mão, rosto que não confirmou). Participa e
+    # conta para o quórum; o voto só abre quando a mesa confere o documento.
+    if votante.conferir_na_mesa:
+        return Response(
+            {
+                "error": (
+                    "Seu voto está aguardando a conferência da mesa. Procure a mesa "
+                    "com um documento para liberar o voto da sua unidade."
+                ),
+                "code": "conferir_na_mesa",
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     if questao.encerrada:
         return Response(
             {"error": "A votação deste item foi encerrada."},
@@ -930,16 +951,94 @@ def acesso_manual(request, assembleia_id):
     )
 
 
+# O que o morador lê quando entra na votação com selo laranja. Ele participa da
+# assembleia normalmente; o que espera a mesa é o voto da unidade. Todos os
+# textos explicam o motivo em português, sem jargão e sem dar a entender que o
+# morador fez algo errado.
+AVISOS_CONFERENCIA = {
+    "unidade_alterada": (
+        "Você está na assembleia. Como a unidade que você informou está diferente "
+        "da planilha da administradora, a mesa precisa conferir antes de liberar o "
+        "seu voto. Procure a mesa com um documento."
+    ),
+    "rosto_nao_confere": (
+        "Você está na assembleia. Não deu para confirmar pelo rosto — sua foto fica "
+        "como comprovante e a mesa libera o voto depois de conferir seu documento."
+    ),
+    "sem_cadastro": (
+        "Você está na assembleia. Seu CPF não consta na planilha de moradores "
+        "enviada pela administradora, então a mesa vai conferir antes de liberar o "
+        "voto. Procure a administração do seu condomínio para atualizar o cadastro."
+    ),
+    "rosto_ambiguo": (
+        "Você está na assembleia. O sistema não teve certeza de quem era e preferiu "
+        "não registrar um nome errado — procure a mesa para liberar o seu voto."
+    ),
+    "padrao": (
+        "Você está na assembleia. A mesa precisa conferir seus dados antes de "
+        "liberar o voto da sua unidade. Procure a mesa com um documento."
+    ),
+}
+
+MENSAGEM_CPF_FORA_DA_PLANILHA = (
+    "Seu CPF não consta na planilha de moradores. Verifique junto à administração "
+    "do seu condomínio ou sua administradora, porque seu nome não consta na relação."
+)
+
+
+@ratelimit(key="ip", rate="120/m", block=True)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def consultar_cpf_votacao(request, assembleia_id):
+    """Morador digita o CPF para entrar na votação; devolve as unidades ligadas a
+    esse CPF no condomínio da assembleia. Recebe já o hash (o CPF nunca trafega em
+    texto) e não expõe e-mail nem nenhum outro dado do morador."""
+    assembleia = get_object_or_404(Assembleia, id=assembleia_id)
+    cpf_hash = str(request.data.get("cpf_hash", "")).strip().lower()
+    if len(cpf_hash) != 64 or any(c not in "0123456789abcdef" for c in cpf_hash):
+        return Response({"error": "CPF inválido."}, status=status.HTTP_400_BAD_REQUEST)
+    if not assembleia.condominio_id:
+        return Response({"unidades": [], "encontrado": False, "tem_rosto": False})
+
+    unidades = list(
+        Eleitor.objects.filter(
+            condominio_id=assembleia.condominio_id, cpf_hash=cpf_hash
+        )
+        .order_by("bloco", "apartamento")
+        .values("nome", "bloco", "apartamento", "perfil")
+    )
+    # Já tem rosto guardado? Então a etapa seguinte é só CONFIRMAR que é a mesma
+    # pessoa (um-contra-um). Se não tem, a foto de agora vira o cadastro dele.
+    tem_rosto = IdentidadeFacial.objects.filter(
+        condominio_id=assembleia.condominio_id, cpf_hash=cpf_hash
+    ).exists()
+    return Response(
+        {
+            "unidades": unidades,
+            "encontrado": bool(unidades),
+            "tem_rosto": tem_rosto,
+            "mensagem": "" if unidades else MENSAGEM_CPF_FORA_DA_PLANILHA,
+        }
+    )
+
+
 # Numa assembleia presencial todos entram pelo mesmo Wi-Fi (um único IP): o
 # limite tem de caber a sala inteira chegando junto, não uma pessoa por vez.
 @ratelimit(key="ip", rate="120/m", block=True)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def acesso_facial(request, assembleia_id):
-    """Entrada da votação pelo rosto (reconhecimento 1:N, igual à lista de
-    presença). Se o rosto já é conhecido no condomínio, reconhece e libera o voto
-    na hora. Se é a primeira vez, cadastra a identidade facial (nome/unidade/
-    selfie/LGPD) ali mesmo. Garante 1 voto por rosto e registra a presença."""
+    """Entrada da votação pelo rosto.
+
+    Com CPF (caminho normal): o CPF diz quem é a pessoa e o rosto só confirma,
+    numa comparação um-contra-um. Foi a inversão que acabou com a troca de nomes
+    da assembleia de 08/08/2026 — não existe mais escolher um nome entre centenas
+    de rostos parecidos, só responder sim ou não a uma pergunta.
+
+    Sem CPF (condomínio sem planilha): ainda procura entre todos, mas com limiar
+    rígido e recusa em caso de empate; na dúvida entra com selo laranja para a
+    mesa conferir, em vez de chutar um nome.
+    """
     assembleia = get_object_or_404(Assembleia, id=assembleia_id)
 
     if assembleia.status != Assembleia.Status.ABERTA:
@@ -953,23 +1052,146 @@ def acesso_facial(request, assembleia_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # O rosto deixou de ser obrigatório: quando a câmera não lê (contraluz do
+    # salão, óculos, tremor), a selfie entra no lugar e a mesa confere. Ninguém
+    # fica de fora da assembleia por causa da câmera.
     descriptor = validar_descriptor(request.data.get("descriptor"))
-    if descriptor is None:
+    leituras = validar_lista_descriptors(request.data.get("descriptors"))
+    if descriptor is not None:
+        if descriptor not in leituras:
+            leituras = [descriptor, *leituras][:5]
+    elif leituras:
+        descriptor = leituras[0]
+
+    cpf_hash = str(request.data.get("cpf_hash", "")).strip().lower()
+    if len(cpf_hash) != 64 or any(c not in "0123456789abcdef" for c in cpf_hash):
+        cpf_hash = ""
+
+    if descriptor is None and not cpf_hash:
         return Response(
             {"error": "Não foi possível ler o rosto. Tente novamente."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Procura o rosto entre as identidades já cadastradas no condomínio.
-    identidades = IdentidadeFacial.objects.filter(
-        condominio_id=assembleia.condominio_id
-    ).defer("selfie")
-    ident, _dist = melhor_correspondencia(descriptor, identidades)
+    perfis_validos = {"proprietario", "locatario", "conjuge", "procurador", "outro"}
+    nome = str(request.data.get("nome", "")).strip()[:200]
+    bloco = str(request.data.get("bloco", "")).strip()[:20]
+    apartamento = str(request.data.get("apartamento", "")).strip()[:20]
+    perfil = str(request.data.get("perfil", "")).strip().lower()
+    if perfil not in perfis_validos:
+        perfil = "proprietario"
+    selfie = str(request.data.get("selfie", ""))
+    if len(selfie) > 3_500_000:
+        return Response(
+            {"error": "Imagem muito grande."}, status=status.HTTP_400_BAD_REQUEST
+        )
 
+    ident = None
     novo = False
+    conferir = False
+    motivo = ""
+    dist_medida = None
+    unidade_original = ""
+
+    if cpf_hash:
+        # ---- Caminho normal: o CPF confirma quem é, o rosto só valida. ----
+        ident = (
+            IdentidadeFacial.objects.filter(
+                condominio_id=assembleia.condominio_id, cpf_hash=cpf_hash
+            )
+            .order_by("criado_em")
+            .first()
+        )
+        unidades_planilha = list(
+            Eleitor.objects.filter(
+                condominio_id=assembleia.condominio_id, cpf_hash=cpf_hash
+            ).values("nome", "bloco", "apartamento")
+        )
+        if not nome:
+            return Response(
+                {"error": "Informe o nome."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        if not apartamento:
+            return Response(
+                {"error": "Informe seu apartamento/unidade."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not unidades_planilha:
+            # CPF fora da relação da administradora: entra assim mesmo e fica
+            # visível para a mesa, em vez de barrar quem é morador de fato.
+            conferir, motivo = True, "sem_cadastro"
+        else:
+            # A unidade é o único dado que decide direito a voto: se o morador
+            # mudou a unidade em relação à planilha, entra, mas passa pela mesa.
+            alvo = (normalizar_unidade(bloco), normalizar_unidade(apartamento))
+            casou = any(
+                (normalizar_unidade(u["bloco"]), normalizar_unidade(u["apartamento"]))
+                == alvo
+                for u in unidades_planilha
+            )
+            if not casou:
+                conferir, motivo = True, "unidade_alterada"
+                u0 = unidades_planilha[0]
+                unidade_original = f"{u0['bloco']} {u0['apartamento']}".strip()[:60]
+
+        if ident is not None:
+            if descriptor is None:
+                if not conferir:
+                    conferir, motivo = True, "rosto_nao_confere"
+            else:
+                confere, d = verificar(descriptor, ident)
+                dist_medida = None if d == float("inf") else round(d, 4)
+                if confere:
+                    # Acertou: guarda esta leitura para reconhecer melhor da
+                    # próxima vez (luz e ângulo diferentes do cadastro).
+                    ident.guardar_leitura(descriptor)
+                elif not conferir:
+                    conferir, motivo = True, "rosto_nao_confere"
+            ident.nome = nome or ident.nome
+            ident.bloco = bloco or ident.bloco
+            ident.apartamento = apartamento or ident.apartamento
+            ident.perfil = perfil
+            if selfie and not ident.selfie:
+                ident.selfie = selfie
+            ident.save()
+        else:
+            # Primeira assembleia deste CPF: a foto de agora vira o cadastro.
+            if not bool(request.data.get("consentimento_lgpd")):
+                return Response(
+                    {"error": "É necessário concordar com o uso dos dados (LGPD)."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            ident = IdentidadeFacial(
+                condominio_id=assembleia.condominio_id,
+                cpf_hash=cpf_hash,
+                nome=nome,
+                bloco=bloco,
+                apartamento=apartamento,
+                perfil=perfil,
+                descriptor=descriptor or [],
+                selfie=selfie,
+                consentimento_lgpd=True,
+                consentimento_em=timezone.now(),
+            )
+            for v in leituras:
+                ident.guardar_leitura(v)
+            ident.save()
+            novo = True
+    else:
+        # ---- Condomínio sem planilha de CPF: só aqui ainda procuramos o rosto
+        # entre todos, com limiar rígido e recusa em caso de empate.
+        identidades = IdentidadeFacial.objects.filter(
+            condominio_id=assembleia.condominio_id
+        ).defer("selfie")
+        ident, d = melhor_correspondencia(descriptor, identidades)
+        dist_medida = None if d == float("inf") else round(d, 4)
+        if ident is None and d < LIMIAR_BUSCA + 0.1:
+            # Chegou perto de alguém mas sem certeza: não chuta um nome.
+            conferir, motivo = True, "rosto_ambiguo"
+
     if ident is None:
         # Rosto desconhecido: sem nome, avisa o front que precisa do 1º cadastro.
-        nome = str(request.data.get("nome", "")).strip()[:200]
         if not nome:
             return Response({"encontrado": False}, status=status.HTTP_200_OK)
         if not bool(request.data.get("consentimento_lgpd")):
@@ -977,21 +1199,11 @@ def acesso_facial(request, assembleia_id):
                 {"error": "É necessário concordar com o uso dos dados (LGPD)."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        selfie = str(request.data.get("selfie", ""))
-        if len(selfie) > 3_500_000:
-            return Response(
-                {"error": "Imagem muito grande."}, status=status.HTTP_400_BAD_REQUEST
-            )
-        bloco = str(request.data.get("bloco", "")).strip()[:20]
-        apartamento = str(request.data.get("apartamento", "")).strip()[:20]
         if not apartamento:
             return Response(
                 {"error": "Informe seu apartamento/unidade."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        perfil = str(request.data.get("perfil", "")).strip().lower()
-        if perfil not in {"proprietario", "locatario", "conjuge", "procurador", "outro"}:
-            perfil = "proprietario"
         # Anti-duplo-clique / recadastro: se a mesma unidade+nome já tem
         # identidade no condomínio (dois cliques rápidos, ou o rosto não casou
         # por variação de luz), reaproveita em vez de criar outra identidade.
@@ -1013,18 +1225,25 @@ def acesso_facial(request, assembleia_id):
         if existente is not None:
             ident = existente
         else:
-            ident = IdentidadeFacial.objects.create(
+            ident = IdentidadeFacial(
                 condominio_id=assembleia.condominio_id,
                 nome=nome,
                 bloco=bloco,
                 apartamento=apartamento,
                 perfil=perfil,
-                descriptor=descriptor,
+                descriptor=descriptor or [],
                 selfie=selfie,
                 consentimento_lgpd=True,
                 consentimento_em=timezone.now(),
             )
+            for v in leituras:
+                ident.guardar_leitura(v)
+            ident.save()
             novo = True
+    elif not cpf_hash and descriptor is not None and not novo:
+        # Reconhecido com folga pelo rosto: aprende esta leitura também.
+        ident.guardar_leitura(descriptor)
+        ident.save(update_fields=["descriptors"])
 
     # 1 votante por rosto por assembleia (reaproveita quem já entrou antes).
     user_agent = get_client_user_agent(request)
@@ -1043,6 +1262,10 @@ def acesso_facial(request, assembleia_id):
             user_agent=user_agent,
             device_info=infer_device_info(user_agent),
             device_id=str(request.data.get("device_id", "")).strip()[:64],
+            conferir_na_mesa=conferir,
+            motivo_conferencia=motivo,
+            distancia_facial=dist_medida,
+            unidade_original=unidade_original,
         ),
     )
     if criado:
@@ -1052,9 +1275,21 @@ def acesso_facial(request, assembleia_id):
             nome=votante.nome,
             bloco=votante.bloco,
             apartamento=votante.apartamento,
-            metodo_auth="facial",
+            metodo_auth=(
+                "cpf_facial"
+                if cpf_hash and descriptor is not None
+                else "cpf"
+                if cpf_hash
+                else "facial"
+                if descriptor is not None
+                else "selfie"
+            ),
             selfie=selfie_ident,
-            assinatura_facial=hashlib.sha256(str(descriptor).encode()).hexdigest(),
+            assinatura_facial=(
+                hashlib.sha256(str(descriptor).encode()).hexdigest()
+                if descriptor is not None
+                else ""
+            ),
             ip_address=get_client_ip(request),
             user_agent=user_agent,
             device_info=infer_device_info(user_agent),
@@ -1079,18 +1314,28 @@ def acesso_facial(request, assembleia_id):
     )
 
     audit.info(
-        "acesso_facial assembleia=%s votante=%s ident=%s novo=%s",
-        assembleia.id, votante.id, ident.id, novo,
+        "acesso_facial assembleia=%s votante=%s ident=%s novo=%s cpf=%s conferir=%s(%s)",
+        assembleia.id, votante.id, ident.id, novo, bool(cpf_hash),
+        votante.conferir_na_mesa, votante.motivo_conferencia,
     )
     return Response(
         {
             "encontrado": True,
             "authenticated": True,
-            "method": "facial",
+            "method": "cpf_facial" if cpf_hash else "facial",
             "novo": novo,
             "nome": votante.nome,
             "votante_manual_id": str(votante.id),
             "aviso_unidade": aviso_unidade,
+            "conferir_na_mesa": votante.conferir_na_mesa,
+            "motivo_conferencia": votante.motivo_conferencia,
+            "aviso_conferencia": (
+                AVISOS_CONFERENCIA.get(
+                    votante.motivo_conferencia, AVISOS_CONFERENCIA["padrao"]
+                )
+                if votante.conferir_na_mesa
+                else ""
+            ),
             "token": token,
         },
         status=status.HTTP_200_OK,
@@ -1132,6 +1377,11 @@ def votos_manuais(request, assembleia_id):
                 "device_info": votante.device_info,
                 "situacao": situacao,
                 "inadimplente": votante.inadimplente,
+                "conferir_na_mesa": votante.conferir_na_mesa,
+                "motivo_conferencia": votante.motivo_conferencia,
+                "unidade_original": votante.unidade_original,
+                "conferido_em": votante.conferido_em,
+                "conferido_por": votante.conferido_por,
                 "total_votos": len(votos),
                 "votos": [
                     {"questao": v.questao.titulo, "status": v.status} for v in votos
@@ -1149,17 +1399,42 @@ def validar_voto_manual(request, assembleia_id):
     acao = str(request.data.get("acao", "")).strip().lower()
 
     if not votante_id or acao not in {
-        "aprovar", "rejeitar", "inadimplente", "regularizar",
+        "aprovar", "rejeitar", "inadimplente", "regularizar", "conferir",
     }:
         return Response(
             {
                 "error": "Informe votante_manual_id e acao "
-                "(aprovar/rejeitar/inadimplente/regularizar)"
+                "(aprovar/rejeitar/inadimplente/regularizar/conferir)"
             },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     votante = get_object_or_404(VotanteManual, id=votante_id, assembleia=assembleia)
+
+    # Botão "Conferido" da mesa: apaga o selo laranja e libera o voto da unidade.
+    # Quem conferiu fica registrado, para a ata responder quem autorizou.
+    if acao == "conferir":
+        votante.conferir_na_mesa = False
+        votante.conferido_em = timezone.now()
+        votante.conferido_por = (
+            getattr(request.user, "get_full_name", lambda: "")()
+            or getattr(request.user, "email", "")
+            or str(request.user)
+        )[:200]
+        votante.save(
+            update_fields=["conferir_na_mesa", "conferido_em", "conferido_por"]
+        )
+        audit.info(
+            "votante_conferido assembleia=%s votante=%s por=%s",
+            assembleia.id, votante.id, votante.conferido_por,
+        )
+        return Response(
+            {
+                "message": "Voto liberado. A unidade já pode votar.",
+                "votante_manual_id": str(votante.id),
+                "conferir_na_mesa": False,
+            }
+        )
 
     # Botão "Inadimplente" do painel: invalida os votos e deixa a unidade
     # impedida de votar de novo, sem tocar na marcação vinda da planilha
@@ -1374,10 +1649,20 @@ def votacao_publica(request, assembleia_id):
     assembleia = get_object_or_404(
         Assembleia.objects.prefetch_related("questoes__opcoes"), id=assembleia_id
     )
+    # Só faz sentido pedir o CPF quando este condomínio tem moradores importados
+    # (com CPF). Sem planilha, a tela vai direto para a facial.
+    tem_cpf = bool(
+        assembleia.condominio_id
+        and Eleitor.objects.filter(condominio_id=assembleia.condominio_id)
+        .exclude(cpf_hash__isnull=True)
+        .exclude(cpf_hash="")
+        .exists()
+    )
     return Response(
         {
             "id": str(assembleia.id),
             "titulo": assembleia.titulo,
+            "tem_cpf": tem_cpf,
             "descricao": assembleia.descricao,
             "status": assembleia.status,
             "votacao_liberada": assembleia.votacao_liberada,
