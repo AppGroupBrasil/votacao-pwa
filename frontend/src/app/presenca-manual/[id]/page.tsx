@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   Loader2,
   Camera,
@@ -84,6 +84,7 @@ async function detectarAparelho(): Promise<string> {
 
 export default function PresencaManualPublicaPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
 
   const [lista, setLista] = useState<{
@@ -173,6 +174,12 @@ export default function PresencaManualPublicaPage() {
     api
       .getListaPresencaPublica(id)
       .then((d) => {
+        // Lista rápida não usa biometria: manda para a tela leve antes de
+        // baixar os 6 MB de modelos à toa.
+        if (d?.modo_rapido) {
+          router.replace(`/presenca/${id}`);
+          return;
+        }
         setLista(d);
         // Os modelos do reconhecimento facial pesam ~6 MB. Baixamos assim que a
         // lista abre (enquanto o morador digita nome e apartamento) para a
@@ -182,7 +189,7 @@ export default function PresencaManualPublicaPage() {
       })
       .catch(() => setErro("Lista de presença não encontrada."))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, router]);
 
   async function consultarCpf() {
     const digitos = cpf.replace(/\D/g, "");

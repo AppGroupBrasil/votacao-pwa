@@ -75,7 +75,12 @@ export default function ShortVotacaoRedirect() {
       try {
         const r = await api.resolverCodigoLista(code);
         if (ativo && r?.lista_id) {
-          router.replace(`/presenca-manual/${r.lista_id}`);
+          // Lista rápida vai para a tela sem biometria: só foto e assinatura.
+          router.replace(
+            r.modo_rapido
+              ? `/presenca/${r.lista_id}`
+              : `/presenca-manual/${r.lista_id}`
+          );
           return;
         }
       } catch {

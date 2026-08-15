@@ -64,6 +64,15 @@ def get_client_ip(request):
     return request.META.get("REMOTE_ADDR")
 
 
+def coordenada(valor):
+    """Latitude/longitude do aparelho. Quem nega o GPS entra do mesmo jeito."""
+    try:
+        n = float(valor)
+    except (TypeError, ValueError):
+        return None
+    return n if -180 <= n <= 180 else None
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def resolver_codigo_enquete(request, codigo):
@@ -82,12 +91,16 @@ def resolver_codigo_enquete(request, codigo):
 def resolver_codigo_lista(request, codigo):
     """Endpoint público: resolve o código curto (/v/<codigo>) para o id da lista de presença."""
     try:
-        lista = ListaPresenca.objects.only("id").get(codigo_curto=codigo.upper())
+        lista = ListaPresenca.objects.only("id", "modo_rapido").get(
+            codigo_curto=codigo.upper()
+        )
     except ListaPresenca.DoesNotExist:
         return Response(
             {"error": "Código não encontrado."}, status=status.HTTP_404_NOT_FOUND
         )
-    return Response({"lista_id": str(lista.id)})
+    # O modo diz para qual tela o link abre: a completa (CPF + rosto) ou a
+    # rápida (só foto e assinatura).
+    return Response({"lista_id": str(lista.id), "modo_rapido": lista.modo_rapido})
 
 
 class EnqueteViewSet(viewsets.ModelViewSet):
@@ -339,7 +352,7 @@ AVISOS_CONFERENCIA = {
 @ratelimit(key="ip", rate="60/m", block=True)
 def lista_presenca_publica(request, lista_id):
     try:
-        lista = ListaPresenca.objects.get(id=lista_id)
+        lista = ListaPresenca.objects.select_related("condominio").get(id=lista_id)
     except ListaPresenca.DoesNotExist:
         return Response(
             {"error": "Lista não encontrada."},
@@ -347,8 +360,10 @@ def lista_presenca_publica(request, lista_id):
         )
     # Só faz sentido pedir o CPF quando este condomínio tem moradores
     # importados (com CPF). Nas demais listas, a tela vai direto para a facial.
+    # Na lista rápida ninguém pede CPF: ela nasce sem planilha, de propósito.
     tem_cpf = bool(
-        lista.condominio_id
+        not lista.modo_rapido
+        and lista.condominio_id
         and Eleitor.objects.filter(condominio_id=lista.condominio_id)
         .exclude(cpf_hash__isnull=True)
         .exclude(cpf_hash="")
@@ -358,7 +373,11 @@ def lista_presenca_publica(request, lista_id):
         {
             "id": str(lista.id),
             "titulo": lista.titulo,
+            "descricao": lista.descricao,
+            "condominio_nome": lista.condominio.nome if lista.condominio_id else "",
             "ativa": lista.ativa,
+            "modo_rapido": lista.modo_rapido,
+            "total_registros": lista.registros.count(),
             "tem_cpf": tem_cpf,
             # Só o aviso de que existe sala; o endereço da sala nunca sai daqui
             # — ele é entregue apenas na resposta do registro de presença.
@@ -459,6 +478,9 @@ def registrar_presenca_manual(request, lista_id):
     assinatura = str(request.data.get("assinatura", ""))
     assinatura_facial = str(request.data.get("assinatura_facial", "")).strip()[:64]
     marca_aparelho = str(request.data.get("marca_aparelho", "")).strip()[:120]
+    device_id = str(request.data.get("device_id", "")).strip()[:64]
+    geo_lat = coordenada(request.data.get("geo_lat"))
+    geo_lng = coordenada(request.data.get("geo_lng"))
 
     # LGPD: consentimento obrigatório para registrar a presença.
     consentimento_lgpd = bool(request.data.get("consentimento_lgpd"))
@@ -519,8 +541,11 @@ def registrar_presenca_manual(request, lista_id):
     # Caminho simples: sem CPF e sem leitura de rosto. Se o condomínio tem a
     # planilha com CPF, este registro pulou toda a conferência — entra, mas com
     # selo laranja para a mesa olhar no fechamento da lista.
+    # Na lista rápida ninguém confere CPF por decisão de quem criou a lista:
+    # acender o selo em todo mundo seria só ruído para a mesa.
     sem_conferencia = bool(
-        lista.condominio_id
+        not lista.modo_rapido
+        and lista.condominio_id
         and Eleitor.objects.filter(condominio_id=lista.condominio_id)
         .exclude(cpf_hash__isnull=True)
         .exclude(cpf_hash="")
@@ -542,6 +567,9 @@ def registrar_presenca_manual(request, lista_id):
         marca_aparelho=marca_aparelho or infer_device_info(user_agent),
         user_agent=user_agent,
         device_info=infer_device_info(user_agent),
+        device_id=device_id,
+        geo_lat=geo_lat,
+        geo_lng=geo_lng,
         consentimento_lgpd=consentimento_lgpd,
         consentimento_em=timezone.now() if consentimento_lgpd else None,
         declaracao_veracidade=declaracao_veracidade,
@@ -577,6 +605,11 @@ def presenca_reconhecer_facial(request, lista_id):
     except ListaPresenca.DoesNotExist:
         return Response(
             {"error": "Lista não encontrada."}, status=status.HTTP_404_NOT_FOUND
+        )
+    if lista.modo_rapido:
+        return Response(
+            {"error": "Esta lista não usa biometria facial."},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     descriptor = validar_descriptor(request.data.get("descriptor"))
@@ -618,6 +651,13 @@ def registrar_presenca_facial(request, lista_id):
     if not lista.ativa:
         return Response(
             {"error": "Esta lista de presença está encerrada."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if lista.modo_rapido:
+        # Lista rápida não guarda rosto de ninguém: quem criou escolheu foto e
+        # assinatura. Nem por caminho torto entra biometria aqui.
+        return Response(
+            {"error": "Esta lista não usa biometria facial."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

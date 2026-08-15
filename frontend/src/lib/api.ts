@@ -291,7 +291,7 @@ export const api = {
     request<{ enquete_id: string }>(`/enquetes/resolver/${codigo}/`),
 
   resolverCodigoLista: (codigo: string) =>
-    request<{ lista_id: string }>(
+    request<{ lista_id: string; modo_rapido?: boolean }>(
       `/enquetes/listas-presenca/resolver/${codigo}/`
     ),
 
@@ -873,7 +873,8 @@ export const api = {
   createListaPresenca: (
     titulo: string,
     nomeCondominio: string,
-    linkReuniao?: string
+    linkReuniao?: string,
+    extras?: { descricao?: string; modo_rapido?: boolean }
   ) =>
     request<import("./types").ListaPresenca>("/enquetes/listas-presenca/", {
       method: "POST",
@@ -881,6 +882,8 @@ export const api = {
         titulo,
         nome_condominio: nomeCondominio,
         link_reuniao: linkReuniao || "",
+        descricao: extras?.descricao || "",
+        modo_rapido: !!extras?.modo_rapido,
       }),
     }),
 
@@ -961,7 +964,11 @@ export const api = {
     request<{
       id: string;
       titulo: string;
+      descricao?: string;
+      condominio_nome?: string;
       ativa: boolean;
+      modo_rapido?: boolean;
+      total_registros?: number;
       tem_cpf?: boolean;
       // Avisa que existe sala de vídeo; o endereço só vem depois da presença.
       tem_sala?: boolean;
@@ -999,6 +1006,9 @@ export const api = {
       metodo_auth: string;
       assinatura_facial?: string;
       marca_aparelho?: string;
+      device_id?: string;
+      geo_lat?: number | null;
+      geo_lng?: number | null;
       consentimento_lgpd: boolean;
       declaracao_veracidade?: boolean;
     }

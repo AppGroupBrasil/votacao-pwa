@@ -348,6 +348,9 @@ export interface ListaPresenca {
   // Sala de vídeo entregue ao morador só depois que ele registra a presença.
   link_reuniao?: string;
   ativa: boolean;
+  // Lista rápida: sem planilha, sem CPF e sem biometria. Só foto, assinatura,
+  // aparelho, localização e IP.
+  modo_rapido?: boolean;
   criado_em: string;
   total_registros: number;
 }
@@ -365,6 +368,9 @@ export interface PresencaManualRegistro {
   assinatura_facial?: string;
   marca_aparelho?: string;
   device_info?: string;
+  device_id?: string;
+  geo_lat?: number | null;
+  geo_lng?: number | null;
   ip_address?: string | null;
   consentimento_lgpd?: boolean;
   declaracao_veracidade?: boolean;

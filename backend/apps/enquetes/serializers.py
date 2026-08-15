@@ -92,6 +92,9 @@ class PresencaManualSerializer(serializers.ModelSerializer):
             "assinatura_facial",
             "marca_aparelho",
             "device_info",
+            "device_id",
+            "geo_lat",
+            "geo_lng",
             "ip_address",
             "consentimento_lgpd",
             "declaracao_veracidade",
@@ -127,6 +130,7 @@ class ListaPresencaSerializer(serializers.ModelSerializer):
             "descricao",
             "link_reuniao",
             "ativa",
+            "modo_rapido",
             "criado_em",
             "total_registros",
         ]

@@ -132,6 +132,14 @@ class ListaPresenca(models.Model):
         ),
     )
     ativa = models.BooleanField(default=True)
+    modo_rapido = models.BooleanField(
+        default=False,
+        help_text=(
+            "Lista rápida: sem planilha, sem CPF e sem biometria facial. O "
+            "morador entra pela foto, com assinatura, aparelho, localização e "
+            "IP registrados. Feita para reunião marcada na hora."
+        ),
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -221,6 +229,17 @@ class PresencaManual(models.Model):
     marca_aparelho = models.CharField(max_length=120, blank=True, default="")
     user_agent = models.TextField(blank=True, default="")
     device_info = models.CharField(max_length=255, blank=True, default="")
+    device_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Identificador do aparelho: mostra quando a mesma pessoa assina por vários moradores.",
+    )
+    # Onde o morador estava ao assinar. Só chega se ele autorizar o GPS; a
+    # presença entra do mesmo jeito quando ele nega.
+    geo_lat = models.FloatField(null=True, blank=True)
+    geo_lng = models.FloatField(null=True, blank=True)
     consentimento_lgpd = models.BooleanField(default=False)
     consentimento_em = models.DateTimeField(null=True, blank=True)
     declaracao_veracidade = models.BooleanField(default=False)
