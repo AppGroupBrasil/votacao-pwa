@@ -96,8 +96,14 @@ export default function HomePage() {
       <header className="bg-gradient-to-br from-primary-900 via-primary-800 to-primary-700 text-white">
         <nav className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Vote className="w-7 h-7" />
-            <span className="font-bold text-lg">Votação Online</span>
+            <img
+              src="/icons/icon-192.png"
+              alt="App Votação"
+              className="w-10 h-10 rounded-xl shadow-md ring-2 ring-white/50"
+            />
+            <span className="font-bold text-sm sm:text-lg leading-tight">
+              App Votação - Votação Online
+            </span>
           </div>
           <div className="flex gap-3">
             <Link href="/login" className="btn-secondary !text-sm !py-2 !px-4">
@@ -108,7 +114,7 @@ export default function HomePage() {
 
         <div className="max-w-4xl mx-auto px-6 py-20 text-center">
           <h1 className="text-4xl md:text-5xl font-bold leading-tight mb-4">
-            Votação Online com{" "}
+            App Votação - Votação Online com{" "}
             <span className="text-accent-300">Biometria Facial</span>
           </h1>
           <p className="text-xl md:text-2xl font-semibold text-white mb-6">
