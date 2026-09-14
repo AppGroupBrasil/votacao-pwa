@@ -119,9 +119,81 @@ aprovação. Para o declarado, as regras "um voto por unidade" e "conflito de di
 sqlite; frontend `tsc`, lint e build limpos. Migração `0015` na verdade só altera `help_text` de
 `codigo_curto` (no-op no banco) — segura para produção.
 
+## 9. Biometria ajustada, cadastro antecipado do rosto e regra de prazo — 14/09/2026
+
+Commits `d706571` (ícone da landing), `d3bb74f` (funcionalidade), `6065a42` (check-up).
+Publicado em produção em 14/09/2026 com CI e deploy verdes; migrações `assembleias/0021` e
+`eleitores/0016` aplicadas.
+
+**Limiares do reconhecimento** (`backend/apps/eleitores/facial.py`, ajustáveis por env):
+
+- Confirmação um-contra-um pelo CPF: **0.50** (mantido).
+- Busca pelo rosto sem CPF: **0.40** (era 0.45), folga sobre o segundo colocado **0.08** (era 0.06).
+- Mesmo rosto em outro CPF (`FACIAL_LIMIAR_DUPLICIDADE`): **0.40**.
+- Conferência no próprio aparelho (`FACE_MATCH_THRESHOLD`, fluxo `/acesso` → `FaceVerify`):
+  **0.60** (era 0.65) — ali só existe uma leitura guardada.
+- Validação com dados reais: em produção, pessoas diferentes nunca ficaram abaixo de **0.60**;
+  com fotos reais no navegador, a mesma pessoa com outra luz/ângulo ficou entre 0.17 e 0.26.
+
+**Cadastro antecipado do rosto.** Link por condomínio `/cadastro-facial/<condominio_id>`
+(copiar em Moradores). O morador digita o CPF, confirma os dados e a câmera tira 6 leituras;
+o servidor exige 3 que concordem entre si (< 0.40). CPF que já tem rosto só troca se a foto nova
+confirmar a atual (409). Quem não está na planilha (procurador, locatário) informa a unidade;
+condomínio **sem CPF na planilha** (caso do Interlagos) cadastra como proprietário.
+
+**Regra "somente cadastro com antecedência"** (por assembleia: `somente_cadastro_antecipado`,
+`cadastro_antecedencia_horas` 1–168). O prazo é `data_inicio − horas`. Depois dele, até a
+assembleia ser encerrada (ou 24h após `data_fim`), o condomínio inteiro não aceita cadastro na
+hora: link, entrada da votação (facial e manual) e lista de presença facial/manual. A lista rápida
+fica de fora. Quem já tem rosto entra normalmente. Tela explicativa para o morador e prévia do
+texto no painel. Lógica em `backend/apps/assembleias/regras.py`, textos em
+`frontend/src/lib/regraCadastro.ts`.
+
+**Painel "Cadastros do rosto"** (`/admin/cadastros-rosto`): fora da planilha, unidade diferente,
+procuração a conferir, inadimplente, mesmo rosto em outro CPF, foto sob demanda.
+
+**Duplicidade e identificação divergente:**
+
+- Rosto de um cadastro novo igual ao de outro CPF → `suspeita_duplicidade`; toda entrada sai com
+  selo "Mesmo rosto de outro CPF" até a mesa conferir (o botão Conferido apaga a marca).
+- Entrada sem CPF usando nome e unidade de quem já tem rosto passou a sair com selo
+  "Rosto não confirmou" (antes entrava limpa).
+- Rosto guardado **antes** do CPF (todos os 48 de produção em 14/09) ganha o CPF em vez de virar
+  um segundo cadastro — que faria a busca ver empate e recusar a pessoa certa.
+
+**Defeito de câmera encontrado com rostos reais.** O detector dá nota baixa a rosto grande
+analisado em escala alta: o mesmo rosto tirava 0.84 em 224 e 0.51 em 416, e a leitura usava 416.
+Quem aproximava o celular era recusado por "imagem escura" (na lista do Interlagos de 06/08, 44 de
+72 presenças caíram na selfie). Agora `melhorAjuste()` em `frontend/src/lib/faceapi.ts` escolhe a
+escala de maior nota.
+
+**Páginas com 500 no servidor.** `/votacao/[id]` e `/cadastro/[token]` importavam o face-api no
+servidor (TensorFlow quebra no SSR) e respondiam 500 em produção; o navegador se recuperava.
+Agora os componentes faciais carregam só no navegador (`next/dynamic` com `ssr:false`).
+
+**Limite por IP** das rotas novas fica por fora do `@api_view` para responder 429 com a
+mensagem "aguarde" (de dentro, o DRF devolvia 403 genérico).
+
+**Verificação feita:** 48 testes (SQLite e Postgres 16), rotas sem login conferidas, tipos/lint/
+build, páginas públicas sem 500, teste com rostos reais nas telas compiladas (cadastro, duplicidade,
+entrada verde, selo laranja, bloqueio após prazo), estrutura de produção copiada e migrada sem erro
+(idêntica a um banco do zero, 229 índices/restrições), `migrate --check` em produção após o deploy.
+
+**Pendências registradas:**
+
+- Teste no celular de verdade (com o usuário).
+- `/acesso` (login e senha) é outro cadastro e **não** segue a regra de prazo; a entrada por
+  código de e-mail continua aberta para quem está na planilha.
+- Em produção existem 4 tabelas de backup manuais do incidente de 27–28/07
+  (`_presenca_removidas_*`, `_votos_removidos_*`), fora das migrações.
+
 ## Lições
 
 - Toda rota usada pelo morador precisa ser pública e **não** vazar identidade/voto.
 - Atalhos e rotas novas: usar redirect server-side por causa do cache do PWA.
 - Mudança que adiciona gate de voto exige atualizar as fixtures de teste (o deploy roda os testes
   como gate).
+- Fluxo facial precisa funcionar **com e sem** CPF na planilha e reaproveitar cadastro antigo sem CPF.
+- Limiar e qualidade de câmera se validam com rosto real no navegador (`verificacao/rosto_real.js`),
+  não com vetores sintéticos.
+- Componente que importa o face-api entra com `next/dynamic` `ssr:false`; o build não acusa o 500.

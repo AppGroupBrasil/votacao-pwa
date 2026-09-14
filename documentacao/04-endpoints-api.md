@@ -18,6 +18,33 @@ Prefixo: `/api/`. Admin = exige JWT + `IsAdminWithRole`. Público = `AllowAny`.
 
 \* Públicas mas protegidas por `auth_token` assinado e/ou rate limit.
 
+`/votos/{id}/votacao/` também devolve `tem_cpf` e `regra_cadastro` (`null` ou
+`{assembleia_id, assembleia_titulo, prazo, fechado}`). `/votos/{id}/consultar-cpf/` devolve
+`cadastro_fechado` e `mensagem_cadastro`. Com o cadastro fechado, `acesso-facial` (rosto sem
+cadastro) e `acesso-manual` respondem **403** com `cadastro_fechado: true`.
+
+## Cadastro antecipado do rosto (`/api/eleitores/cadastro-facial/`)
+
+| Método | Rota | Acesso | Descrição |
+|---|---|---|---|
+| GET  | `/eleitores/cadastro-facial/{condominio_id}/` | Público | `{condominio_nome, regra, tem_planilha}`. 120/m por IP. |
+| POST | `/eleitores/cadastro-facial/{condominio_id}/consultar-cpf/` | Público | `{cpf_hash}` → `{unidades, encontrado, tem_rosto, tem_planilha, mensagem}`. 120/m. |
+| POST | `/eleitores/cadastro-facial/{condominio_id}/salvar/` | Público | `{cpf_hash, descriptors[≥3], selfie, consentimento_lgpd}` (+ `nome, bloco, apartamento, perfil` fora da planilha). 201 novo, 200 atualizado/reaproveitado, 400 leitura ruim, 403 prazo encerrado, 409 CPF com outro rosto. 60/m. |
+
+## Condomínio — biometria (`/api/condominios/`, Admin, só do condomínio do síndico)
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/condominios/{id}/biometria-resumo/` | `{moradores_com_cpf, com_rosto, antecipados}`. |
+| GET | `/condominios/{id}/cadastros-faciais/` | Lista para conferir: `na_planilha`, `unidade_diferente_da_planilha`, `inadimplente`, `suspeita_duplicidade`, `tem_rosto`, `cadastro_antecipado_em` + `tem_planilha`. Sem fotos. |
+| GET | `/condominios/{id}/cadastros-faciais/{identidade_id}/foto/` | `{selfie}` de um cadastro. |
+
+## Lista de presença pública (`/api/enquetes/listas-presenca/`)
+
+`/{id}/publica/` devolve `regra_cadastro`; `/{id}/consultar-cpf/` devolve `cadastro_fechado` e
+`mensagem_cadastro`. Com o cadastro fechado, `/{id}/facial/registrar/` (rosto sem cadastro) e
+`/{id}/registrar/` (lista não rápida) respondem 403 com `cadastro_fechado: true`.
+
 ## Identificação sem login por e-mail (`/api/otp/`)
 
 | Método | Rota | Acesso | Descrição |
@@ -60,6 +87,12 @@ Migração `assembleias/0014`. Read-only no serializer.
 
 `modo_multiplas_unidades` (CharField, choices `sindico`/`morador`, default `sindico`) — escolhe como
 donos de várias unidades votam. Migração `assembleias/0015`. **Writable** no serializer.
+
+`somente_cadastro_antecipado` (bool, default `false`) e `cadastro_antecedencia_horas` (1–168,
+default 24) em `Assembleia`, migração `assembleias/0021`; `prazo_cadastro` read-only no serializer.
+
+`IdentidadeFacial`: `suspeita_duplicidade` (bool) e `cadastro_antecipado_em` (datetime), migração
+`eleitores/0016`.
 
 `Voto`: `unidade_declarada` (bool), `decl_bloco` / `decl_apartamento` / `decl_nome` e
 `grupo_declaracao` (UUID, db_index) suportam o voto de unidade declarada (migração `votos/0007`).

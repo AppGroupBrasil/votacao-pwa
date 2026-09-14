@@ -32,6 +32,14 @@ exige `auth_token` válido.
 `votos_permitidos` é definido por admin/master no cadastro do morador
 (`/admin/eleitores/novo` e `.../editar`).
 
+## Somente cadastro com antecedência (opcional, por assembleia)
+
+Chave no painel ao criar/editar a assembleia + horas de antecedência (2, 6, 12, 24, 48, 72).
+Prazo = início − horas. Até o prazo, o morador cadastra o rosto pelo link do condomínio. Depois
+dele, e até a assembleia ser encerrada, **não há cadastro na hora** em nenhuma entrada do
+condomínio; só entra quem já tem rosto guardado. Objetivo: a administração conferir antes quem é
+proprietário, quem tem procuração e quais unidades estão inadimplentes (voto já bloqueado).
+
 ## Voto secreto (regra inviolável)
 
 O voto é secreto. A verificação pública de comprovante (`/votos/verificar/?hash=...`) **NUNCA**

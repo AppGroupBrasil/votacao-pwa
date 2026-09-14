@@ -1,6 +1,6 @@
 # Votação Online — Documentação
 
-Última atualização: 2026-06-27.
+Última atualização: 2026-09-14.
 
 App de assembleias de condomínio com votação autenticada por biometria, lista de
 presença, quórum, ata com IA e auditoria.

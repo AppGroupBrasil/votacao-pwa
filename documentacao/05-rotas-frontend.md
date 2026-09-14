@@ -12,6 +12,7 @@
 | `/votacao/comprovante` | Conferência de comprovante (hash) sem expor a opção. |
 | `/enquete/[id]` | Enquete simples/anônima. |
 | `/presenca-manual/[id]` | Registro de presença manual (selfie + assinatura). |
+| `/cadastro-facial/[condominioId]` | **Cadastro antecipado do rosto.** Com a regra de prazo ligada abre na tela explicativa; depois do prazo mostra "Cadastro encerrado". |
 | `/contrato`, `/privacidade`, `/termos`, `/excluir-conta` | Páginas institucionais/legais. |
 
 ## Identificação sem login (componentes)
@@ -44,7 +45,8 @@ condomínio fora da lista de votantes é inscrito automaticamente ao votar (voto
 | `/admin/assembleias/[id]/resultados`* · `/admin/resultados` | Apuração. |
 | `/admin/assembleias/[id]/ata` · `/admin/ata` | Ata com IA (transcrição + geração). |
 | `/admin/assembleias/[id]/auditoria` | Log de auditoria. |
-| `/admin/eleitores` · `/novo` · `/[id]/editar` | Moradores (imprimir registro da biometria). |
+| `/admin/eleitores` · `/novo` · `/[id]/editar` | Moradores (imprimir registro da biometria; card com o link do cadastro do rosto e a contagem). |
+| `/admin/cadastros-rosto?condominio=<id>` | Conferência dos cadastros do rosto antes da assembleia. |
 | `/admin/condominios` · `/[id]/editar` | Condomínios. |
 | `/admin/enquetes`, `/admin/presenca`, `/admin/listas-presenca/[id]`, `/admin/conta`, `/admin/master`, `/admin/cadastro` | Demais áreas. |
 
