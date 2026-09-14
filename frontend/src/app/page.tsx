@@ -95,11 +95,11 @@ export default function HomePage() {
       {/* Hero */}
       <header className="bg-gradient-to-br from-primary-900 via-primary-800 to-primary-700 text-white">
         <nav className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <img
               src="/icons/icon-192.png"
               alt="App Votação"
-              className="w-10 h-10 rounded-xl shadow-md ring-2 ring-white/50"
+              className="w-20 h-20"
             />
             <span className="font-bold text-sm sm:text-lg leading-tight">
               App Votação - Votação Online
