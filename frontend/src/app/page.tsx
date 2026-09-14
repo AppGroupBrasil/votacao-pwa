@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Shield,
@@ -89,9 +90,45 @@ const features = [
   },
 ];
 
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
+
+const jsonLdApp = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "App Votação",
+  description:
+    "Votação online para assembleias de condomínio com biometria facial e WebAuthn, resultados em tempo real, lista de presença, gravação da assembleia e resumo e ata com IA.",
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web, Android, iOS",
+  url: "https://appvotacao.com.br/",
+  image: "https://appvotacao.com.br/feature-graphic-1024x500.png",
+  inLanguage: "pt-BR",
+  publisher: { "@type": "Organization", name: "App Group Brasil", url: "https://appgroupbrasil.com.br/" },
+  featureList:
+    "Biometria facial, WebAuthn, Votação segura, Sem limite de votantes, Resultados em tempo real, Votação simples por link, Gravação da assembleia, Resumo e ata com IA, Controle de votação, Lista de presença manual, Bloqueio de inadimplentes",
+};
+
+const jsonLdSite = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "App Votação",
+  url: "https://appvotacao.com.br/",
+  inLanguage: "pt-BR",
+  publisher: {
+    "@type": "Organization",
+    name: "App Group Brasil",
+    url: "https://appgroupbrasil.com.br/",
+    logo: "https://appgroupbrasil.com.br/app-group-brasil-logo.png",
+  },
+};
+
 export default function HomePage() {
   return (
     <div className="min-h-screen">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdApp) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdSite) }} />
       {/* Hero */}
       <header className="bg-gradient-to-br from-primary-900 via-primary-800 to-primary-700 text-white">
         <nav className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -539,6 +576,7 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto px-6 text-center text-sm">
           <p>© 2026 Votação Online — Sistema de Votação com Biometria Facial</p>
           <p className="mt-1">Conformidade LGPD • Dados biométricos nunca saem do dispositivo</p>
+          <p className="mt-1">Um sistema <a href="https://appgroupbrasil.com.br/" className="text-gray-300 hover:text-white underline">App Group Brasil</a></p>
         </div>
       </footer>
 
