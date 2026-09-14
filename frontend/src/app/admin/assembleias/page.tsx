@@ -42,6 +42,7 @@ const MOTIVO_CONFERENCIA: Record<string, string> = {
   rosto_ambiguo: "Rosto parecido com outro",
   sem_cpf: "Entrou sem informar o CPF",
   duplicidade: "Cadastro repetido do mesmo CPF",
+  rosto_duplicado: "Mesmo rosto de outro CPF",
 };
 
 type Tab = "votacao" | "resultados" | "relatorio";

@@ -60,6 +60,7 @@ const MOTIVO_LABEL: Record<string, string> = {
   rosto_ambiguo: "Rosto parecido com outro",
   sem_cpf: "Entrou sem informar o CPF",
   duplicidade: "Cadastro repetido do mesmo CPF",
+  rosto_duplicado: "Mesmo rosto de outro CPF",
 };
 
 export default function RegistrosPresencaPage() {

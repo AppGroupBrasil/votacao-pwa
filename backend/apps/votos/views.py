@@ -19,6 +19,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.assembleias.models import Assembleia, OpcaoVoto, Presenca, Questao
+from apps.assembleias.regras import cadastro_fechado, regra_cadastro
 from apps.eleitores.models import (
     Eleitor,
     IdentidadeFacial,
@@ -28,6 +29,8 @@ from apps.eleitores.models import (
 )
 from apps.eleitores.facial import (
     LIMIAR_BUSCA,
+    cadastro_sem_cpf_do_rosto,
+    marcar_se_duplicado,
     melhor_correspondencia,
     salvar_identidade_nova,
     tem_biometria,
@@ -813,6 +816,15 @@ def acesso_manual(request, assembleia_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    fechado = cadastro_fechado(assembleia.condominio_id)
+    if fechado:
+        # Entrada manual é cadastro feito na hora — justamente o que a regra
+        # de cadastro antecipado não permite.
+        return Response(
+            {"error": fechado.mensagem_fechado, "cadastro_fechado": True},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     nome = str(request.data.get("nome", "")).strip()
     bloco = str(request.data.get("bloco", "")).strip()
     apartamento = str(request.data.get("apartamento", "")).strip()
@@ -981,11 +993,27 @@ AVISOS_CONFERENCIA = {
         "confere seus dados antes de liberar o voto da unidade. Procure a mesa com "
         "um documento."
     ),
+    "rosto_duplicado": (
+        "Você está na assembleia. Seu rosto ficou muito parecido com o de outro "
+        "cadastro do condomínio, então a mesa confere seu documento antes de "
+        "liberar o voto. Procure a mesa com um documento."
+    ),
     "padrao": (
         "Você está na assembleia. A mesa precisa conferir seus dados antes de "
         "liberar o voto da sua unidade. Procure a mesa com um documento."
     ),
 }
+
+def _tem_rosto_cadastrado(condominio_id, cpf_hash):
+    """O CPF tem rosto guardado de verdade? Cadastro antigo só com selfie não
+    conta: o primeiro rosto lido viraria o documento sem conferência nenhuma."""
+    ident = (
+        IdentidadeFacial.objects.filter(condominio_id=condominio_id, cpf_hash=cpf_hash)
+        .only("descriptor", "descriptors")
+        .first()
+    )
+    return bool(ident and tem_biometria(ident))
+
 
 MENSAGEM_CPF_FORA_DA_PLANILHA = (
     "Seu CPF não consta na planilha de moradores. Verifique junto à administração "
@@ -1019,12 +1047,26 @@ def consultar_cpf_votacao(request, assembleia_id):
     tem_rosto = IdentidadeFacial.objects.filter(
         condominio_id=assembleia.condominio_id, cpf_hash=cpf_hash
     ).exists()
+    # Cadastro antecipado encerrado e este CPF sem rosto cadastrado: a tela já
+    # avisa aqui, antes de pedir a foto que o servidor vai recusar.
+    fechado = cadastro_fechado(assembleia.condominio_id)
+    if fechado and (
+        _tem_rosto_cadastrado(assembleia.condominio_id, cpf_hash)
+        # Há rostos guardados antes do CPF: só a câmera diz se esta pessoa é um
+        # deles, então a decisão fica para a foto.
+        or IdentidadeFacial.objects.filter(
+            condominio_id=assembleia.condominio_id, cpf_hash=""
+        ).exists()
+    ):
+        fechado = None
     return Response(
         {
             "unidades": unidades,
             "encontrado": bool(unidades),
             "tem_rosto": tem_rosto,
             "mensagem": "" if unidades else MENSAGEM_CPF_FORA_DA_PLANILHA,
+            "cadastro_fechado": bool(fechado),
+            "mensagem_cadastro": fechado.mensagem_fechado if fechado else "",
         }
     )
 
@@ -1080,6 +1122,18 @@ def acesso_facial(request, assembleia_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Regra de cadastro antecipado: com o prazo vencido, só entra quem já tem o
+    # rosto guardado. Nada de cadastro novo na hora da assembleia.
+    fechado = cadastro_fechado(assembleia.condominio_id)
+    recusa_cadastro = (
+        Response(
+            {"error": fechado.mensagem_fechado, "cadastro_fechado": True},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+        if fechado
+        else None
+    )
+
     perfis_validos = {"proprietario", "locatario", "conjuge", "procurador", "outro"}
     nome = str(request.data.get("nome", "")).strip()[:200]
     bloco = str(request.data.get("bloco", "")).strip()[:20]
@@ -1109,6 +1163,16 @@ def acesso_facial(request, assembleia_id):
             .order_by("criado_em")
             .first()
         )
+        if ident is None and descriptor is not None:
+            # Rosto guardado antes do CPF existir na entrada: o cadastro antigo
+            # ganha o CPF em vez de nascer um segundo do mesmo rosto.
+            ident = cadastro_sem_cpf_do_rosto(
+                assembleia.condominio_id, leituras or [descriptor]
+            )
+            if ident is not None:
+                ident.cpf_hash = cpf_hash
+        if recusa_cadastro and (ident is None or not tem_biometria(ident)):
+            return recusa_cadastro
         unidades_planilha = list(
             Eleitor.objects.filter(
                 condominio_id=assembleia.condominio_id, cpf_hash=cpf_hash
@@ -1156,6 +1220,7 @@ def acesso_facial(request, assembleia_id):
                 # de marcar "rosto não confere" em toda assembleia, para sempre.
                 for v in leituras or [descriptor]:
                     ident.guardar_leitura(v)
+                marcar_se_duplicado(ident, leituras or [descriptor])
             elif descriptor is not None:
                 confere, d = verificar(descriptor, ident)
                 dist_medida = None if d == float("inf") else round(d, 4)
@@ -1194,6 +1259,13 @@ def acesso_facial(request, assembleia_id):
             # Se outro envio do mesmo morador chegou primeiro (duplo clique, duas
             # abas), aproveita o cadastro dele em vez de criar um segundo.
             ident, novo = salvar_identidade_nova(ident, leituras)
+            if novo and marcar_se_duplicado(ident, leituras):
+                ident.save(update_fields=["suspeita_duplicidade"])
+
+        # Rosto que já pertence a outro CPF: a pessoa entraria duas vezes, cada
+        # uma confirmada um-contra-um. Vale em toda entrada até a mesa conferir.
+        if ident.suspeita_duplicidade and not conferir:
+            conferir, motivo = True, "rosto_duplicado"
     else:
         # ---- Condomínio sem planilha de CPF: só aqui ainda procuramos o rosto
         # entre todos, com limiar rígido e recusa em caso de empate.
@@ -1212,6 +1284,8 @@ def acesso_facial(request, assembleia_id):
         ).defer("selfie")
         ident, d = melhor_correspondencia(descriptor, identidades)
         dist_medida = None if d == float("inf") else round(d, 4)
+        if ident is None and recusa_cadastro:
+            return recusa_cadastro
         if ident is None and d < LIMIAR_BUSCA + 0.1:
             # Chegou perto de alguém mas sem certeza: não chuta um nome.
             conferir, motivo = True, "rosto_ambiguo"
@@ -1252,9 +1326,11 @@ def acesso_facial(request, assembleia_id):
         nnome = re.sub(r"\s+", " ", nome).strip().lower()
         existente = None
         if napto:
+            # defer("selfie"): com a sala inteira chegando junto, puxar a foto de
+            # todos os moradores a cada entrada pesava mais que a comparação.
             for e in IdentidadeFacial.objects.filter(
                 condominio_id=assembleia.condominio_id
-            ):
+            ).defer("selfie"):
                 if (
                     normalizar_unidade(e.apartamento) == napto
                     and normalizar_unidade(e.bloco) == nbloco
@@ -1264,6 +1340,13 @@ def acesso_facial(request, assembleia_id):
                     break
         if existente is not None:
             ident = existente
+            if descriptor is not None and tem_biometria(existente) and not conferir:
+                # Mesmo nome e unidade de um cadastro que já tem rosto: bastava
+                # digitar os dados de um vizinho para entrar no lugar dele.
+                confere, d = verificar(descriptor, existente)
+                if not confere:
+                    conferir, motivo = True, "rosto_nao_confere"
+                    dist_medida = None if d == float("inf") else round(d, 4)
         else:
             ident = IdentidadeFacial(
                 condominio_id=assembleia.condominio_id,
@@ -1492,6 +1575,12 @@ def validar_voto_manual(request, assembleia_id):
         votante.save(
             update_fields=["conferir_na_mesa", "conferido_em", "conferido_por"]
         )
+        if votante.motivo_conferencia == "rosto_duplicado" and votante.identidade_facial_id:
+            # A mesa viu o documento: o cadastro deixa de sair com selo nas
+            # próximas assembleias.
+            IdentidadeFacial.objects.filter(id=votante.identidade_facial_id).update(
+                suspeita_duplicidade=False
+            )
         audit.info(
             "votante_conferido assembleia=%s votante=%s por=%s",
             assembleia.id, votante.id, votante.conferido_por,
@@ -1726,11 +1815,13 @@ def votacao_publica(request, assembleia_id):
         .exclude(cpf_hash="")
         .exists()
     )
+    regra = regra_cadastro(assembleia.condominio_id)
     return Response(
         {
             "id": str(assembleia.id),
             "titulo": assembleia.titulo,
             "tem_cpf": tem_cpf,
+            "regra_cadastro": regra.como_dict() if regra else None,
             "descricao": assembleia.descricao,
             "status": assembleia.status,
             "votacao_liberada": assembleia.votacao_liberada,

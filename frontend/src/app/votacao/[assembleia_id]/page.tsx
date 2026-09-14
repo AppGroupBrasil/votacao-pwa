@@ -2,15 +2,21 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { Vote, CheckCircle, XCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, Link2, Users, Clock, ArrowLeft, MessageCircle, X, Lock } from "lucide-react";
 import { api, getDeviceId } from "@/lib/api";
 import WebAuthnVerify from "@/components/webauthn/WebAuthnVerify";
-import FaceVerify from "@/components/FaceVerify";
 import SelfieVerify from "@/components/SelfieVerify";
 import OtpVerify from "@/components/OtpVerify";
 import IdentificacaoEmail from "@/components/IdentificacaoEmail";
 import IdentificacaoManual from "@/components/IdentificacaoManual";
-import AcessoFacialVotacao from "@/components/AcessoFacialVotacao";
+
+// Só no navegador (como no /acesso): o TensorFlow do reconhecimento quebra
+// quando o servidor monta a página, e o link da votação respondia erro 500.
+const FaceVerify = dynamic(() => import("@/components/FaceVerify"), { ssr: false });
+const AcessoFacialVotacao = dynamic(() => import("@/components/AcessoFacialVotacao"), {
+  ssr: false,
+});
 import ConsentimentoGate from "@/components/ConsentimentoGate";
 import type { Assembleia, UnidadeVotante, CapturaIdentidade } from "@/lib/types";
 
@@ -219,6 +225,7 @@ export default function VotacaoPage() {
             <AcessoFacialVotacao
               assembleiaId={assembleiaId}
               temCpf={!!assembleia.tem_cpf}
+              regra={assembleia.regra_cadastro}
               onSuccess={(token, id, aviso) => {
                 setManualId(id);
                 setVotosPermitidos(1);
@@ -229,7 +236,8 @@ export default function VotacaoPage() {
               onManual={() => setEntryMode("manual")}
             />
           )}
-          {entryMode === "manual" && (
+          {/* Entrada manual é cadastro na hora: some com o cadastro encerrado. */}
+          {entryMode === "manual" && !assembleia.regra_cadastro?.fechado && (
             <IdentificacaoManual
               assembleiaId={assembleiaId}
               onSuccess={(token, id, aviso) => {
@@ -251,7 +259,9 @@ export default function VotacaoPage() {
                   setVotosPermitidos(Math.max(1, votos || 1));
                   setAuthToken(token);
                 }}
-                onManual={() => setEntryMode("manual")}
+                onManual={
+                  assembleia.regra_cadastro?.fechado ? undefined : () => setEntryMode("manual")
+                }
               />
               <button
                 onClick={() => setEntryMode("facial")}

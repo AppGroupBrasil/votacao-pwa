@@ -143,10 +143,44 @@ export async function detectarCaixaRosto(
   };
 }
 
+/** Escalas de análise, da que favorece rosto grande (perto) à de rosto pequeno. */
+const ESCALAS = [224, 320, 416, 608];
+
+/**
+ * Escolhe a escala em que o detector enxerga o rosto com mais nitidez.
+ *
+ * O detector dá nota baixa a rosto grande analisado em escala alta: o mesmo
+ * rosto bem enquadrado, perto da câmera, tirava 0.84 em 224 e 0.51 em 416. Como
+ * a leitura usava 416 primeiro, quem obedecia o "aproxime o rosto" era recusado
+ * por "imagem escura". Só a caixa do rosto (sem landmarks) — é barato.
+ */
+async function melhorAjuste(input: FaceInput): Promise<(typeof AJUSTES)[number] | null> {
+  let melhor: (typeof AJUSTES)[number] | null = null;
+  let melhorScore = 0;
+  for (const inputSize of ESCALAS) {
+    const d = await faceapi.detectSingleFace(
+      input,
+      new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.2 })
+    );
+    if (d && d.score > melhorScore) {
+      melhorScore = d.score;
+      // Corte um pouco abaixo da nota vista: as leituras seguintes, com a
+      // pessoa mexendo de leve, continuam achando o rosto nessa escala.
+      melhor = { inputSize, scoreThreshold: Math.max(0.2, d.score - 0.25) };
+    }
+  }
+  return melhor;
+}
+
 /** Detecta tentando todos os ajustes; devolve também qual funcionou. */
 export async function detectFaceTentandoTudo(
   input: FaceInput
 ): Promise<{ leitura: Leitura; ajuste: (typeof AJUSTES)[number] } | null> {
+  const escolhido = await melhorAjuste(input);
+  if (escolhido) {
+    const l = await detectFaceComQualidade(input, escolhido);
+    if (l) return { leitura: l, ajuste: escolhido };
+  }
   for (const ajuste of AJUSTES) {
     const l = await detectFaceComQualidade(input, ajuste);
     if (l) return { leitura: l, ajuste };
@@ -166,7 +200,8 @@ export async function detectFaceTentandoTudo(
  */
 export async function capturarLeituras(
   entrada: FaceInput | FaceInput[],
-  amostras = 3
+  amostras = 3,
+  intervaloMs = 120
 ): Promise<Leitura[]> {
   const entradas = Array.isArray(entrada) ? entrada : [entrada];
 
@@ -196,7 +231,7 @@ export async function capturarLeituras(
       // 120 ms dá tempo de a pessoa mudar minimamente de posição, o que torna
       // as leituras diferentes entre si — é isso que faz o cadastro cobrir mais
       // situações depois.
-      await new Promise((r) => setTimeout(r, 120));
+      await new Promise((r) => setTimeout(r, intervaloMs));
       const l = await detectFaceComQualidade(alvo, ajuste);
       if (l) leituras.push(l);
     }
@@ -228,7 +263,12 @@ export function euclideanDistance(a: Float32Array, b: Float32Array): number {
   return faceapi.euclideanDistance(Array.from(a), Array.from(b));
 }
 
-export const FACE_MATCH_THRESHOLD = 0.65;
+// 0.60 é a referência do modelo para comparar UMA leitura com UMA leitura, que é
+// o caso daqui: o aparelho guarda só a foto do cadastro. O servidor aguenta 0.50
+// porque compara com até cinco leituras e fica com a mais parecida; aplicar o
+// mesmo número contra uma leitura só reprovaria morador de verdade, que já
+// entrou com login e senha antes de chegar nesta tela.
+export const FACE_MATCH_THRESHOLD = 0.6;
 
 /**
  * Verifica se dois descritores pertencem à mesma pessoa.

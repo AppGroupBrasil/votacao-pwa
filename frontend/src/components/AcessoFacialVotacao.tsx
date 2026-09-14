@@ -15,7 +15,9 @@ import {
 } from "lucide-react";
 import { api, getDeviceId } from "@/lib/api";
 import { loadModels, lerRosto as lerRostoCamera } from "@/lib/faceapi";
+import type { RegraCadastro } from "@/lib/regraCadastro";
 import { useAutoCaptura, textoDica } from "@/lib/useAutoCaptura";
+import RegraCadastroAviso from "@/components/RegraCadastroAviso";
 
 const PERFIS = [
   { v: "proprietario", l: "Proprietário" },
@@ -62,16 +64,23 @@ type Unidade = {
 export default function AcessoFacialVotacao({
   assembleiaId,
   temCpf = false,
+  regra = null,
   onSuccess,
   onEmail,
   onManual,
 }: {
   assembleiaId: string;
   temCpf?: boolean;
+  /** Regra de cadastro antecipado do condomínio, se houver. */
+  regra?: RegraCadastro | null;
   onSuccess: (token: string, votanteId: string, avisoUnidade?: string) => void;
   onEmail: () => void;
   onManual: () => void;
 }) {
+  // Cadastro antecipado encerrado: nada de cadastro na hora (selfie avulsa ou
+  // rosto novo). Quem já tem o rosto guardado entra normalmente.
+  const cadastroFechado = !!regra?.fechado;
+  const [bloqueioCadastro, setBloqueioCadastro] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [camAtiva, setCamAtiva] = useState(false);
@@ -194,6 +203,10 @@ export default function AcessoFacialVotacao({
       const res = await api.consultarCpfVotacao(assembleiaId, hash);
       // O hash acompanha o resto do fluxo: é ele que faz o rosto ser apenas
       // CONFIRMADO depois, em vez de procurado no meio de todos os moradores.
+      if (res.cadastro_fechado) {
+        setBloqueioCadastro(res.mensagem_cadastro || "O cadastro para esta assembleia está encerrado.");
+        return;
+      }
       setCpfHash(hash);
       setTemRostoCadastrado(!!res.tem_rosto);
       setUnidadesCpf(res.unidades || []);
@@ -259,6 +272,14 @@ export default function AcessoFacialVotacao({
     return e?.response?.data?.error || e?.response?.data?.detail || padrao;
   }
 
+  /** Recusa por cadastro encerrado vira a tela própria, não um erro na câmera. */
+  function tratarCadastroFechado(e: any) {
+    if (!e?.response?.data?.cadastro_fechado) return false;
+    pararCamera();
+    setBloqueioCadastro(e.response.data.error || "");
+    return true;
+  }
+
   async function lerRosto() {
     const video = videoRef.current;
     if (!video || !video.videoWidth) {
@@ -318,6 +339,7 @@ export default function AcessoFacialVotacao({
       pararCamera();
       setEtapa("novoRosto");
     } catch (e: any) {
+      if (tratarCadastroFechado(e)) return;
       setErro(
         textoErroServidor(
           e,
@@ -359,6 +381,7 @@ export default function AcessoFacialVotacao({
       if (aplicarResposta(r)) return;
       setErro("Não foi possível concluir. Tente novamente.");
     } catch (e: any) {
+      if (tratarCadastroFechado(e)) return;
       setErro(textoErroServidor(e, "Não foi possível concluir. Tente novamente."));
     } finally {
       setProcessando(false);
@@ -391,6 +414,7 @@ export default function AcessoFacialVotacao({
       if (aplicarResposta(r)) return;
       setErro("Não foi possível concluir. Tente novamente.");
     } catch (e: any) {
+      if (tratarCadastroFechado(e)) return;
       setErro(textoErroServidor(e, "Não foi possível concluir. Tente novamente."));
     } finally {
       setProcessando(false);
@@ -398,6 +422,34 @@ export default function AcessoFacialVotacao({
   }
 
   const nomePerfil = PERFIS.find((p) => p.v === perfil)?.l || "Proprietário";
+
+  // Cadastro antecipado encerrado e esta pessoa sem rosto guardado.
+  if (bloqueioCadastro) {
+    return (
+      <div>
+        {regra ? (
+          <RegraCadastroAviso prazo={regra.prazo} fechado porqueAberto />
+        ) : (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {bloqueioCadastro}
+          </div>
+        )}
+        <button
+          onClick={() => {
+            setBloqueioCadastro("");
+            setCpf("");
+            setCpfHash("");
+            setUnidadesCpf(null);
+            setErro("");
+            setEtapa(temCpf ? "cpf" : "camera");
+          }}
+          className="btn-secondary mt-4 w-full"
+        >
+          {temCpf ? "Digitar outro CPF" : "Tentar de novo"}
+        </button>
+      </div>
+    );
+  }
 
   // Entrou. Verde quando está tudo certo; laranja quando a mesa precisa
   // conferir antes de o voto valer.
@@ -766,12 +818,14 @@ export default function AcessoFacialVotacao({
             </>
           )}
         </button>
-        <button
-          onClick={onManual}
-          className="mt-3 inline-flex w-full items-center justify-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700"
-        >
-          <Camera className="h-4 w-4" /> Prefiro tirar só a selfie
-        </button>
+        {!cadastroFechado && (
+          <button
+            onClick={onManual}
+            className="mt-3 inline-flex w-full items-center justify-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700"
+          >
+            <Camera className="h-4 w-4" /> Prefiro tirar só a selfie
+          </button>
+        )}
         <button
           onClick={onEmail}
           className="mt-2 inline-flex w-full items-center justify-center gap-1 text-sm text-gray-500 hover:text-gray-700"
@@ -789,6 +843,11 @@ export default function AcessoFacialVotacao({
     const cpfValido = digitos.length === 11 || digitos.length === 14;
     return (
       <div>
+        {regra && (
+          <div className="mb-4">
+            <RegraCadastroAviso prazo={regra.prazo} fechado={regra.fechado} />
+          </div>
+        )}
         <label className="mb-2 flex items-center gap-2 text-sm font-semibold">
           <CreditCard className="h-4 w-4 text-primary-600" />
           Digite o seu CPF
@@ -852,13 +911,15 @@ export default function AcessoFacialVotacao({
           </div>
         )}
 
-        <button
-          onClick={onManual}
-          className="mt-4 inline-flex w-full items-center justify-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700"
-        >
-          <Camera className="h-4 w-4" /> Não tenho o CPF em mãos — tirar só a
-          selfie
-        </button>
+        {!cadastroFechado && (
+          <button
+            onClick={onManual}
+            className="mt-4 inline-flex w-full items-center justify-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700"
+          >
+            <Camera className="h-4 w-4" /> Não tenho o CPF em mãos — tirar só a
+            selfie
+          </button>
+        )}
         <button
           onClick={onEmail}
           className="mt-2 inline-flex w-full items-center justify-center gap-1 text-sm text-gray-500 hover:text-gray-700"
@@ -982,7 +1043,7 @@ export default function AcessoFacialVotacao({
         </button>
       )}
 
-      {!cpfHash && (
+      {!cpfHash && !cadastroFechado && (
         <button
           onClick={onManual}
           className="mt-3 inline-flex w-full items-center justify-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700"

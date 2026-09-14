@@ -17,6 +17,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import type { RegraCadastro } from "@/lib/regraCadastro";
+import RegraCadastroAviso from "@/components/RegraCadastroAviso";
 
 // O face-api só existe no navegador: carregado sob demanda para não quebrar a
 // renderização da página no servidor.
@@ -92,7 +94,11 @@ export default function PresencaManualPublicaPage() {
     ativa: boolean;
     tem_cpf?: boolean;
     tem_sala?: boolean;
+    regra_cadastro?: RegraCadastro | null;
   } | null>(null);
+  // Cadastro antecipado encerrado e esta pessoa sem rosto guardado: a presença
+  // não pode virar um cadastro feito na hora.
+  const [bloqueioCadastro, setBloqueioCadastro] = useState("");
   // Sala da assembleia: o servidor só entrega o endereço depois que a presença
   // é registrada — antes disso não existe botão nenhum para abrir.
   const [linkSala, setLinkSala] = useState("");
@@ -202,6 +208,10 @@ export default function PresencaManualPublicaPage() {
     try {
       const hash = await sha256Hex(digitos);
       const res = await api.consultarCpfPresenca(id, hash);
+      if (res.cadastro_fechado) {
+        setBloqueioCadastro(res.mensagem_cadastro || "O cadastro para esta assembleia está encerrado.");
+        return;
+      }
       // O hash fica guardado: é ele que faz o rosto ser apenas CONFIRMADO
       // depois, em vez de procurado no meio de todos os moradores.
       setCpfHash(hash);
@@ -503,6 +513,11 @@ export default function PresencaManualPublicaPage() {
       setLinkSala(String((r as any)?.link_reuniao || ""));
       setEnviado(true);
     } catch (e: any) {
+      if (e?.response?.data?.cadastro_fechado) {
+        pararCamera();
+        setBloqueioCadastro(e.response.data.error || "");
+        return;
+      }
       setErro(
         e?.response?.data?.error || "Não foi possível registrar a presença."
       );
@@ -820,6 +835,39 @@ export default function PresencaManualPublicaPage() {
 
   // Portão de CPF: primeiro passo. O morador digita o CPF e o sistema já traz
   // nome/bloco/apartamento; depois ele confirma que é ele.
+  const regraCadastro = lista?.regra_cadastro || null;
+
+  if (lista && bloqueioCadastro) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-6 px-4">
+        <div className="max-w-md mx-auto">
+          <h1 className="text-xl font-bold mb-1">Lista de presença</h1>
+          {lista.titulo && <p className="text-sm text-gray-500 mb-4">{lista.titulo}</p>}
+          {regraCadastro ? (
+            <RegraCadastroAviso prazo={regraCadastro.prazo} fechado porqueAberto />
+          ) : (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              {bloqueioCadastro}
+            </div>
+          )}
+          <button
+            onClick={() => {
+              setBloqueioCadastro("");
+              setCpf("");
+              setCpfHash("");
+              setUnidadesCpf(null);
+              setCpfConfirmado(false);
+              setEtapa("cpf");
+            }}
+            className="btn-secondary mt-4 w-full"
+          >
+            Voltar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (lista && lista.ativa && lista.tem_cpf && !cpfConfirmado) {
     const digitos = cpf.replace(/\D/g, "");
     const cpfValido = digitos.length === 11 || digitos.length === 14;
@@ -831,6 +879,11 @@ export default function PresencaManualPublicaPage() {
             <p className="text-sm text-gray-500 mb-4">{lista.titulo}</p>
           )}
           {avisoSala}
+          {regraCadastro && (
+            <div className="mb-4">
+              <RegraCadastroAviso prazo={regraCadastro.prazo} fechado={regraCadastro.fechado} />
+            </div>
+          )}
 
           <div className="card mb-4">
             <label className="flex items-center gap-2 text-sm font-semibold mb-2">
@@ -908,12 +961,14 @@ export default function PresencaManualPublicaPage() {
 
           </div>
 
-          <button
-            onClick={pularCpf}
-            className="w-full text-sm text-gray-500 underline underline-offset-2"
-          >
-            Não tenho o CPF em mãos / cadastrar na hora
-          </button>
+          {!regraCadastro?.fechado && (
+            <button
+              onClick={pularCpf}
+              className="w-full text-sm text-gray-500 underline underline-offset-2"
+            >
+              Não tenho o CPF em mãos / cadastrar na hora
+            </button>
+          )}
         </div>
       </div>
     );

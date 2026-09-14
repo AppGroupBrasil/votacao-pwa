@@ -1,6 +1,8 @@
 import secrets
 import uuid
+from datetime import timedelta
 
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from apps.condominios.models import Condominio
@@ -112,6 +114,18 @@ class Assembleia(models.Model):
             "morador declara suas outras unidades durante a votação, com validação posterior."
         ),
     )
+    somente_cadastro_antecipado = models.BooleanField(
+        default=False,
+        help_text=(
+            "Só participa quem cadastrou o rosto com antecedência. O cadastro fecha "
+            "cadastro_antecedencia_horas antes do início e não reabre na hora."
+        ),
+    )
+    cadastro_antecedencia_horas = models.PositiveSmallIntegerField(
+        default=24,
+        validators=[MinValueValidator(1), MaxValueValidator(168)],
+        help_text="Quantas horas antes do início o cadastro do rosto fecha.",
+    )
     votantes = models.ManyToManyField(Eleitor, blank=True, related_name="assembleias")
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
@@ -119,6 +133,10 @@ class Assembleia(models.Model):
     class Meta:
         ordering = ["-data_inicio"]
         verbose_name_plural = "assembleias"
+
+    @property
+    def prazo_cadastro(self):
+        return self.data_inicio - timedelta(hours=self.cadastro_antecedencia_horas)
 
     def save(self, *args, **kwargs):
         if not self.codigo_curto:

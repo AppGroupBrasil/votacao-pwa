@@ -118,6 +118,15 @@ class IdentidadeFacial(models.Model):
     )
     consentimento_lgpd = models.BooleanField(default=False)
     consentimento_em = models.DateTimeField(null=True, blank=True)
+    suspeita_duplicidade = models.BooleanField(
+        default=False,
+        help_text="O rosto do cadastro bateu com o de outro CPF do condomínio. Cada entrada sai com selo até a mesa conferir o documento.",
+    )
+    cadastro_antecipado_em = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Quando o morador cadastrou o rosto pelo link, antes da assembleia.",
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
     ultimo_visto_em = models.DateTimeField(auto_now=True)
 

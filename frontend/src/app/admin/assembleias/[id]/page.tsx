@@ -28,6 +28,8 @@ import type { Condominio } from "@/lib/types";
 import { api } from "@/lib/api";
 import ComoFunciona from "@/components/ComoFunciona";
 import LinkDestaque from "@/components/LinkDestaque";
+import RegraCadastroConfig from "@/components/RegraCadastroConfig";
+import { formatarPrazo } from "@/lib/regraCadastro";
 import type { Assembleia } from "@/lib/types";
 import { clsx } from "clsx";
 
@@ -64,6 +66,8 @@ export default function AssembleiaDetailPage() {
     segunda_chamada_qualquer_numero: true,
     exigir_confirmacao_email: true,
     modo_multiplas_unidades: "sindico" as "sindico" | "morador",
+    somente_cadastro_antecipado: false,
+    cadastro_antecedencia_horas: 24,
   });
 
   // Question form
@@ -121,6 +125,8 @@ export default function AssembleiaDetailPage() {
       exigir_confirmacao_email: assembleia.exigir_confirmacao_email !== false,
       modo_multiplas_unidades:
         assembleia.modo_multiplas_unidades || "sindico",
+      somente_cadastro_antecipado: !!assembleia.somente_cadastro_antecipado,
+      cadastro_antecedencia_horas: assembleia.cadastro_antecedencia_horas || 24,
     });
     api.getCondominios().then((data) => setCondominios(data.results || data));
     setEditing(true);
@@ -645,6 +651,20 @@ export default function AssembleiaDetailPage() {
               separadamente e fica pendente até a sua validação.
             </p>
           </div>
+          <div className="rounded-lg border border-gray-200 p-3">
+            <RegraCadastroConfig
+              ativo={editForm.somente_cadastro_antecipado}
+              horas={editForm.cadastro_antecedencia_horas}
+              dataInicio={editForm.data_inicio}
+              onChange={({ ativo, horas }) =>
+                setEditForm({
+                  ...editForm,
+                  somente_cadastro_antecipado: ativo,
+                  cadastro_antecedencia_horas: horas,
+                })
+              }
+            />
+          </div>
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
@@ -701,6 +721,23 @@ export default function AssembleiaDetailPage() {
           <p className="text-xs text-gray-500">Quórum 2ª Chamada</p>
         </div>
       </div>
+
+      {assembleia.somente_cadastro_antecipado && assembleia.prazo_cadastro && (
+        <div className="card mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-gray-700">
+            <strong>Somente cadastro com antecedência.</strong>{" "}
+            {new Date(assembleia.prazo_cadastro).getTime() <= Date.now()
+              ? `Cadastro encerrado em ${formatarPrazo(assembleia.prazo_cadastro)}.`
+              : `Cadastro fecha em ${formatarPrazo(assembleia.prazo_cadastro)} (${assembleia.cadastro_antecedencia_horas} horas antes do início).`}
+          </p>
+          <Link
+            href={`/admin/cadastros-rosto?condominio=${assembleia.condominio}`}
+            className="text-sm font-medium text-primary-600 hover:text-primary-800"
+          >
+            Conferir cadastros
+          </Link>
+        </div>
+      )}
 
       {assembleia.descricao && (
         <div className="card mb-6">

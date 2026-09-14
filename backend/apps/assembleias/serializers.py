@@ -185,6 +185,8 @@ class QuestaoCreateSerializer(serializers.ModelSerializer):
 class AssembleiaSerializer(serializers.ModelSerializer):
     questoes = QuestaoSerializer(many=True, read_only=True)
     presencas = PresencaSerializer(many=True, read_only=True)
+    # Quando o cadastro do rosto fecha (data de início menos a antecedência).
+    prazo_cadastro = serializers.DateTimeField(read_only=True)
     total_votantes = serializers.SerializerMethodField()
     total_presentes = serializers.SerializerMethodField()
     quorum = serializers.SerializerMethodField()
@@ -212,6 +214,9 @@ class AssembleiaSerializer(serializers.ModelSerializer):
             "quorum_segunda_chamada",
             "segunda_chamada_qualquer_numero",
             "exigir_confirmacao_email",
+            "somente_cadastro_antecipado",
+            "cadastro_antecedencia_horas",
+            "prazo_cadastro",
             "total_votantes",
             "total_presentes",
             "quorum",

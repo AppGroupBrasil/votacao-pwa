@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Building2, Check, Pencil, Plus, X, ChevronDown } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Condominio } from "@/lib/types";
+import RegraCadastroConfig from "@/components/RegraCadastroConfig";
 
 type Etapa = "condominio" | "titulo" | "questoes" | "revisao";
 
@@ -55,6 +56,7 @@ export default function NovaAssembleiaPage() {
     exigir_confirmacao_email: true,
     modo_multiplas_unidades: "sindico" as "sindico" | "morador",
   });
+  const [regraCadastro, setRegraCadastro] = useState({ ativo: false, horas: 24 });
 
   useEffect(() => {
     api
@@ -134,6 +136,8 @@ export default function NovaAssembleiaPage() {
         segunda_chamada_qualquer_numero: avancadas.segunda_chamada_qualquer_numero,
         exigir_confirmacao_email: avancadas.exigir_confirmacao_email,
         modo_multiplas_unidades: avancadas.modo_multiplas_unidades,
+        somente_cadastro_antecipado: regraCadastro.ativo,
+        cadastro_antecedencia_horas: regraCadastro.horas,
       });
       assembleiaId = assembleia.id;
       let ordem = 1;
@@ -464,6 +468,15 @@ export default function NovaAssembleiaPage() {
                 {" — ajuste em Configurações avançadas se precisar."}
               </p>
             </div>
+          </div>
+
+          <div className="card">
+            <RegraCadastroConfig
+              ativo={regraCadastro.ativo}
+              horas={regraCadastro.horas}
+              dataInicio={avancadas.data_inicio}
+              onChange={setRegraCadastro}
+            />
           </div>
 
           <div className="card">

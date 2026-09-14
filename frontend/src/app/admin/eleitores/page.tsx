@@ -24,12 +24,45 @@ export default function EleitoresPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [importando, setImportando] = useState(false);
   const [copiedAuto, setCopiedAuto] = useState(false);
+  const [copiedRosto, setCopiedRosto] = useState(false);
+  const [resumoRosto, setResumoRosto] = useState<{
+    moradores_com_cpf: number;
+    com_rosto: number;
+    antecipados: number;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const condAtivo =
     condominios.find(
       (c) => c.id === (filtroCondominio || (condominios.length === 1 ? condominios[0]?.id : ""))
     ) || null;
+
+  const condAtivoId = condAtivo?.id;
+  useEffect(() => {
+    setResumoRosto(null);
+    if (!condAtivoId) return;
+    let ativo = true;
+    api
+      .biometriaResumo(condAtivoId)
+      .then((r) => ativo && setResumoRosto(r))
+      .catch(() => {});
+    return () => {
+      ativo = false;
+    };
+  }, [condAtivoId]);
+
+  async function copiarLinkCadastroRosto() {
+    if (!condAtivo) return;
+    try {
+      await navigator.clipboard.writeText(
+        `${window.location.origin}/cadastro-facial/${condAtivo.id}`
+      );
+      setCopiedRosto(true);
+      setTimeout(() => setCopiedRosto(false), 2000);
+    } catch {
+      alert("Não foi possível copiar o link.");
+    }
+  }
 
   async function toggleAutocadastro() {
     if (!condAtivo) return;
@@ -369,6 +402,52 @@ export default function EleitoresPage() {
                 </>
               )}
             </button>
+          </div>
+        )}
+      </div>
+
+      <div className="card mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <p className="font-medium text-gray-800">Cadastro do rosto antes da assembleia</p>
+          <p className="text-sm text-gray-500">
+            {condAtivo
+              ? "Envie o link aos moradores: quem cadastra antes só confirma o rosto no dia, sem fila."
+              : "Selecione um condomínio no filtro acima para copiar o link do cadastro do rosto."}
+          </p>
+          {resumoRosto && (
+            <p className="mt-1 text-sm font-medium text-gray-700">
+              {resumoRosto.com_rosto} de {resumoRosto.moradores_com_cpf} moradores com rosto
+              cadastrado
+              {resumoRosto.antecipados > 0 && ` (${resumoRosto.antecipados} pelo link)`}
+            </p>
+          )}
+        </div>
+        {condAtivo && (
+          <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/admin/cadastros-rosto?condominio=${condAtivo.id}`}
+            className="inline-flex items-center justify-center gap-1.5 text-sm font-medium text-gray-700 bg-white ring-1 ring-gray-200 hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors"
+          >
+            <UserCheck className="w-4 h-4" />
+            Conferir cadastros
+          </Link>
+          <button
+            type="button"
+            onClick={copiarLinkCadastroRosto}
+            className="inline-flex items-center justify-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-800 bg-primary-50 hover:bg-primary-100 px-3 py-2 rounded-lg transition-colors"
+          >
+            {copiedRosto ? (
+              <>
+                <Check className="w-4 h-4 text-green-600" />
+                <span className="text-green-600">Link copiado!</span>
+              </>
+            ) : (
+              <>
+                <Link2 className="w-4 h-4" />
+                Copiar link
+              </>
+            )}
+          </button>
           </div>
         )}
       </div>

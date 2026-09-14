@@ -18,6 +18,8 @@ from rest_framework.response import Response
 
 from apps.eleitores.facial import (
     LIMIAR_BUSCA,
+    cadastro_sem_cpf_do_rosto,
+    marcar_se_duplicado,
     melhor_correspondencia,
     salvar_identidade_nova,
     tem_biometria,
@@ -25,6 +27,7 @@ from apps.eleitores.facial import (
     validar_lista_descriptors,
     verificar,
 )
+from apps.assembleias.regras import cadastro_fechado, regra_cadastro
 from apps.eleitores.models import (
     Eleitor,
     IdentidadeFacial,
@@ -202,6 +205,12 @@ class ListaPresencaViewSet(viewsets.ModelViewSet):
         registro.save(
             update_fields=["conferir_na_mesa", "conferido_em", "conferido_por"]
         )
+        if registro.motivo_conferencia == "rosto_duplicado" and registro.identidade_id:
+            # A mesa viu o documento: o cadastro deixa de sair com selo nas
+            # próximas listas.
+            IdentidadeFacial.objects.filter(id=registro.identidade_id).update(
+                suspeita_duplicidade=False
+            )
         return Response(PresencaManualSerializer(registro).data)
 
 
@@ -351,6 +360,11 @@ AVISOS_CONFERENCIA = {
         "Presença registrada. Como você entrou sem informar o CPF, a mesa confere "
         "seus dados no fechamento da lista. Você não precisa fazer mais nada agora."
     ),
+    "rosto_duplicado": (
+        "Presença registrada. Seu rosto ficou muito parecido com o de outro "
+        "cadastro do condomínio, então a mesa confere seu documento no fechamento "
+        "da lista. Você não precisa fazer mais nada agora."
+    ),
 }
 
 
@@ -379,10 +393,12 @@ def lista_presenca_publica(request, lista_id):
         .exclude(cpf_hash="")
         .exists()
     )
+    regra = None if lista.modo_rapido else regra_cadastro(lista.condominio_id)
     return Response(
         {
             "id": str(lista.id),
             "titulo": lista.titulo,
+            "regra_cadastro": regra.como_dict() if regra else None,
             "descricao": lista.descricao,
             "condominio_nome": lista.condominio.nome if lista.condominio_id else "",
             "ativa": lista.ativa,
@@ -433,11 +449,32 @@ def consultar_cpf_presenca(request, lista_id):
     tem_rosto = IdentidadeFacial.objects.filter(
         condominio_id=lista.condominio_id, cpf_hash=cpf_hash
     ).exists()
+    # Cadastro antecipado encerrado e este CPF sem rosto cadastrado: a tela
+    # avisa já aqui, antes de pedir foto e assinatura que seriam recusadas.
+    fechado = None if lista.modo_rapido else cadastro_fechado(lista.condominio_id)
+    if fechado and tem_rosto:
+        ident = (
+            IdentidadeFacial.objects.filter(
+                condominio_id=lista.condominio_id, cpf_hash=cpf_hash
+            )
+            .only("descriptor", "descriptors")
+            .first()
+        )
+        if tem_biometria(ident):
+            fechado = None
+    if fechado and IdentidadeFacial.objects.filter(
+        condominio_id=lista.condominio_id, cpf_hash=""
+    ).exists():
+        # Há rostos guardados antes do CPF: só a câmera diz se esta pessoa é um
+        # deles, então a decisão fica para a foto.
+        fechado = None
     return Response(
         {
             "unidades": unidades,
             "encontrado": bool(unidades),
             "tem_rosto": tem_rosto,
+            "cadastro_fechado": bool(fechado),
+            "mensagem_cadastro": fechado.mensagem_fechado if fechado else "",
             "mensagem": ""
             if unidades
             else (
@@ -467,6 +504,14 @@ def registrar_presenca_manual(request, lista_id):
         return Response(
             {"error": "Esta lista de presença está encerrada."},
             status=status.HTTP_400_BAD_REQUEST,
+        )
+    # Registro só com foto e assinatura é cadastro feito na hora. A lista rápida
+    # fica de fora: ela existe para reunião marcada no mesmo dia.
+    fechado = None if lista.modo_rapido else cadastro_fechado(lista.condominio_id)
+    if fechado:
+        return Response(
+            {"error": fechado.mensagem_fechado, "cadastro_fechado": True},
+            status=status.HTTP_403_FORBIDDEN,
         )
 
     nome = str(request.data.get("nome", "")).strip()[:200]
@@ -723,6 +768,18 @@ def registrar_presenca_facial(request, lista_id):
     dist_medida = None
     unidade_original = ""
 
+    # Regra de cadastro antecipado: com o prazo vencido, só registra presença
+    # quem já tem o rosto guardado. Nada de cadastro novo na hora.
+    fechado = cadastro_fechado(lista.condominio_id)
+    recusa_cadastro = (
+        Response(
+            {"error": fechado.mensagem_fechado, "cadastro_fechado": True},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+        if fechado
+        else None
+    )
+
     if lista.condominio_id and cpf_hash:
         # ---- Caminho normal: o CPF diz quem é a pessoa, o rosto só confirma. ----
         # É esta inversão que acaba com a troca de nomes: não há mais escolha
@@ -734,6 +791,14 @@ def registrar_presenca_facial(request, lista_id):
             .order_by("criado_em")
             .first()
         )
+        if ident is None and descriptor is not None:
+            # Rosto guardado antes do CPF existir na entrada: o cadastro antigo
+            # ganha o CPF em vez de nascer um segundo do mesmo rosto.
+            ident = cadastro_sem_cpf_do_rosto(lista.condominio_id, leituras or [descriptor])
+            if ident is not None:
+                ident.cpf_hash = cpf_hash
+        if recusa_cadastro and (ident is None or not tem_biometria(ident)):
+            return recusa_cadastro
         unidades_planilha = list(
             Eleitor.objects.filter(
                 condominio_id=lista.condominio_id, cpf_hash=cpf_hash
@@ -779,6 +844,7 @@ def registrar_presenca_facial(request, lista_id):
                 # de marcar "rosto não confere" em toda assembleia, para sempre.
                 for v in leituras or [descriptor]:
                     ident.guardar_leitura(v)
+                marcar_se_duplicado(ident, leituras or [descriptor])
             elif descriptor is not None:
                 confere, d = verificar(descriptor, ident)
                 dist_medida = None if d == float("inf") else round(d, 4)
@@ -816,6 +882,13 @@ def registrar_presenca_facial(request, lista_id):
             # Se outro envio do mesmo morador chegou primeiro (duplo clique, duas
             # abas), aproveita o cadastro dele em vez de criar um segundo.
             ident, novo = salvar_identidade_nova(ident, leituras)
+            if novo and marcar_se_duplicado(ident, leituras):
+                ident.save(update_fields=["suspeita_duplicidade"])
+
+        # Rosto que já pertence a outro CPF: a mesma pessoa marcaria presença
+        # duas vezes. Vale em toda entrada até a mesa conferir o documento.
+        if ident.suspeita_duplicidade and not conferir:
+            conferir, motivo = True, "rosto_duplicado"
 
         nome_reg, bloco_reg, apto_reg, perfil_reg = (
             nome_dig,
@@ -861,6 +934,8 @@ def registrar_presenca_facial(request, lista_id):
                 conferir, motivo = True, "rosto_ambiguo"
 
         if ident is None:
+            if recusa_cadastro:
+                return recusa_cadastro
             if not nome_dig:
                 return Response(
                     {"error": "Informe o nome para o primeiro cadastro."},
@@ -879,6 +954,18 @@ def registrar_presenca_facial(request, lista_id):
                     .order_by("id")
                     .first()
                 )
+                if (
+                    ident is not None
+                    and descriptor is not None
+                    and tem_biometria(ident)
+                    and not conferir
+                ):
+                    # Mesmo nome e unidade de um cadastro que já tem rosto:
+                    # bastava digitar os dados de um vizinho para entrar como ele.
+                    confere, d = verificar(descriptor, ident)
+                    if not confere:
+                        conferir, motivo = True, "rosto_nao_confere"
+                        dist_medida = None if d == float("inf") else round(d, 4)
                 if ident is None:
                     ident = IdentidadeFacial(
                         condominio_id=lista.condominio_id,

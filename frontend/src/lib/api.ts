@@ -16,6 +16,23 @@ import type {
   VotoPayload,
   VotoResponse,
 } from "./types";
+import type { RegraCadastro } from "./regraCadastro";
+
+/** Linha da lista "Cadastros do rosto" que a administração confere antes do dia. */
+export interface CadastroFacial {
+  id: string;
+  nome: string;
+  bloco: string;
+  apartamento: string;
+  perfil: string;
+  na_planilha: boolean;
+  unidade_diferente_da_planilha: boolean;
+  inadimplente: boolean;
+  suspeita_duplicidade: boolean;
+  tem_rosto: boolean;
+  cadastro_antecipado_em: string | null;
+  criado_em: string;
+}
 
 export interface EleitorSession {
   session_token?: string;
@@ -509,6 +526,59 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // Cadastro antecipado do rosto, pelo link do condomínio.
+  cadastroFacialInfo: (condominioId: string) =>
+    request<{ condominio_nome: string; regra: RegraCadastro | null }>(
+      `/eleitores/cadastro-facial/${condominioId}/`
+    ),
+
+  cadastroFacialConsultarCpf: (condominioId: string, cpfHash: string) =>
+    request<{
+      unidades: { nome: string; bloco: string; apartamento: string }[];
+      encontrado: boolean;
+      tem_rosto: boolean;
+      // Condomínio com planilha de CPF. Sem ela, todo morador informa a unidade.
+      tem_planilha: boolean;
+      mensagem: string;
+    }>(`/eleitores/cadastro-facial/${condominioId}/consultar-cpf/`, {
+      method: "POST",
+      body: JSON.stringify({ cpf_hash: cpfHash }),
+    }),
+
+  cadastroFacialSalvar: (
+    condominioId: string,
+    data: {
+      cpf_hash: string;
+      descriptors: number[][];
+      selfie: string;
+      consentimento_lgpd: boolean;
+      // Só para quem não está na planilha (procurador, locatário).
+      nome?: string;
+      bloco?: string;
+      apartamento?: string;
+      perfil?: string;
+    }
+  ) =>
+    request<{ ok: boolean; novo: boolean; nome: string }>(
+      `/eleitores/cadastro-facial/${condominioId}/salvar/`,
+      { method: "POST", body: JSON.stringify(data) }
+    ),
+
+  biometriaResumo: (condominioId: string) =>
+    request<{ moradores_com_cpf: number; com_rosto: number; antecipados: number }>(
+      `/condominios/${condominioId}/biometria-resumo/`
+    ),
+
+  cadastrosFaciais: (condominioId: string) =>
+    request<{ cadastros: CadastroFacial[]; tem_planilha: boolean }>(
+      `/condominios/${condominioId}/cadastros-faciais/`
+    ),
+
+  cadastroFacialFoto: (condominioId: string, identidadeId: string) =>
+    request<{ selfie: string }>(
+      `/condominios/${condominioId}/cadastros-faciais/${identidadeId}/foto/`
+    ),
+
   consultarCpfVotacao: (assembleiaId: string, cpfHash: string) =>
     request<{
       unidades: {
@@ -520,6 +590,9 @@ export const api = {
       encontrado?: boolean;
       tem_rosto?: boolean;
       mensagem?: string;
+      // Cadastro antecipado encerrado e este CPF sem rosto cadastrado.
+      cadastro_fechado?: boolean;
+      mensagem_cadastro?: string;
     }>(`/votos/${assembleiaId}/consultar-cpf/`, {
       method: "POST",
       body: JSON.stringify({ cpf_hash: cpfHash }),
@@ -975,6 +1048,7 @@ export const api = {
       tem_cpf?: boolean;
       // Avisa que existe sala de vídeo; o endereço só vem depois da presença.
       tem_sala?: boolean;
+      regra_cadastro?: RegraCadastro | null;
     }>(`/enquetes/listas-presenca/${id}/publica/`),
 
   consultarCpfPresenca: (id: string, cpf_hash: string) =>
@@ -991,6 +1065,9 @@ export const api = {
       tem_rosto?: boolean;
       // Texto pronto para a tela quando o CPF não está na planilha.
       mensagem?: string;
+      // Cadastro antecipado encerrado e este CPF sem rosto cadastrado.
+      cadastro_fechado?: boolean;
+      mensagem_cadastro?: string;
     }>(`/enquetes/listas-presenca/${id}/consultar-cpf/`, {
       method: "POST",
       body: JSON.stringify({ cpf_hash }),

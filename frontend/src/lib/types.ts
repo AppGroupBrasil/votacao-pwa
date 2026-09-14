@@ -133,6 +133,13 @@ export interface Assembleia {
   quorum_segunda_chamada: number;
   segunda_chamada_qualquer_numero: boolean;
   exigir_confirmacao_email?: boolean;
+  // Regra "somente cadastro com antecedência": o cadastro do rosto fecha
+  // cadastro_antecedencia_horas antes do início (prazo_cadastro).
+  somente_cadastro_antecipado?: boolean;
+  cadastro_antecedencia_horas?: number;
+  prazo_cadastro?: string;
+  // Vem só na tela pública da votação: a regra que vale agora no condomínio.
+  regra_cadastro?: import("./regraCadastro").RegraCadastro | null;
   // Condomínio tem planilha de moradores com CPF: a entrada começa pelo CPF
   // (o rosto só confirma) em vez de procurar o rosto entre todos.
   tem_cpf?: boolean;

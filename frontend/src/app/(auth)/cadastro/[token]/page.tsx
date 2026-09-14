@@ -2,10 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { Vote, Camera, Fingerprint, CheckCircle, Mail } from "lucide-react";
 import { api } from "@/lib/api";
 import WebAuthnEnroll from "@/components/webauthn/WebAuthnEnroll";
-import FaceCapture from "@/components/FaceCapture";
+
+// Só no navegador (como no /acesso): o TensorFlow do reconhecimento quebra
+// quando o servidor monta a página, e o convite respondia erro 500.
+const FaceCapture = dynamic(() => import("@/components/FaceCapture"), { ssr: false });
 
 type Step = "loading" | "welcome" | "selfie" | "webauthn" | "done";
 
