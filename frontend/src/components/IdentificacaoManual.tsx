@@ -7,7 +7,8 @@ import { api, getDeviceId } from "@/lib/api";
 interface IdentificacaoManualProps {
   assembleiaId: string;
   onSuccess: (token: string, votanteManualId: string, avisoUnidade?: string) => void;
-  onBack: () => void;
+  /** Sem ele (votação só manual), não há para onde voltar. */
+  onBack?: () => void;
 }
 
 export default function IdentificacaoManual({
@@ -125,12 +126,14 @@ export default function IdentificacaoManual({
 
   return (
     <div className="space-y-4 text-left">
-      <button
-        onClick={onBack}
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
-      >
-        <ArrowLeft className="w-4 h-4" /> Voltar para o e-mail
-      </button>
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+        >
+          <ArrowLeft className="w-4 h-4" /> Voltar para o e-mail
+        </button>
+      )}
 
       <div className="text-center space-y-2">
         <UserRound className="w-12 h-12 text-primary-600 mx-auto" />

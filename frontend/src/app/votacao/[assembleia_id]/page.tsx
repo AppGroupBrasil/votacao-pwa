@@ -36,8 +36,15 @@ export default function VotacaoPage() {
   const [assembleia, setAssembleia] = useState<Assembleia | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
   // Entrada da votação sem login: rosto (padrão) → e-mail → votação manual.
+  // Com "?entrada=manual" no link, a votação é só por cadastro manual (selfie,
+  // nome e unidade): nenhuma câmera de biometria, nenhum rosto guardado.
+  const [somenteManual] = useState<boolean>(() =>
+    typeof window === "undefined"
+      ? false
+      : new URLSearchParams(window.location.search).get("entrada") === "manual"
+  );
   const [entryMode, setEntryMode] = useState<"facial" | "email" | "manual">(
-    "facial"
+    () => (somenteManual ? "manual" : "facial")
   );
   const [manualId, setManualId] = useState("");
   const [votoPendente, setVotoPendente] = useState(false);
@@ -246,7 +253,7 @@ export default function VotacaoPage() {
                 setAvisoUnidade(aviso || "");
                 setAuthToken(token);
               }}
-              onBack={() => setEntryMode("facial")}
+              onBack={somenteManual ? undefined : () => setEntryMode("facial")}
             />
           )}
           {entryMode === "email" && (

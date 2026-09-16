@@ -49,11 +49,15 @@ export default function ShortVotacaoRedirect() {
         const r = await api.resolverCodigo(code);
         if (ativo && r?.assembleia_id) {
           // Código de um item: abre a votação só daquela questão.
-          router.replace(
-            r.questao_id
-              ? `/votacao/${r.assembleia_id}?q=${r.questao_id}`
-              : `/votacao/${r.assembleia_id}`
-          );
+          // "?entrada=manual" do link curto segue junto: a votação abre
+          // direto no cadastro manual, sem a câmera da biometria.
+          const extra = new URLSearchParams();
+          if (r.questao_id) extra.set("q", r.questao_id);
+          if (new URLSearchParams(window.location.search).get("entrada") === "manual") {
+            extra.set("entrada", "manual");
+          }
+          const busca = extra.toString();
+          router.replace(`/votacao/${r.assembleia_id}${busca ? `?${busca}` : ""}`);
           return;
         }
       } catch {
