@@ -151,6 +151,7 @@ export default function IdentificacaoManual({
         <input
           value={nome}
           onChange={(e) => setNome(e.target.value)}
+          maxLength={200}
           className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-primary-500 focus:outline-none transition-colors"
         />
       </div>
@@ -160,6 +161,7 @@ export default function IdentificacaoManual({
           <input
             value={bloco}
             onChange={(e) => setBloco(e.target.value)}
+            maxLength={20}
             className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-primary-500 focus:outline-none transition-colors"
           />
         </div>
@@ -168,6 +170,7 @@ export default function IdentificacaoManual({
           <input
             value={apartamento}
             onChange={(e) => setApartamento(e.target.value)}
+            maxLength={20}
             className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-primary-500 focus:outline-none transition-colors"
           />
         </div>

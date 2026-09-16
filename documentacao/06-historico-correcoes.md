@@ -256,6 +256,14 @@ assembleia não tem lista de votantes.
 segunda pessoa da unidade, voto antes de abrir e depois de fechar, números da tela, textos dos 3 PDFs,
 total de unidades informado, isolamento), suíte inteira (60) e simulação ponta a ponta nas telas.
 
+**Cadastro na hora com texto longo (erro 500 só no Postgres).** A entrada da votação por selfie
+(`acesso_manual`) e o autocadastro por CNPJ (`eleitor_cadastro`) gravavam nome, bloco e apartamento
+sem cortar no tamanho das colunas (200/20/20). No SQLite passava; no Postgres da produção um bloco
+como "Bloco A - Edifício Primavera" derrubava a entrada. Agora o servidor corta, o login gerado
+limita o nome e as telas limitam os campos (`maxLength`). Confirmado com o teste falhando no Postgres
+16 antes da correção e passando depois (63 testes). Na tela: campos obrigatórios recusados, bloco
+limitado, voto registrado e edição do total de unidades de um condomínio criado por "Criar assembleia".
+
 ## Lições
 
 - Toda rota usada pelo morador precisa ser pública e **não** vazar identidade/voto.

@@ -274,6 +274,7 @@ export default function AcessoMoradorPage() {
                 type="text"
                 value={cNome}
                 onChange={(e) => setCNome(e.target.value)}
+                maxLength={200}
                 className="input-field"
                 required
               />
@@ -305,6 +306,7 @@ export default function AcessoMoradorPage() {
                   type="text"
                   value={cApto}
                   onChange={(e) => setCApto(e.target.value)}
+                  maxLength={20}
                   className="input-field"
                   required
                 />

@@ -767,6 +767,7 @@ export default function PresencaManualPublicaPage() {
             <input
               value={nome}
               onChange={(e) => setNome(e.target.value)}
+              maxLength={200}
               className="input-field w-full"
               placeholder="Como está no seu documento"
             />
@@ -777,6 +778,7 @@ export default function PresencaManualPublicaPage() {
               <input
                 value={bloco}
                 onChange={(e) => setBloco(e.target.value)}
+                maxLength={20}
                 className="input-field w-full"
                 placeholder="A"
               />
@@ -788,6 +790,7 @@ export default function PresencaManualPublicaPage() {
               <input
                 value={apartamento}
                 onChange={(e) => setApartamento(e.target.value)}
+                maxLength={20}
                 className="input-field w-full"
                 placeholder="305"
               />
@@ -1178,6 +1181,7 @@ export default function PresencaManualPublicaPage() {
             <input
               value={nome}
               onChange={(e) => setNome(e.target.value)}
+              maxLength={200}
               className="input-field w-full"
             />
           </div>
@@ -1204,6 +1208,7 @@ export default function PresencaManualPublicaPage() {
               <input
                 value={bloco}
                 onChange={(e) => setBloco(e.target.value)}
+                maxLength={20}
                 className="input-field w-full"
               />
             </div>
@@ -1214,6 +1219,7 @@ export default function PresencaManualPublicaPage() {
               <input
                 value={apartamento}
                 onChange={(e) => setApartamento(e.target.value)}
+                maxLength={20}
                 className="input-field w-full"
               />
             </div>

@@ -826,9 +826,11 @@ def acesso_manual(request, assembleia_id):
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    nome = str(request.data.get("nome", "")).strip()
-    bloco = str(request.data.get("bloco", "")).strip()
-    apartamento = str(request.data.get("apartamento", "")).strip()
+    # Cortado no tamanho das colunas: texto maior dava erro 500 no Postgres e o
+    # morador ficava sem entrar.
+    nome = str(request.data.get("nome", "")).strip()[:200]
+    bloco = str(request.data.get("bloco", "")).strip()[:20]
+    apartamento = str(request.data.get("apartamento", "")).strip()[:20]
     selfie = str(request.data.get("selfie", ""))
     device_id = str(request.data.get("device_id", "")).strip()[:64]
 

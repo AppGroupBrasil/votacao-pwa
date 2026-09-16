@@ -104,3 +104,40 @@ class AuthAndBiometriaTests(APITestCase):
     def test_refresh_sem_cookie_retorna_401(self):
         response = self.client.post("/api/auth/refresh/")
         self.assertEqual(response.status_code, 401)
+
+
+class AutocadastroMoradorTests(APITestCase):
+    def setUp(self):
+        self.cond = Condominio.objects.create(
+            nome="Residencial Longo", cnpj="12.345.678/0001-99", total_unidades=10
+        )
+
+    def test_texto_longo_nao_derruba_o_autocadastro(self):
+        r = self.client.post(
+            "/api/eleitor/cadastro/",
+            {
+                "cnpj": self.cond.cnpj,
+                "nome": "Maria " + "Silva " * 60,
+                "bloco": "Bloco A - Edifício Primavera",
+                "apartamento": "Apartamento 1201 fundos",
+                "senha": "123456",
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.data)
+        eleitor = Eleitor.objects.get(condominio=self.cond)
+        self.assertLessEqual(len(eleitor.nome), 200)
+        self.assertEqual((len(eleitor.bloco), len(eleitor.apartamento)), (20, 20))
+        self.assertLessEqual(len(eleitor.email), 200)
+
+    def test_autocadastro_recusa_dados_faltando_e_condominio_errado(self):
+        base = {"cnpj": self.cond.cnpj, "nome": "Ana", "apartamento": "101", "senha": "123456"}
+        for campo in ("nome", "apartamento", "senha"):
+            r = self.client.post("/api/eleitor/cadastro/", {**base, campo: ""}, format="json")
+            self.assertEqual(r.status_code, 400, campo)
+        r = self.client.post("/api/eleitor/cadastro/", {**base, "senha": "123"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post("/api/eleitor/cadastro/", {**base, "cnpj": "00.000.000/0000-00"}, format="json")
+        self.assertEqual(r.status_code, 404)
+        self.assertFalse(Eleitor.objects.exists())
+

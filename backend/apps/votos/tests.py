@@ -475,6 +475,30 @@ class AssembleiaSemCadastroApuracaoTests(APITestCase):
         self.assertEqual(detalhe["quorum"]["percentual"], 50.0)
         self.assertIn("50.0%", self._pdf("presenca"))
 
+    def test_cadastro_na_hora_com_texto_longo_nao_derruba_a_entrada(self):
+        # No Postgres o texto maior que a coluna dava erro 500 e o morador
+        # ficava sem entrar ("Bloco A - Edifício Primavera" tem 28 letras).
+        self.client.force_authenticate(self.admin)
+        self.client.post(f"/api/assembleias/{self.assembleia.id}/abrir/")
+        self.client.force_authenticate(None)
+        r = self._entrar("M" * 250, "Bloco A - Edifício Primavera", "Apartamento 1201 fundos", "longo")
+        self.assertEqual(r.status_code, 201, r.data)
+        from apps.votos.models import VotanteManual
+
+        votante = VotanteManual.objects.get(id=r.data["votante_manual_id"])
+        self.assertEqual((len(votante.nome), len(votante.bloco), len(votante.apartamento)), (200, 20, 20))
+        self.assertEqual(self._votar(r.data["token"], self.q1, "Sim", "longo").status_code, 201)
+
+        # Campos obrigatórios continuam recusados.
+        for nome, apto, selfie in (("", "101", True), ("Ana", "", True), ("Ana", "101", False)):
+            r = self.client.post(
+                f"/api/votos/{self.assembleia.id}/acesso-manual/",
+                {"nome": nome, "bloco": "A", "apartamento": apto,
+                 "selfie": "data:image/jpeg;base64,AAAA" if selfie else ""},
+                format="json",
+            )
+            self.assertEqual(r.status_code, 400, (nome, apto, selfie))
+
     def test_sindico_de_outro_condominio_nao_ve_a_apuracao(self):
         from core.models import PerfilAdmin
 

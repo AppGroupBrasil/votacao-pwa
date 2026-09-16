@@ -695,6 +695,7 @@ export default function PresencaRapidaPage() {
                 <input
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
+                  maxLength={200}
                   placeholder="Ex.: Maria de Souza"
                   className="input-field mb-4"
                   autoComplete="name"
@@ -722,6 +723,7 @@ export default function PresencaRapidaPage() {
                     <input
                       value={bloco}
                       onChange={(e) => setBloco(e.target.value)}
+                      maxLength={20}
                       placeholder="Opcional"
                       className="input-field"
                     />
@@ -733,6 +735,7 @@ export default function PresencaRapidaPage() {
                     <input
                       value={apartamento}
                       onChange={(e) => setApartamento(e.target.value)}
+                      maxLength={20}
                       placeholder="Ex.: 101"
                       className="input-field"
                     />

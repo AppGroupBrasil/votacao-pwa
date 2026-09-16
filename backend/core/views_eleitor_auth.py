@@ -97,7 +97,8 @@ def _norm(s):
 
 
 def _gerar_login(condominio, nome, bloco, apartamento):
-    base = f"{_norm(nome)}.{_norm(bloco)}{_norm(apartamento)}@morador.appvotacao"
+    # O login é o e-mail do eleitor (até 200 caracteres): nome longo é cortado.
+    base = f"{_norm(nome)[:60]}.{_norm(bloco)}{_norm(apartamento)}@morador.appvotacao"
     login, i = base, 1
     while Eleitor.objects.filter(email__iexact=login).exists():
         i += 1
@@ -130,9 +131,10 @@ def eleitor_cadastro(request):
     sessão para seguir o fluxo (facial -> presença -> sala).
     """
     cnpj = str(request.data.get("cnpj", "")).strip()
-    nome = str(request.data.get("nome", "")).strip()
-    bloco = str(request.data.get("bloco", "")).strip()
-    apartamento = str(request.data.get("apartamento", "")).strip()
+    # Cortado no tamanho das colunas: texto maior dava erro 500 no Postgres.
+    nome = str(request.data.get("nome", "")).strip()[:200]
+    bloco = str(request.data.get("bloco", "")).strip()[:20]
+    apartamento = str(request.data.get("apartamento", "")).strip()[:20]
     senha = str(request.data.get("senha", ""))
 
     if not (cnpj and nome and apartamento and senha):
