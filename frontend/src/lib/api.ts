@@ -1081,6 +1081,9 @@ export const api = {
       bloco?: string;
       apartamento?: string;
       email?: string;
+      cpf_hash?: string;
+      cpf_mascarado?: string;
+      observacao?: string;
       selfie?: string;
       assinatura: string;
       metodo_auth: string;
@@ -1095,13 +1098,22 @@ export const api = {
   ) =>
     request<{
       ok: boolean;
+      // Mesmo CPF na mesma unidade: não registra de novo.
+      ja_presente?: boolean;
+      registrado_em?: string;
       inadimplente?: boolean;
       aviso?: string;
       link_reuniao?: string;
+      // Só vem para o aparelho que fez o registro.
+      comprovante?: import("./types").ComprovantePresenca | null;
     }>(
       `/enquetes/listas-presenca/${id}/registrar/`,
       { method: "POST", body: JSON.stringify(data) }
     ),
+
+  // PDF do comprovante: o link assinado é a própria guarda (não usa login).
+  urlComprovantePresenca: (token: string) =>
+    `${API_URL}/enquetes/listas-presenca/comprovante/${encodeURIComponent(token)}/`,
 
   reconhecerPresencaFacial: (id: string, descriptor: number[]) =>
     request<{ encontrado: boolean }>(
@@ -1120,6 +1132,10 @@ export const api = {
       // Várias leituras do mesmo rosto (nunca a média delas).
       descriptors?: number[][];
       cpf_hash?: string;
+      // CPF digitado em lista sem planilha: só registro, não identifica.
+      cpf_digitado_hash?: string;
+      cpf_mascarado?: string;
+      observacao?: string;
       nome?: string;
       bloco?: string;
       apartamento?: string;

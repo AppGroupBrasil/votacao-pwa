@@ -3,14 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
+  ArrowLeft,
   Camera,
   Check,
   CheckCircle2,
   Eraser,
+  FileText,
   Loader2,
   MapPin,
   PenLine,
-  RefreshCw,
+  Printer,
+  Share2,
   ShieldCheck,
   Smartphone,
   UserRound,
@@ -20,6 +23,8 @@ import {
 } from "lucide-react";
 
 import { api, getDeviceId } from "@/lib/api";
+import { documentoValido, hashDocumento, mascararDocumento } from "@/lib/cpf";
+import type { ComprovantePresenca } from "@/lib/types";
 
 const PERFIS = [
   { v: "proprietario", l: "Proprietário" },
@@ -40,6 +45,43 @@ type Publica = {
   tem_sala?: boolean;
 };
 
+function horaBrasilia(iso: string, comData = true) {
+  return new Date(iso).toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    ...(comData
+      ? { dateStyle: "short", timeStyle: "medium" }
+      : { hour: "2-digit", minute: "2-digit" }),
+  });
+}
+
+function Dado({
+  rotulo,
+  children,
+  empilhado = false,
+}: {
+  rotulo: string;
+  children: React.ReactNode;
+  // Ao lado da foto sobra pouca largura: rótulo em cima, valor embaixo.
+  empilhado?: boolean;
+}) {
+  if (empilhado) {
+    return (
+      <div className="py-1">
+        <dt className="text-xs text-gray-500">{rotulo}</dt>
+        <dd className="break-words font-semibold text-gray-900">{children || "—"}</dd>
+      </div>
+    );
+  }
+  return (
+    <div className="flex gap-x-2 py-1.5">
+      <dt className="w-28 shrink-0 text-gray-500">{rotulo}</dt>
+      <dd className="min-w-0 flex-1 break-words font-medium text-gray-900">
+        {children || "—"}
+      </dd>
+    </div>
+  );
+}
+
 async function detectarMarca(): Promise<string> {
   const uaData = (navigator as any).userAgentData;
   if (uaData?.getHighEntropyValues) {
@@ -54,10 +96,11 @@ async function detectarMarca(): Promise<string> {
   return (navigator.userAgent || "").slice(0, 120);
 }
 
-// Lista de presença rápida: sem planilha, sem CPF e sem biometria facial. O
-// morador se identifica pela foto e pela assinatura; aparelho, localização e IP
-// ficam gravados junto para a mesa poder auditar depois. É a lista para a
-// reunião marcada em cima da hora, quando não há tempo de importar planilha.
+// Lista de presença manual: sem planilha e sem biometria facial. O morador se
+// identifica pela foto, pelo CPF e pela assinatura, e pode deixar uma
+// observação (procurador, pagamento feito hoje); aparelho, localização e IP
+// ficam gravados junto para a mesa poder auditar depois. O síndico escolhe
+// este modo ao criar a lista, no lugar da biometria facial.
 export default function PresencaRapidaPage() {
   const params = useParams();
   const router = useRouter();
@@ -68,9 +111,11 @@ export default function PresencaRapidaPage() {
   const [etapa, setEtapa] = useState<1 | 2 | 3>(1);
 
   const [nome, setNome] = useState("");
+  const [cpf, setCpf] = useState("");
   const [bloco, setBloco] = useState("");
   const [apartamento, setApartamento] = useState("");
   const [perfil, setPerfil] = useState("proprietario");
+  const [observacao, setObservacao] = useState("");
   const [selfie, setSelfie] = useState("");
   const [assinatura, setAssinatura] = useState("");
   const [lgpd, setLgpd] = useState(false);
@@ -81,7 +126,14 @@ export default function PresencaRapidaPage() {
   const [pronto, setPronto] = useState<{
     aviso: string;
     link_reuniao: string;
+    jaPresente: boolean;
+    registradoEm: string;
+    comprovante: ComprovantePresenca | null;
   } | null>(null);
+  // No lugar de "registrar outra pessoa": o comprovante de quem registrou.
+  const [verComprovante, setVerComprovante] = useState(false);
+  const arquivoPdf = useRef<File | null>(null);
+  const [linkCopiado, setLinkCopiado] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -238,6 +290,10 @@ export default function PresencaRapidaPage() {
       setErro("Informe o seu nome.");
       return;
     }
+    if (!documentoValido(cpf)) {
+      setErro("Confira o CPF: os números digitados não formam um CPF válido.");
+      return;
+    }
     if (!apartamento.trim()) {
       setErro("Informe o apartamento/unidade.");
       return;
@@ -268,6 +324,9 @@ export default function PresencaRapidaPage() {
         perfil,
         bloco: bloco.trim(),
         apartamento: apartamento.trim(),
+        cpf_hash: await hashDocumento(cpf),
+        cpf_mascarado: mascararDocumento(cpf),
+        observacao: observacao.trim(),
         selfie,
         assinatura,
         metodo_auth: "selfie",
@@ -281,6 +340,9 @@ export default function PresencaRapidaPage() {
       setPronto({
         aviso: r?.aviso || "",
         link_reuniao: r?.link_reuniao || "",
+        jaPresente: !!r?.ja_presente,
+        registradoEm: r?.registrado_em || "",
+        comprovante: r?.comprovante || null,
       });
     } catch (e: any) {
       setErro(
@@ -292,19 +354,54 @@ export default function PresencaRapidaPage() {
     }
   }
 
-  function novaPessoa() {
-    // Celular passando de mão em mão no salão: a próxima pessoa começa limpa.
-    setPronto(null);
-    setNome("");
-    setBloco("");
-    setApartamento("");
-    setPerfil("proprietario");
-    setSelfie("");
-    setAssinatura("");
-    setLgpd(false);
-    setVeracidade(false);
-    setErro("");
-    setEtapa(1);
+  const tokenComprovante = pronto?.comprovante?.token || "";
+  const urlComprovante = tokenComprovante
+    ? api.urlComprovantePresenca(tokenComprovante)
+    : "";
+
+  // O PDF já vem baixado quando a pessoa toca em Compartilhar: o celular só
+  // aceita compartilhar arquivo logo depois do toque, sem espera no meio.
+  useEffect(() => {
+    arquivoPdf.current = null;
+    if (!urlComprovante) return;
+    let ativo = true;
+    fetch(urlComprovante)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+      .then((b) => {
+        if (ativo)
+          arquivoPdf.current = new File([b], "comprovante-presenca.pdf", {
+            type: "application/pdf",
+          });
+      })
+      .catch(() => {});
+    return () => {
+      ativo = false;
+    };
+  }, [urlComprovante]);
+
+  async function compartilharComprovante() {
+    if (!urlComprovante) return;
+    const arquivo = arquivoPdf.current;
+    try {
+      if (arquivo && navigator.canShare?.({ files: [arquivo] })) {
+        await navigator.share({ files: [arquivo], title: "Comprovante de presença" });
+        return;
+      }
+      if (navigator.share) {
+        await navigator.share({ title: "Comprovante de presença", url: urlComprovante });
+        return;
+      }
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
+    }
+    // Sem compartilhamento no navegador: copia o link do PDF.
+    try {
+      await navigator.clipboard.writeText(urlComprovante);
+      setLinkCopiado(true);
+      setTimeout(() => setLinkCopiado(false), 2500);
+    } catch {
+      /* sem área de transferência: o botão do PDF continua valendo */
+    }
   }
 
   if (carregando) {
@@ -325,6 +422,27 @@ export default function PresencaRapidaPage() {
 
   const titulo = lista.condominio_nome || lista.titulo;
   const subtitulo = lista.condominio_nome ? lista.titulo : lista.descricao || "";
+  const comprovante = pronto?.comprovante || null;
+
+  const botoesComprovante = urlComprovante ? (
+    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <a
+        href={urlComprovante}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="btn-primary inline-flex items-center justify-center gap-2"
+      >
+        <Printer className="h-4 w-4" /> Baixar / imprimir PDF
+      </a>
+      <button
+        onClick={compartilharComprovante}
+        className="btn-secondary inline-flex items-center justify-center gap-2"
+      >
+        <Share2 className="h-4 w-4" />
+        {linkCopiado ? "Link copiado!" : "Compartilhar"}
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary-700 via-primary-600 to-gray-50 pb-12">
@@ -358,16 +476,123 @@ export default function PresencaRapidaPage() {
           </div>
         )}
 
-        {pronto && (
+        {pronto && verComprovante && comprovante?.numero && (
+          <div className="rounded-2xl bg-white p-5 shadow-lg ring-1 ring-black/5 sm:p-6">
+            <div className="border-b border-gray-100 pb-3 text-center">
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary-600">
+                Comprovante de presença
+              </p>
+              <h2 className="mt-1 text-lg font-bold leading-tight text-gray-900">
+                {titulo}
+              </h2>
+              {subtitulo && <p className="text-sm text-gray-500">{subtitulo}</p>}
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-start gap-4">
+              {selfie && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={selfie}
+                  alt="Sua foto"
+                  className="h-36 w-28 shrink-0 rounded-xl object-cover ring-1 ring-gray-200"
+                />
+              )}
+              <dl className="min-w-0 flex-1 basis-40 text-sm">
+                <Dado empilhado rotulo="Nome">{nome}</Dado>
+                <Dado empilhado rotulo="CPF">{comprovante.cpf_mascarado}</Dado>
+                <Dado empilhado rotulo="Unidade">
+                  {[bloco && `Bloco ${bloco}`, apartamento && `Apto ${apartamento}`]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </Dado>
+                <Dado empilhado rotulo="Perfil">
+                  {PERFIS.find((p) => p.v === perfil)?.l}
+                </Dado>
+                <Dado empilhado rotulo="Data e hora">
+                  {comprovante.registrado_em
+                    ? `${horaBrasilia(comprovante.registrado_em)} (Brasília)`
+                    : ""}
+                </Dado>
+                <Dado empilhado rotulo="Nº do registro">{comprovante.numero}</Dado>
+              </dl>
+            </div>
+
+            {observacao.trim() && (
+              <div className="mt-4 whitespace-pre-line break-words rounded-lg bg-yellow-50 px-3 py-2 text-sm text-gray-800 ring-1 ring-yellow-200">
+                <span className="font-semibold">Observações:</span> {observacao.trim()}
+              </div>
+            )}
+
+            {assinatura && (
+              <div className="mt-4">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Assinatura
+                </p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={assinatura}
+                  alt="Sua assinatura"
+                  className="h-24 w-full rounded-lg border border-gray-200 bg-white object-contain"
+                />
+              </div>
+            )}
+
+            <dl className="mt-4 divide-y divide-gray-100 border-t border-gray-100 text-sm">
+              <Dado rotulo="Localização">
+                {geo.current.lat != null && geo.current.lng != null ? (
+                  <a
+                    href={`https://www.google.com/maps?q=${geo.current.lat},${geo.current.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary-700 underline underline-offset-2"
+                  >
+                    {geo.current.lat.toFixed(6)}, {geo.current.lng.toFixed(6)}
+                  </a>
+                ) : (
+                  "Não autorizada no aparelho"
+                )}
+              </Dado>
+              <Dado rotulo="Aparelho">{comprovante.aparelho}</Dado>
+              <Dado rotulo="Sistema">{comprovante.sistema}</Dado>
+              <Dado rotulo="Identificação do aparelho">
+                <span className="break-all">{comprovante.device_id}</span>
+              </Dado>
+              <Dado rotulo="Endereço de rede (IP)">{comprovante.ip}</Dado>
+            </dl>
+
+            {botoesComprovante}
+            <button
+              onClick={() => setVerComprovante(false)}
+              className="mt-3 inline-flex w-full items-center justify-center gap-1 text-sm text-gray-500 hover:underline"
+            >
+              <ArrowLeft className="h-4 w-4" /> Voltar
+            </button>
+          </div>
+        )}
+
+        {pronto && !(verComprovante && comprovante?.numero) && (
           <div className="rounded-2xl bg-white p-6 text-center shadow-lg ring-1 ring-black/5">
             <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
               <CheckCircle2 className="h-12 w-12 text-green-600" strokeWidth={2.2} />
             </div>
-            <h2 className="text-xl font-bold text-gray-900">Presença registrada</h2>
+            <h2 className="text-xl font-bold text-gray-900">
+              {pronto.jaPresente ? "Você já está presente" : "Presença registrada"}
+            </h2>
             <p className="mt-1 text-gray-600">
               {nome} · {bloco ? `Bloco ${bloco} · ` : ""}
               {apartamento}
             </p>
+            {pronto.jaPresente && (
+              <p className="mt-3 rounded-xl bg-blue-50 p-3 text-sm text-blue-900 ring-1 ring-blue-200">
+                Este CPF já registrou presença para esta unidade
+                {pronto.registradoEm
+                  ? ` às ${horaBrasilia(pronto.registradoEm, false)}`
+                  : ""}
+                . Não é preciso registrar de novo.
+                {!urlComprovante &&
+                  " O comprovante fica no aparelho em que a presença foi registrada."}
+              </p>
+            )}
 
             {pronto.aviso && (
               <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800 ring-1 ring-amber-200">
@@ -386,40 +611,49 @@ export default function PresencaRapidaPage() {
               </a>
             )}
 
-            <div className="mt-6 rounded-xl bg-gray-50 p-4 text-left ring-1 ring-gray-200">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Guardado com a sua assinatura
-              </p>
-              <ul className="space-y-1.5 text-sm text-gray-700">
-                <li className="flex items-center gap-2">
-                  <Camera className="h-4 w-4 text-primary-600" /> Foto do momento
-                  da assinatura
-                </li>
-                <li className="flex items-center gap-2">
-                  <PenLine className="h-4 w-4 text-primary-600" /> Assinatura
-                  desenhada
-                </li>
-                <li className="flex items-center gap-2">
-                  <Smartphone className="h-4 w-4 text-primary-600" /> Identificação
-                  do aparelho
-                </li>
-                <li className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-primary-600" />
-                  {temGeo ? "Localização do aparelho" : "Localização não autorizada"}
-                </li>
-                <li className="flex items-center gap-2">
-                  <Wifi className="h-4 w-4 text-primary-600" /> Endereço de rede
-                  (IP) e data/hora
-                </li>
-              </ul>
-            </div>
+            {!pronto.jaPresente && (
+              <div className="mt-6 rounded-xl bg-gray-50 p-4 text-left ring-1 ring-gray-200">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Guardado com a sua assinatura
+                </p>
+                <ul className="space-y-1.5 text-sm text-gray-700">
+                  <li className="flex items-center gap-2">
+                    <Camera className="h-4 w-4 text-primary-600" /> Foto do momento
+                    da assinatura
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <PenLine className="h-4 w-4 text-primary-600" /> Assinatura
+                    desenhada
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Smartphone className="h-4 w-4 text-primary-600" /> Identificação
+                    do aparelho
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-primary-600" />
+                    {temGeo ? "Localização do aparelho" : "Localização não autorizada"}
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Wifi className="h-4 w-4 text-primary-600" /> Endereço de rede
+                    (IP) e data/hora
+                  </li>
+                </ul>
+              </div>
+            )}
 
-            <button
-              onClick={novaPessoa}
-              className="btn-secondary mt-4 inline-flex w-full items-center justify-center gap-2"
-            >
-              <RefreshCw className="h-4 w-4" /> Registrar outra pessoa
-            </button>
+            {/* Cada pessoa registra a própria presença, no próprio celular:
+                o antigo "Registrar outra pessoa" deixava a mesma pessoa
+                entrar várias vezes. */}
+            {comprovante?.numero ? (
+              <button
+                onClick={() => setVerComprovante(true)}
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-base font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700"
+              >
+                <FileText className="h-5 w-5" /> Emitir comprovante de presença
+              </button>
+            ) : (
+              botoesComprovante
+            )}
           </div>
         )}
 
@@ -466,6 +700,20 @@ export default function PresencaRapidaPage() {
                   autoComplete="name"
                 />
 
+                <label className="mb-1 block text-sm font-medium">CPF</label>
+                <input
+                  value={cpf}
+                  onChange={(e) => {
+                    setCpf(e.target.value);
+                    setErro("");
+                  }}
+                  placeholder="000.000.000-00"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={18}
+                  className="input-field mb-4 tracking-wider"
+                />
+
                 <div className="mb-4 grid grid-cols-2 gap-3">
                   <div>
                     <label className="mb-1 block text-sm font-medium">
@@ -509,6 +757,19 @@ export default function PresencaRapidaPage() {
                     </button>
                   ))}
                 </div>
+
+                <label className="mb-1 block text-sm font-medium">
+                  Observações{" "}
+                  <span className="font-normal text-gray-400">(opcional)</span>
+                </label>
+                <textarea
+                  value={observacao}
+                  onChange={(e) => setObservacao(e.target.value)}
+                  placeholder="Ex.: sou procurador do apto 302; efetuei o pagamento hoje"
+                  rows={3}
+                  maxLength={500}
+                  className="input-field mb-5"
+                />
 
                 {erro && <p className="mb-3 text-sm text-red-600">{erro}</p>}
 
@@ -603,8 +864,8 @@ export default function PresencaRapidaPage() {
                 <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900">
                   <PenLine className="h-5 w-5 text-primary-600" /> Sua assinatura
                 </h2>
-                <p className="mb-3 text-sm text-gray-500">
-                  Assine com o dedo, como na lista de papel.
+                <p className="mb-3 text-sm font-medium text-gray-700">
+                  Assine conforme a sua assinatura.
                 </p>
 
                 <canvas

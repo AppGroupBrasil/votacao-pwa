@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     EnqueteViewSet,
     ListaPresencaViewSet,
+    comprovante_presenca,
     consultar_cpf_presenca,
     enquete_publica,
     importar_planilha_completa,
@@ -28,6 +29,11 @@ urlpatterns = [
         "listas-presenca/resolver/<str:codigo>/",
         resolver_codigo_lista,
         name="lista-presenca-resolver-codigo",
+    ),
+    path(
+        "listas-presenca/comprovante/<str:token>/",
+        comprovante_presenca,
+        name="lista-presenca-comprovante",
     ),
     path(
         "listas-presenca/importar-planilha/",

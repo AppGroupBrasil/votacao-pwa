@@ -18,6 +18,8 @@ import {
   ClipboardList,
   FileSpreadsheet,
   Video,
+  ScanFace,
+  Hand,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import ComoFunciona from "@/components/ComoFunciona";
@@ -63,13 +65,17 @@ export default function ListasPresencaPage() {
   const [linkSala, setLinkSala] = useState("");
   const [modalSala, setModalSala] = useState<ListaPresenca | null>(null);
   const [salvandoSala, setSalvandoSala] = useState(false);
+  // Como os moradores registram a presença. Sem valor padrão: quem cria a
+  // lista decide, porque em algumas assembleias a biometria só atrapalha.
+  const [modo, setModo] = useState<"" | "biometria" | "manual">("");
   const router = useRouter();
 
   function carregar() {
     setLoading(true);
     api
-      // As listas rápidas moram na tela de Votação rápida.
-      .getListasPresenca({ rapido: false })
+      // As duas formas de lista aparecem aqui (a manual também é usada pela
+      // Votação rápida, que mostra só as dela).
+      .getListasPresenca()
       .then((d) => setListas(d.results || (d as any)))
       .finally(() => setLoading(false));
   }
@@ -110,6 +116,7 @@ export default function ListasPresencaPage() {
   function abrirModal() {
     setTitulo("");
     setLinkSala("");
+    setModo("");
     preselecionarCondominio();
     setModalOpen(true);
   }
@@ -216,7 +223,14 @@ export default function ListasPresencaPage() {
   }
 
   async function salvar() {
-    if (!titulo.trim()) return;
+    if (!modo) {
+      alert("Escolha como os moradores vão registrar a presença: biometria facial ou manual.");
+      return;
+    }
+    if (!titulo.trim()) {
+      alert("Informe o título da lista.");
+      return;
+    }
     if (!nomeCondominio.trim()) {
       alert("Informe o nome do condomínio.");
       return;
@@ -226,10 +240,12 @@ export default function ListasPresencaPage() {
       await api.createListaPresenca(
         titulo.trim(),
         nomeCondominio.trim(),
-        comEsquema(linkSala)
+        comEsquema(linkSala),
+        { modo_rapido: modo === "manual" }
       );
       setTitulo("");
       setLinkSala("");
+      setModo("");
       setModalOpen(false);
       carregar();
     } catch (e: any) {
@@ -290,7 +306,9 @@ export default function ListasPresencaPage() {
     if (lista.codigo_curto) {
       return `${window.location.origin}/v/${lista.codigo_curto}`;
     }
-    return `${window.location.origin}/presenca-manual/${lista.id}`;
+    return lista.modo_rapido
+      ? `${window.location.origin}/presenca/${lista.id}`
+      : `${window.location.origin}/presenca-manual/${lista.id}`;
   }
 
   async function copiarLink(lista: ListaPresenca) {
@@ -339,9 +357,9 @@ export default function ListasPresencaPage() {
             <ComoFunciona tutorial="presenca-manual" />
           </div>
           <p className="text-sm text-gray-500">
-            Gere um link para os presentes registrarem presença pelo celular:
-            selfie, nome, bloco, apartamento e assinatura na tela. Sem cadastro
-            prévio.
+            Gere um link para os presentes registrarem presença pelo celular,
+            por biometria facial ou manual (selfie, nome, CPF, bloco,
+            apartamento e assinatura na tela). Sem cadastro prévio.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -380,6 +398,23 @@ export default function ListasPresencaPage() {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="font-semibold text-lg">{l.titulo}</h3>
+                <span
+                  className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${
+                    l.modo_rapido
+                      ? "bg-amber-50 text-amber-800 ring-amber-200"
+                      : "bg-blue-50 text-blue-700 ring-blue-200"
+                  }`}
+                >
+                  {l.modo_rapido ? (
+                    <>
+                      <Hand className="w-3.5 h-3.5" /> Manual
+                    </>
+                  ) : (
+                    <>
+                      <ScanFace className="w-3.5 h-3.5" /> Biometria facial
+                    </>
+                  )}
+                </span>
                 <p className="text-sm text-gray-500">
                   {l.total_registros} presença
                   {l.total_registros !== 1 ? "s" : ""} ·{" "}
@@ -540,12 +575,63 @@ export default function ListasPresencaPage() {
       {/* Modal: nova lista sem planilha (moradores se cadastram na hora) */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+          <div className="max-h-full w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold">Nova lista de presença</h2>
               <button onClick={() => setModalOpen(false)}>
                 <X className="w-5 h-5 text-gray-400" />
               </button>
+            </div>
+
+            <p className="text-sm font-medium mb-2">
+              Como os moradores registram a presença?
+            </p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {(
+                [
+                  {
+                    valor: "biometria",
+                    titulo: "Biometria facial",
+                    texto: "CPF, leitura do rosto, observações e assinatura.",
+                    Icone: ScanFace,
+                  },
+                  {
+                    valor: "manual",
+                    titulo: "Manual",
+                    texto:
+                      "Selfie, nome, CPF, bloco, apartamento, observações e assinatura.",
+                    Icone: Hand,
+                  },
+                ] as const
+              ).map(({ valor, titulo: tituloCard, texto, Icone }) => (
+                <button
+                  key={valor}
+                  type="button"
+                  onClick={() => setModo(valor)}
+                  aria-pressed={modo === valor}
+                  className={`flex flex-col items-center rounded-xl border-2 p-3 text-center transition ${
+                    modo === valor
+                      ? "border-indigo-600 bg-indigo-50 ring-2 ring-indigo-200"
+                      : "border-gray-200 bg-white hover:border-indigo-300"
+                  }`}
+                >
+                  <span
+                    className={`mb-2 flex h-12 w-12 items-center justify-center rounded-xl ${
+                      modo === valor
+                        ? "bg-indigo-600 text-white"
+                        : "bg-indigo-50 text-indigo-600"
+                    }`}
+                  >
+                    <Icone className="h-7 w-7" strokeWidth={1.75} />
+                  </span>
+                  <span className="text-sm font-bold text-gray-900">
+                    {tituloCard}
+                  </span>
+                  <span className="mt-1 text-xs leading-snug text-gray-500">
+                    {texto}
+                  </span>
+                </button>
+              ))}
             </div>
 
             {condominioPicker}

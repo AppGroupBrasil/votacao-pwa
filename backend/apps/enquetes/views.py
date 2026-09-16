@@ -1,3 +1,4 @@
+import re
 import secrets
 import uuid
 from datetime import timedelta
@@ -7,8 +8,10 @@ from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Count
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.text import slugify
 from django_ratelimit.decorators import ratelimit
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -45,6 +48,12 @@ from core.permissions import (
 )
 from core.request_info import get_client_user_agent, infer_device_info
 
+from .comprovante_pdf import (
+    dados_comprovante,
+    pdf_comprovante_presenca,
+    registro_do_token,
+    token_comprovante,
+)
 from .models import (
     Enquete,
     EnqueteOpcao,
@@ -76,6 +85,28 @@ def coordenada(valor):
     return n if -180 <= n <= 180 else None
 
 
+def hash_documento(valor):
+    """Hash SHA-256 do CPF/CNPJ como o navegador manda (o número nunca trafega)."""
+    v = str(valor or "").strip().lower()
+    return v if len(v) == 64 and all(c in "0123456789abcdef" for c in v) else ""
+
+
+MASCARA_DOCUMENTO = re.compile(
+    r"^(\*{3}\.\d{3}\.\d{3}-\*{2}|\*{2}\.\d{3}\.\d{3}/\d{4}-\*{2})$"
+)
+
+
+def documento_informado(hash_valor, mascara):
+    """CPF/CNPJ que fica no registro da presença: o hash e a máscara andam
+    juntos. Sem um dos dois não se guarda nada — o hash sozinho não serve à mesa
+    e a máscara sozinha não foi conferida contra número nenhum."""
+    h = hash_documento(hash_valor)
+    m = str(mascara or "").strip()
+    if not h or not MASCARA_DOCUMENTO.match(m):
+        return "", ""
+    return h, m
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def resolver_codigo_enquete(request, codigo):
@@ -101,8 +132,8 @@ def resolver_codigo_lista(request, codigo):
         return Response(
             {"error": "Código não encontrado."}, status=status.HTTP_404_NOT_FOUND
         )
-    # O modo diz para qual tela o link abre: a completa (CPF + rosto) ou a
-    # rápida (só foto e assinatura).
+    # O modo diz para qual tela o link abre: a da biometria (CPF + rosto) ou a
+    # manual (foto, CPF e assinatura).
     return Response({"lista_id": str(lista.id), "modo_rapido": lista.modo_rapido})
 
 
@@ -382,9 +413,10 @@ def lista_presenca_publica(request, lista_id):
             {"error": "Lista não encontrada."},
             status=status.HTTP_404_NOT_FOUND,
         )
-    # Só faz sentido pedir o CPF quando este condomínio tem moradores
-    # importados (com CPF). Nas demais listas, a tela vai direto para a facial.
-    # Na lista rápida ninguém pede CPF: ela nasce sem planilha, de propósito.
+    # O portão de CPF (que busca a unidade na planilha) só faz sentido quando
+    # este condomínio tem moradores importados com CPF. Nas demais listas o CPF
+    # é digitado junto com os outros dados. A lista manual nunca consulta a
+    # planilha: ela nasce sem planilha, de propósito.
     tem_cpf = bool(
         not lista.modo_rapido
         and lista.condominio_id
@@ -521,6 +553,17 @@ def registrar_presenca_manual(request, lista_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    cpf_hash, cpf_mascarado = documento_informado(
+        request.data.get("cpf_hash"), request.data.get("cpf_mascarado")
+    )
+    # Na lista manual o CPF é um dos dados da pessoa, como o nome.
+    if lista.modo_rapido and not cpf_hash:
+        return Response(
+            {"error": "Informe o seu CPF."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    observacao = str(request.data.get("observacao", "")).strip()[:500]
+
     perfis_validos = {"proprietario", "locatario", "conjuge", "procurador", "outro"}
     perfil = str(request.data.get("perfil", "")).strip().lower()
     if perfil not in perfis_validos:
@@ -553,8 +596,8 @@ def registrar_presenca_manual(request, lista_id):
             {"error": "É necessário confirmar a identidade (selfie, biometria facial, digital ou código por e-mail)."},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    # Este caminho é o de quem não informou o CPF: nada foi conferido contra a
-    # planilha, então a foto é obrigatória em qualquer forma de identificação —
+    # Neste caminho nada é conferido contra a planilha (o CPF, quando vem, fica
+    # só como registro), então a foto é obrigatória em qualquer identificação —
     # é ela que a mesa compara com o documento no fechamento da lista.
     if not selfie.startswith("data:image/"):
         return Response(
@@ -606,36 +649,76 @@ def registrar_presenca_manual(request, lista_id):
         .exclude(cpf_hash="")
         .exists()
     )
-    PresencaManual.objects.create(
-        lista=lista,
-        nome=nome,
-        perfil=perfil,
-        bloco=bloco,
-        apartamento=apartamento,
-        email=email,
-        selfie=selfie,
-        assinatura=assinatura,
-        metodo_auth=metodo_auth,
-        conferir_na_mesa=sem_conferencia,
-        motivo_conferencia="sem_cpf" if sem_conferencia else "",
-        assinatura_facial=assinatura_facial,
-        marca_aparelho=marca_aparelho or infer_device_info(user_agent),
-        user_agent=user_agent,
-        device_info=infer_device_info(user_agent),
-        device_id=device_id,
-        geo_lat=geo_lat,
-        geo_lng=geo_lng,
-        consentimento_lgpd=consentimento_lgpd,
-        consentimento_em=timezone.now() if consentimento_lgpd else None,
-        declaracao_veracidade=declaracao_veracidade,
-        ip_address=get_client_ip(request),
-    )
+    with transaction.atomic():
+        if cpf_hash:
+            # Mesmo CPF na mesma unidade é a mesma presença: não entra de novo.
+            # A trava na lista impede que dois envios juntos (duplo toque, duas
+            # abas) passem os dois pela conferência. CPF com outra unidade entra:
+            # é o dono de mais de uma unidade registrando cada uma.
+            ListaPresenca.objects.select_for_update().filter(id=lista.id).first()
+            unidade = (normalizar_unidade(bloco), normalizar_unidade(apartamento))
+            anterior = next(
+                (
+                    r
+                    for r in PresencaManual.objects.filter(
+                        lista=lista, cpf_hash=cpf_hash
+                    ).only("id", "bloco", "apartamento", "device_id", "criado_em")
+                    if (normalizar_unidade(r.bloco), normalizar_unidade(r.apartamento))
+                    == unidade
+                ),
+                None,
+            )
+            if anterior is not None:
+                return Response(
+                    {
+                        "ok": True,
+                        "ja_presente": True,
+                        "registrado_em": anterior.criado_em,
+                        # O comprovante só volta para o aparelho que registrou:
+                        # quem sabe o CPF e a unidade de outra pessoa não leva a
+                        # foto, a assinatura e a localização dela.
+                        "comprovante": (
+                            {"token": token_comprovante(anterior)}
+                            if device_id and anterior.device_id == device_id
+                            else None
+                        ),
+                        "link_reuniao": lista.link_reuniao,
+                    }
+                )
+        registro = PresencaManual.objects.create(
+            lista=lista,
+            nome=nome,
+            perfil=perfil,
+            bloco=bloco,
+            apartamento=apartamento,
+            email=email,
+            cpf_hash=cpf_hash,
+            cpf_mascarado=cpf_mascarado,
+            observacao=observacao,
+            selfie=selfie,
+            assinatura=assinatura,
+            metodo_auth=metodo_auth,
+            conferir_na_mesa=sem_conferencia,
+            motivo_conferencia="sem_cpf" if sem_conferencia else "",
+            assinatura_facial=assinatura_facial,
+            marca_aparelho=marca_aparelho or infer_device_info(user_agent),
+            user_agent=user_agent,
+            device_info=infer_device_info(user_agent),
+            device_id=device_id,
+            geo_lat=geo_lat,
+            geo_lng=geo_lng,
+            consentimento_lgpd=consentimento_lgpd,
+            consentimento_em=timezone.now() if consentimento_lgpd else None,
+            declaracao_veracidade=declaracao_veracidade,
+            ip_address=get_client_ip(request),
+        )
     # Presença é sempre permitida (o inadimplente pode participar e assistir);
     # só avisamos, na hora do cadastro, que ele não conseguirá votar.
     inadimplente = unidade_inadimplente(lista.condominio_id, bloco, apartamento)
     return Response(
         {
             "ok": True,
+            "ja_presente": False,
             "inadimplente": inadimplente,
             "aviso": MENSAGEM_INADIMPLENTE if inadimplente else "",
             "conferir_na_mesa": sem_conferencia,
@@ -644,9 +727,43 @@ def registrar_presenca_manual(request, lista_id):
             ),
             # Presença registrada: agora sim o morador recebe a sala da assembleia.
             "link_reuniao": lista.link_reuniao,
+            "comprovante": dados_comprovante(registro),
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+# Fora do @api_view para o excesso responder 429 ("aguarde"), não 403.
+@ratelimit(key="ip", rate="60/m", block=True)
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def comprovante_presenca(request, token):
+    """PDF do comprovante de presença. A guarda é o próprio link: assinado pelo
+    servidor na hora do registro e entregue só ao aparelho que registrou."""
+    registro_id = registro_do_token(token)
+    registro = (
+        PresencaManual.objects.select_related("lista__condominio")
+        .filter(id=registro_id)
+        .first()
+        if registro_id
+        else None
+    )
+    if registro is None:
+        return Response(
+            {"error": "Comprovante não encontrado."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    resposta = HttpResponse(
+        pdf_comprovante_presenca(registro), content_type="application/pdf"
+    )
+    nome = slugify(registro.nome)[:40] or "morador"
+    resposta["Content-Disposition"] = (
+        f'inline; filename="comprovante-presenca-{nome}.pdf"'
+    )
+    # Tem foto, assinatura e localização: nada de cache compartilhado.
+    resposta["Cache-Control"] = "private, no-store"
+    resposta["X-Robots-Tag"] = "noindex"
+    return resposta
 
 
 @api_view(["POST"])
@@ -749,9 +866,15 @@ def registrar_presenca_facial(request, lista_id):
     perfis_validos = {"proprietario", "locatario", "conjuge", "procurador", "outro"}
     agora = timezone.now()
 
-    cpf_hash = str(request.data.get("cpf_hash", "")).strip().lower()
-    if len(cpf_hash) != 64 or any(c not in "0123456789abcdef" for c in cpf_hash):
-        cpf_hash = ""
+    cpf_hash = hash_documento(request.data.get("cpf_hash"))
+    # CPF que vai para o registro. Em lista sem planilha ele é digitado junto
+    # com o nome (cpf_digitado_hash) e não entra na identificação: quem é a
+    # pessoa continua sendo decidido pelo rosto, como antes.
+    cpf_registro_hash, cpf_mascarado = documento_informado(
+        cpf_hash or request.data.get("cpf_digitado_hash"),
+        request.data.get("cpf_mascarado"),
+    )
+    observacao = str(request.data.get("observacao", "")).strip()[:500]
 
     # O que o morador confirmou (ou corrigiu) na tela.
     nome_dig = str(request.data.get("nome", "")).strip()[:200]
@@ -1049,6 +1172,9 @@ def registrar_presenca_facial(request, lista_id):
                 perfil=perfil_reg,
                 bloco=bloco_reg,
                 apartamento=apto_reg,
+                cpf_hash=cpf_registro_hash,
+                cpf_mascarado=cpf_mascarado,
+                observacao=observacao,
                 selfie=selfie or (ident.selfie if ident else ""),
                 assinatura=assinatura,
                 # Só chamamos de biometria quando o rosto realmente conferiu.

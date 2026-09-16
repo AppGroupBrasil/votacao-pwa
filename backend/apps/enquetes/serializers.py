@@ -86,6 +86,8 @@ class PresencaManualSerializer(serializers.ModelSerializer):
             "bloco",
             "apartamento",
             "email",
+            "cpf_mascarado",
+            "observacao",
             "selfie",
             "assinatura",
             "metodo_auth",

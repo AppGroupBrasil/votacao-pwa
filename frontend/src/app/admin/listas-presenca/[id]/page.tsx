@@ -92,6 +92,7 @@ export default function RegistrosPresencaPage() {
     registros.forEach((r, i) => {
       const chaves: string[] = [];
       if (r.assinatura_facial) chaves.push(`f:${r.assinatura_facial}`);
+      if (r.cpf_mascarado) chaves.push(`c:${r.cpf_mascarado}`);
       const nome = normalizar(r.nome);
       if (nome) chaves.push(`n:${nome}|${normalizar(r.bloco)}|${normalizar(r.apartamento)}`);
       const email = normalizar(r.email);
@@ -263,7 +264,7 @@ export default function RegistrosPresencaPage() {
                   }/v/${lista.codigo_curto}`
                 : `${
                     typeof window !== "undefined" ? window.location.origin : ""
-                  }/presenca-manual/${id}`
+                  }/${lista.modo_rapido ? "presenca" : "presenca-manual"}/${id}`
             }
           />
         </div>
@@ -341,8 +342,8 @@ export default function RegistrosPresencaPage() {
               : "pessoas marcaram presença mais de uma vez"}
           </p>
           <p className="text-xs text-amber-800/80 mt-1 mb-2">
-            Consideramos a mesma pessoa quando coincide o rosto (biometria), o nome
-            + unidade ou o e-mail. Confira abaixo e use a lixeira para remover as
+            Consideramos a mesma pessoa quando coincide o rosto (biometria), o
+            CPF, o nome + unidade ou o e-mail. Confira abaixo e use a lixeira para remover as
             marcações repetidas.
           </p>
           <ul className="space-y-1 text-sm text-amber-900">
@@ -435,6 +436,7 @@ export default function RegistrosPresencaPage() {
         <div className="bg-blue-50 border-b-2 border-blue-200 px-6 py-2 text-sm text-blue-900 font-medium text-center">
           Lista de presença · {registros.length} presente
           {registros.length !== 1 ? "s" : ""}
+          {lista && (lista.modo_rapido ? " · Manual" : " · Biometria facial")}
         </div>
 
         {pendentesConferencia > 0 && (
@@ -504,10 +506,18 @@ export default function RegistrosPresencaPage() {
                     <p className="min-w-0 break-words text-base text-gray-600">
                       {r.perfil ? `${PERFIL_LABEL[r.perfil] || r.perfil} · ` : ""}
                       {r.bloco ? `Bloco ${r.bloco} · ` : ""}Ap. {r.apartamento}
+                      {r.cpf_mascarado && (
+                        <span className="whitespace-nowrap"> · CPF {r.cpf_mascarado}</span>
+                      )}
                     </p>
                     <p className="min-w-0 break-words text-sm text-gray-500">
                       {dataHoraBrasilia(r.criado_em)} (horário de Brasília)
                     </p>
+                    {r.observacao && (
+                      <p className="min-w-0 whitespace-pre-line break-words rounded bg-yellow-50 px-2 py-1 text-sm text-gray-800 ring-1 ring-yellow-200 sm:basis-full">
+                        <span className="font-semibold">Obs.:</span> {r.observacao}
+                      </p>
+                    )}
                     {/* Selos: cada um inteiro (whitespace-nowrap), mas o grupo
                         quebra para a linha seguinte quando não há largura.
                         Sempre encostados à esquerda: quando caem para a linha

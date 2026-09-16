@@ -135,9 +135,10 @@ class ListaPresenca(models.Model):
     modo_rapido = models.BooleanField(
         default=False,
         help_text=(
-            "Lista rápida: sem planilha, sem CPF e sem biometria facial. O "
-            "morador entra pela foto, com assinatura, aparelho, localização e "
-            "IP registrados. Feita para reunião marcada na hora."
+            "Lista manual: sem planilha e sem biometria facial. O morador entra "
+            "pela foto, com CPF, observação e assinatura; aparelho, localização e "
+            "IP ficam registrados. Quem cria a lista escolhe entre este modo e o "
+            "da biometria facial."
         ),
     )
     criado_em = models.DateTimeField(auto_now_add=True)
@@ -184,6 +185,26 @@ class PresencaManual(models.Model):
     bloco = models.CharField(max_length=20, blank=True, default="")
     apartamento = models.CharField(max_length=20, blank=True, default="")
     email = models.EmailField(blank=True, default="")
+    # O CPF nunca fica guardado inteiro: o hash serve para cruzar registros e a
+    # máscara (***.456.789-**) é o que a mesa confere com o documento.
+    cpf_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Hash SHA-256 do CPF/CNPJ informado na presença. Não sai na API.",
+    )
+    cpf_mascarado = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="CPF/CNPJ com o começo e o fim escondidos, para a mesa conferir.",
+    )
+    observacao = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Observação do morador: sou procurador, paguei o condomínio hoje etc.",
+    )
     selfie = models.TextField(blank=True, default="")
     assinatura = models.TextField(blank=True, default="")
     metodo_auth = models.CharField(

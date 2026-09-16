@@ -1,0 +1,94 @@
+# Rotas do backend que atendem sem login DE PROPÓSITO.
+# O check-up (rotas_publicas.py) falha se aparecer rota sem login fora daqui.
+# Antes de incluir uma linha, confirme que a view tem outra guarda: token do
+# morador (session_token / auth_token assinado), segredo (provisioning), id
+# impossível de adivinhar (UUID da assembleia, lista ou condomínio) + limite por IP.
+#
+# Formato: <situação> <rota>. "publica" = DRF com AllowAny; "fora-do-drf" = view
+# Django pura; "dinamica" = get_permissions() decide na hora (conferido à mão).
+#
+# Conferido em 14/09/2026:
+#  - api/eleitores/cadastro-facial/*: cadastro antecipado do rosto. Só grava
+#    rosto para CPF da planilha daquele condomínio; CPF que já tem rosto só
+#    troca se a foto nova confirmar a atual. Limite 120/m e 60/m por IP.
+#  - api/eleitor/{trocar-senha,biometria,presenca}: exigem session_token.
+#  - api/provisioning/*: exigem PROVISIONING_SECRET.
+#  - api/auth/register (dinamica): cadastro público de síndico.
+#  - ^media/: fotos enviadas por síndicos, servidas pelo Django (pré-existente).
+#  - api/schema/ e api/docs/: documentação da API aberta (pré-existente).
+#
+# Conferido em 16/09/2026:
+#  - api/enquetes/listas-presenca/comprovante/<token>: PDF do comprovante de
+#    presença. O token é assinado pelo servidor (salt próprio) e só é entregue
+#    ao aparelho que fez o registro. Limite 60/m por IP.
+
+dinamica api/auth/register/
+fora-do-drf ^media/(?P<path>.*)$
+fora-do-drf api/
+fora-do-drf api/healthz/
+publica api/assembleias/resolver/<str:codigo>/
+publica api/auth/login/
+publica api/auth/logout/
+publica api/auth/password-reset/
+publica api/auth/password-reset/confirm/
+publica api/auth/refresh/
+publica api/auth/sso/
+publica api/biometria/auth/verify/
+publica api/docs/
+publica api/eleitor/biometria/
+publica api/eleitor/cadastro/
+publica api/eleitor/condominio-info/
+publica api/eleitor/login/
+publica api/eleitor/presenca/
+publica api/eleitor/trocar-senha/
+publica api/eleitores/^autocadastro/(?P<token>[^/.]+)/$
+publica api/eleitores/^autocadastro/(?P<token>[^/.]+)/ja-cadastrado/confirmar/$
+publica api/eleitores/^autocadastro/(?P<token>[^/.]+)/ja-cadastrado/confirmar\.(?P<format>[a-z0-9]+)/?$
+publica api/eleitores/^autocadastro/(?P<token>[^/.]+)/ja-cadastrado/solicitar/$
+publica api/eleitores/^autocadastro/(?P<token>[^/.]+)/ja-cadastrado/solicitar\.(?P<format>[a-z0-9]+)/?$
+publica api/eleitores/^autocadastro/(?P<token>[^/.]+)\.(?P<format>[a-z0-9]+)/?$
+publica api/eleitores/^convite/(?P<token>[^/.]+)/$
+publica api/eleitores/^convite/(?P<token>[^/.]+)\.(?P<format>[a-z0-9]+)/?$
+publica api/eleitores/^onboarding/(?P<token>[^/.]+)/$
+publica api/eleitores/^onboarding/(?P<token>[^/.]+)\.(?P<format>[a-z0-9]+)/?$
+publica api/eleitores/cadastro-facial/<uuid:condominio_id>/
+publica api/eleitores/cadastro-facial/<uuid:condominio_id>/consultar-cpf/
+publica api/eleitores/cadastro-facial/<uuid:condominio_id>/salvar/
+publica api/eleitores/exclusao/solicitar/
+publica api/enquetes/<uuid:enquete_id>/publica/
+publica api/enquetes/<uuid:enquete_id>/resultado/
+publica api/enquetes/<uuid:enquete_id>/votar/
+publica api/enquetes/listas-presenca/<uuid:lista_id>/consultar-cpf/
+publica api/enquetes/listas-presenca/<uuid:lista_id>/enviar-codigo/
+publica api/enquetes/listas-presenca/<uuid:lista_id>/facial/reconhecer/
+publica api/enquetes/listas-presenca/<uuid:lista_id>/facial/registrar/
+publica api/enquetes/listas-presenca/<uuid:lista_id>/publica/
+publica api/enquetes/listas-presenca/<uuid:lista_id>/registrar/
+publica api/enquetes/listas-presenca/<uuid:lista_id>/verificar-codigo/
+publica api/enquetes/listas-presenca/comprovante/<str:token>/
+publica api/enquetes/listas-presenca/resolver/<str:codigo>/
+publica api/enquetes/resolver/<str:codigo>/
+publica api/otp/acesso-direto/
+publica api/otp/send-email/
+publica api/otp/send/
+publica api/otp/verify-email/
+publica api/otp/verify/
+publica api/provisioning/cadastro
+publica api/provisioning/cadastro/
+publica api/provisioning/usuario
+publica api/provisioning/usuario/
+publica api/schema/
+publica api/selfie/auth/verify/
+publica api/votos/<uuid:assembleia_id>/acesso-facial/
+publica api/votos/<uuid:assembleia_id>/acesso-manual/
+publica api/votos/<uuid:assembleia_id>/consultar-cpf/
+publica api/votos/<uuid:assembleia_id>/ja-votadas/
+publica api/votos/<uuid:assembleia_id>/presenca/
+publica api/votos/<uuid:assembleia_id>/unidades/
+publica api/votos/<uuid:assembleia_id>/votacao/
+publica api/votos/<uuid:assembleia_id>/votar/
+publica api/votos/verificar/
+publica api/webauthn/auth/options/
+publica api/webauthn/auth/verify/
+publica api/webauthn/register/options/
+publica api/webauthn/register/verify/

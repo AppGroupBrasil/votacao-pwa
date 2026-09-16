@@ -17,6 +17,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { documentoValido, hashDocumento, mascararDocumento } from "@/lib/cpf";
 import type { RegraCadastro } from "@/lib/regraCadastro";
 import RegraCadastroAviso from "@/components/RegraCadastroAviso";
 
@@ -58,14 +59,6 @@ function textoUnidade(bloco: string, apartamento: string) {
   return [bloco?.trim() && `Bloco ${bloco.trim()}`, apartamento?.trim() && `Apto ${apartamento.trim()}`]
     .filter(Boolean)
     .join(" · ");
-}
-
-async function sha256Hex(value: string): Promise<string> {
-  const data = new TextEncoder().encode(value.replace(/\D/g, ""));
-  const buf = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 // Modelo/marca do aparelho — capturado em silêncio para a auditoria.
@@ -114,6 +107,7 @@ export default function PresencaManualPublicaPage() {
   const [bloco, setBloco] = useState("");
   const [apartamento, setApartamento] = useState("");
   const [perfil, setPerfil] = useState("proprietario");
+  const [observacao, setObservacao] = useState("");
   const [selfie, setSelfie] = useState("");
   const [consentimento, setConsentimento] = useState(false);
   const marcaAparelho = useRef("");
@@ -206,7 +200,7 @@ export default function PresencaManualPublicaPage() {
     setConsultandoCpf(true);
     setErroCpf("");
     try {
-      const hash = await sha256Hex(digitos);
+      const hash = await hashDocumento(digitos);
       const res = await api.consultarCpfPresenca(id, hash);
       if (res.cadastro_fechado) {
         setBloqueioCadastro(res.mensagem_cadastro || "O cadastro para esta assembleia está encerrado.");
@@ -442,10 +436,17 @@ export default function PresencaManualPublicaPage() {
     setTemAssinatura(false);
   }
 
+  // Sem planilha não existe o portão de CPF: o CPF é digitado junto com o nome.
+  const cpfNoFormulario = !lista?.tem_cpf;
+
   async function enviar() {
     setErro("");
     if (!nome.trim()) {
       setErro("Informe o seu nome.");
+      return;
+    }
+    if (cpfNoFormulario && !documentoValido(cpf)) {
+      setErro("Confira o CPF: os números digitados não formam um CPF válido.");
       return;
     }
     if (!apartamento.trim()) {
@@ -471,6 +472,11 @@ export default function PresencaManualPublicaPage() {
     const assinatura = canvasRef.current?.toDataURL("image/png") || "";
     setEnviando(true);
     try {
+      // CPF que fica no registro: o do portão (que também identifica a pessoa)
+      // ou o digitado no formulário. Quem pulou o portão não tem CPF nenhum.
+      const cpfDigitadoHash = cpfNoFormulario ? await hashDocumento(cpf) : "";
+      const cpfMascarado =
+        cpfHash || cpfDigitadoHash ? mascararDocumento(cpf) : "";
       // Com CPF ou com rosto lido, a presença entra pelo caminho do servidor que
       // confere a identidade: o CPF diz quem é, o rosto confirma um-contra-um e
       // qualquer divergência entra assim mesmo, marcada para a mesa conferir.
@@ -481,6 +487,9 @@ export default function PresencaManualPublicaPage() {
               ...(descritor ? { descriptor: descritor } : {}),
               ...(leituras.length ? { descriptors: leituras } : {}),
               ...(cpfHash ? { cpf_hash: cpfHash } : {}),
+              ...(cpfDigitadoHash ? { cpf_digitado_hash: cpfDigitadoHash } : {}),
+              cpf_mascarado: cpfMascarado,
+              observacao: observacao.trim(),
               nome: nome.trim(),
               bloco: bloco.trim(),
               apartamento: apartamento.trim(),
@@ -496,6 +505,9 @@ export default function PresencaManualPublicaPage() {
               bloco: bloco.trim(),
               apartamento: apartamento.trim(),
               perfil,
+              cpf_hash: cpfDigitadoHash,
+              cpf_mascarado: cpfMascarado,
+              observacao: observacao.trim(),
               selfie,
               assinatura,
               metodo_auth: "selfie",
@@ -1169,6 +1181,23 @@ export default function PresencaManualPublicaPage() {
               className="input-field w-full"
             />
           </div>
+          {cpfNoFormulario && (
+            <div>
+              <label className="block text-sm font-medium mb-1">CPF</label>
+              <input
+                value={cpf}
+                onChange={(e) => {
+                  setCpf(e.target.value);
+                  setErro("");
+                }}
+                placeholder="000.000.000-00"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={18}
+                className="input-field w-full tracking-wider"
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Bloco</label>
@@ -1189,6 +1218,20 @@ export default function PresencaManualPublicaPage() {
               />
             </div>
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Observações{" "}
+              <span className="font-normal text-gray-400">(opcional)</span>
+            </label>
+            <textarea
+              value={observacao}
+              onChange={(e) => setObservacao(e.target.value)}
+              placeholder="Ex.: sou procurador do apto 302; efetuei o pagamento hoje"
+              rows={3}
+              maxLength={500}
+              className="input-field w-full"
+            />
+          </div>
         </div>
 
         {/* Assinatura */}
@@ -1202,6 +1245,9 @@ export default function PresencaManualPublicaPage() {
               <Eraser className="w-4 h-4" /> Limpar
             </button>
           </div>
+          <p className="mb-2 text-sm font-medium text-gray-700">
+            Assine conforme a sua assinatura.
+          </p>
           <canvas
             ref={canvasRef}
             width={500}
@@ -1212,9 +1258,6 @@ export default function PresencaManualPublicaPage() {
             onPointerLeave={terminarTraco}
             className="w-full h-44 rounded-lg border border-dashed border-gray-300 bg-white touch-none"
           />
-          <p className="mt-1 text-xs text-gray-400">
-            Assine com o dedo na área acima.
-          </p>
         </div>
 
         {/* LGPD + declaração de veracidade */}

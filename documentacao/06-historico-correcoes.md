@@ -187,6 +187,50 @@ entrada verde, selo laranja, bloqueio após prazo), estrutura de produção copi
 - Em produção existem 4 tabelas de backup manuais do incidente de 27–28/07
   (`_presenca_removidas_*`, `_votos_removidos_*`), fora das migrações.
 
+## 10. Lista de presença: biometria facial ou manual, CPF e observações — 16/09/2026
+
+**Escolha do modo.** "Nova lista" (`/admin/listas-presenca`) abre com dois cards, sem padrão:
+**Biometria facial** (`modo_rapido=false`, tela `/presenca-manual/[id]`) ou **Manual**
+(`modo_rapido=true`, tela `/presenca/[id]`). A tela de listas mostra as duas, com o selo do modo;
+a Votação rápida continua mostrando só as manuais. "Importar planilha" segue criando lista por
+biometria.
+
+**Manual:** selfie, nome, CPF (obrigatório, dígitos verificadores conferidos no navegador), bloco,
+apartamento, perfil, observações e assinatura. Sem CPF válido o servidor recusa (400).
+
+**Biometria:** igual a antes. Com planilha, o CPF continua vindo do portão; sem planilha, o CPF é
+digitado junto com o nome (`cpf_digitado_hash`) e fica **só como registro**: não entra na
+identificação nem acende selo laranja. Observações nos dois caminhos.
+
+**Como o CPF fica guardado** (`PresencaManual`, migração `enquetes/0015`): `cpf_hash` (não sai na
+API) e `cpf_mascarado` (`***.456.789-**` ou `**.345.678/0001-**`), que a mesa confere com o
+documento. O número inteiro não trafega nem fica no banco. `observacao` até 500 caracteres. O
+painel da lista mostra CPF mascarado e observação (também na impressão) e usa o CPF para apontar
+presença repetida.
+
+**Sem "Registrar outra pessoa"** na tela manual: cada pessoa registra a própria presença. No lugar,
+**Emitir comprovante de presença** mostra na tela foto, nome, CPF mascarado, unidade, perfil,
+data/hora, nº do registro, observações, assinatura, localização, aparelho, identificação do aparelho
+e IP, com **Baixar / imprimir PDF** e **Compartilhar** (arquivo PDF quando o celular aceita; senão o
+link). O PDF sai do servidor (`apps/enquetes/comprovante_pdf.py`, reportlab) a partir do registro
+gravado, em `GET /api/enquetes/listas-presenca/comprovante/<token>/`: rota sem login cuja guarda é o
+token assinado (salt `comprovante-presenca`), entregue só na resposta do registro. Registro excluído
+pela mesa derruba o link.
+
+**Mesmo CPF na mesma unidade não entra duas vezes** na mesma lista (`registrar_presenca_manual`,
+com trava `select_for_update` na lista contra envio duplo). A resposta é `ja_presente` com a hora do
+primeiro registro; o comprovante só volta se o `device_id` for o do aparelho que registrou. O mesmo
+CPF com outra unidade entra (dono de várias unidades).
+
+**Verificação feita:** `apps/enquetes/tests.py` (modo escolhido, CPF recusado, máscara, observação,
+biometria com e sem planilha, isolamento entre condomínios, trava de CPF repetido, PDF com os dados e
+as duas imagens, link alterado/de outro uso/de registro apagado recusado), suíte inteira (58), rotas
+públicas conferidas, tipos, lint, build e ponta a ponta nas telas (cards, as duas listas, comprovante,
+PDF, repetição no mesmo aparelho e em outro, painel).
+
+`verificacao/rotas_publicas.txt` estava fora do Git (o `.gitignore` ignora `*.txt`); passou a ser
+versionado.
+
 ## Lições
 
 - Toda rota usada pelo morador precisa ser pública e **não** vazar identidade/voto.

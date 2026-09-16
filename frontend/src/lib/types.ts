@@ -355,11 +355,24 @@ export interface ListaPresenca {
   // Sala de vídeo entregue ao morador só depois que ele registra a presença.
   link_reuniao?: string;
   ativa: boolean;
-  // Lista rápida: sem planilha, sem CPF e sem biometria. Só foto, assinatura,
-  // aparelho, localização e IP.
+  // Lista manual: sem planilha e sem biometria. Foto, CPF, observação e
+  // assinatura, com aparelho, localização e IP. Falso = biometria facial.
   modo_rapido?: boolean;
   criado_em: string;
   total_registros: number;
+}
+
+// Comprovante de presença devolvido no registro: o que só o servidor sabe
+// (hora gravada, IP, número) e o token do PDF.
+export interface ComprovantePresenca {
+  token: string;
+  numero?: string;
+  registrado_em?: string;
+  ip?: string;
+  aparelho?: string;
+  sistema?: string;
+  device_id?: string;
+  cpf_mascarado?: string;
 }
 
 export interface PresencaManualRegistro {
@@ -369,6 +382,8 @@ export interface PresencaManualRegistro {
   bloco: string;
   apartamento: string;
   email?: string;
+  cpf_mascarado?: string;
+  observacao?: string;
   selfie: string;
   assinatura: string;
   metodo_auth?: string;

@@ -49,6 +49,8 @@ public/workbox-*.js.map
 *.txt
 !README.md
 !requirements.txt
+# Lista do check-up com as rotas públicas de propósito.
+!verificacao/rotas_publicas.txt
 
 # Logs e artifacts runtime
 backend/logs/
