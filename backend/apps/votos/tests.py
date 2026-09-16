@@ -705,3 +705,94 @@ class IpDoMoradorTests(BaseAssembleiaSemCadastro):
         self.assertEqual(Voto.objects.get().ip_address, "200.100.50.25")
         self.assertEqual(VotanteManual.objects.get().ip_address, "200.100.50.25")
         self.assertEqual(Presenca.objects.get().ip_address, "200.100.50.25")
+
+
+class CpfNaEntradaTests(BaseAssembleiaSemCadastro):
+    """CPF opcional na entrada com selfie: em branco entra igual; informado,
+    fica só o hash e a máscara, no votante, na presença, no painel e no PDF."""
+
+    HASH = "a" * 64
+    MASCARA = "***.456.789-**"
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(self.admin)
+        self.client.post(f"/api/assembleias/{self.assembleia.id}/abrir/")
+        self.client.force_authenticate(None)
+
+    def _entrar_cpf(self, nome, aparelho, **cpf):
+        return self.client.post(
+            f"/api/votos/{self.assembleia.id}/acesso-manual/",
+            {"nome": nome, "bloco": "A", "apartamento": "101",
+             "selfie": "data:image/jpeg;base64,AAAA", "device_id": aparelho, **cpf},
+            format="json",
+        )
+
+    def test_sem_cpf_entra_normalmente(self):
+        from apps.assembleias.models import Presenca
+        from apps.votos.models import VotanteManual
+
+        r = self._entrar("Ana", "A", "101", "x")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(VotanteManual.objects.get().cpf_mascarado, "")
+        self.assertEqual(Presenca.objects.get().cpf_mascarado, "")
+
+    def test_cpf_informado_fica_mascarado_no_votante_presenca_painel_e_pdf(self):
+        from apps.assembleias.models import Presenca
+        from apps.assembleias.relatorios_pdf import pdf_lista_presenca
+        from apps.votos.models import VotanteManual
+
+        r = self._entrar_cpf("Ana", "x", cpf_hash=self.HASH, cpf_mascarado=self.MASCARA)
+        self.assertEqual(r.status_code, 201, r.data)
+        v = VotanteManual.objects.get()
+        self.assertEqual((v.cpf_hash, v.cpf_mascarado), (self.HASH, self.MASCARA))
+        self.assertEqual(Presenca.objects.get().cpf_mascarado, self.MASCARA)
+
+        self.client.force_authenticate(self.admin)
+        r = self.client.get(f"/api/votos/{self.assembleia.id}/votos-manuais/")
+        self.assertEqual(r.data["votantes"][0]["cpf_mascarado"], self.MASCARA)
+        self.assertNotIn("cpf_hash", r.data["votantes"][0])
+        self.assertTrue(pdf_lista_presenca(self.assembleia))
+
+    def test_numero_aberto_ou_par_incompleto_nao_e_guardado(self):
+        from apps.votos.models import VotanteManual
+
+        for i, cpf in enumerate([
+            {"cpf_mascarado": "123.456.789-00", "cpf_hash": self.HASH},
+            {"cpf_mascarado": self.MASCARA},
+            {"cpf_hash": self.HASH},
+        ]):
+            r = self._entrar_cpf(f"Pessoa {i}", f"ap{i}", **cpf)
+            self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(
+            set(VotanteManual.objects.values_list("cpf_hash", "cpf_mascarado")), {("", "")}
+        )
+
+    def test_mesmo_cpf_e_unidade_com_nome_escrito_diferente_e_a_mesma_pessoa(self):
+        from apps.assembleias.models import Presenca
+        from apps.votos.models import VotanteManual
+
+        cpf = {"cpf_hash": self.HASH, "cpf_mascarado": self.MASCARA}
+        a = self._entrar_cpf("Ana Souza", "cel-1", **cpf)
+        b = self._entrar_cpf("Ana S. Lima", "cel-2", **cpf)
+        self.assertEqual(a.data["votante_manual_id"], b.data["votante_manual_id"])
+        self.assertEqual(VotanteManual.objects.count(), 1)
+        self.assertEqual(Presenca.objects.count(), 1)
+
+    def test_cpf_informado_na_reentrada_completa_votante_e_presenca(self):
+        from apps.assembleias.models import Presenca
+        from apps.votos.models import VotanteManual
+
+        self._entrar_cpf("Ana", "x")
+        self._entrar_cpf("Ana", "x", cpf_hash=self.HASH, cpf_mascarado=self.MASCARA)
+        self.assertEqual(VotanteManual.objects.get().cpf_mascarado, self.MASCARA)
+        self.assertEqual(Presenca.objects.get().cpf_mascarado, self.MASCARA)
+
+    def test_selfie_obrigatoria_sem_falar_em_votacao_manual(self):
+        r = self.client.post(
+            f"/api/votos/{self.assembleia.id}/acesso-manual/",
+            {"nome": "Ana", "apartamento": "101"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertNotIn("manual", r.data["error"].lower())

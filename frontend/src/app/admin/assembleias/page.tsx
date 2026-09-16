@@ -687,6 +687,9 @@ export default function AssembleiasHubPage() {
                             </span>
                           )}
                         </p>
+                        {v.cpf_mascarado && (
+                          <p className="text-xs text-gray-500">CPF {v.cpf_mascarado}</p>
+                        )}
                         {v.conferir_na_mesa && v.unidade_original && (
                           <p className="text-xs text-amber-700">
                             Na planilha: {v.unidade_original}

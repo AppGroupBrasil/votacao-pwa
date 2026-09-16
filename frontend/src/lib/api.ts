@@ -513,6 +513,8 @@ export const api = {
       apartamento: string;
       selfie: string;
       device_id?: string;
+      cpf_hash?: string;
+      cpf_mascarado?: string;
     }
   ) =>
     request<{

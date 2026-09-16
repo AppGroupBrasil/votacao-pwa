@@ -327,6 +327,10 @@ class Presenca(models.Model):
         blank=True, default="",
         help_text="Assinatura desenhada (base64), quando houver",
     )
+    cpf_mascarado = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="CPF/CNPJ informado na entrada, com o começo e o fim escondidos",
+    )
     modo_participacao = models.CharField(
         max_length=12,
         choices=[("presencial", "Presencial"), ("online", "Online")],

@@ -10,6 +10,7 @@ import SelfieVerify from "@/components/SelfieVerify";
 import OtpVerify from "@/components/OtpVerify";
 import IdentificacaoEmail from "@/components/IdentificacaoEmail";
 import IdentificacaoManual from "@/components/IdentificacaoManual";
+import { entradaDireta } from "@/lib/entrada";
 
 // Só no navegador (como no /acesso): o TensorFlow do reconhecimento quebra
 // quando o servidor monta a página, e o link da votação respondia erro 500.
@@ -36,12 +37,12 @@ export default function VotacaoPage() {
   const [assembleia, setAssembleia] = useState<Assembleia | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
   // Entrada da votação sem login: rosto (padrão) → e-mail → votação manual.
-  // Com "?entrada=manual" no link, a votação é só por cadastro manual (selfie,
-  // nome e unidade): nenhuma câmera de biometria, nenhum rosto guardado.
+  // Com "?entrada=direta" (ou o antigo "manual") no link, a votação é só por
+  // identificação com selfie: nenhuma câmera de biometria, nenhum rosto guardado.
   const [somenteManual] = useState<boolean>(() =>
     typeof window === "undefined"
       ? false
-      : new URLSearchParams(window.location.search).get("entrada") === "manual"
+      : entradaDireta(window.location.search)
   );
   const [entryMode, setEntryMode] = useState<"facial" | "email" | "manual">(
     () => (somenteManual ? "manual" : "facial")

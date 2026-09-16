@@ -289,10 +289,12 @@ async function entrarNaVotacao(browser, link, v, existente) {
   await p.goto(link);
   await fecharCookies(p);
   await p.getByRole("button", { name: /tirar só a\s+selfie/ }).click({ timeout: 60000 });
+  // Campos: nome, CPF (opcional), bloco, apartamento.
   const campos = p.locator("input");
   await campos.nth(0).fill(v.nome);
-  await campos.nth(1).fill(v.bloco);
-  await campos.nth(2).fill(v.apto);
+  if (v.cpf) await campos.nth(1).fill(v.cpf);
+  await campos.nth(2).fill(v.bloco);
+  await campos.nth(3).fill(v.apto);
   await p.getByRole("button", { name: "Abrir câmera" }).click();
   await p.getByRole("button", { name: "Capturar" }).click({ timeout: 20000 });
   await p.getByRole("button", { name: "Entrar e votar" }).click();
@@ -466,11 +468,16 @@ async function faseCadastro(browser) {
   await campos.nth(0).fill("Rosa Maria");
   await entrar.click();
   await esperar(p, p.getByText("Informe o apartamento/unidade."), "apartamento obrigatório", 5000);
-  await campos.nth(1).fill("Bloco A - Edifício Primavera");
-  await campos.nth(2).fill("Apartamento 1201 fundos");
-  if ((await campos.nth(1).inputValue()).length > 20) falhar("campo bloco aceitou mais de 20 letras");
+  await campos.nth(2).fill("Bloco A - Edifício Primavera");
+  await campos.nth(3).fill("Apartamento 1201 fundos");
+  if ((await campos.nth(2).inputValue()).length > 20) falhar("campo bloco aceitou mais de 20 letras");
   await entrar.click();
-  await esperar(p, p.getByText("A selfie é obrigatória"), "selfie obrigatória", 5000);
+  // CPF é opcional: em branco passa direto para a exigência da selfie.
+  await esperar(p, p.getByText("A selfie é obrigatória para votar."), "selfie obrigatória", 5000);
+  await campos.nth(1).fill("111.111.111-11");
+  await entrar.click();
+  await esperar(p, p.getByText(/CPF inválido/), "CPF digitado errado", 5000);
+  await campos.nth(1).fill("529.982.247-25");
   await p.getByRole("button", { name: "Abrir câmera" }).click();
   await p.getByRole("button", { name: "Capturar" }).click({ timeout: 20000 });
   await entrar.click();
@@ -479,7 +486,9 @@ async function faseCadastro(browser) {
   await esperar(p, p.getByRole("heading", { name: "Voto Registrado!" }), "voto com bloco longo");
   const res = await json(await adm.api.get(`${API}/votos/${asm.id}/resultados/`), "resultados");
   if (res[0].total_votos !== 1 || res[0].base_unidades !== 48) falhar(`apuração: ${JSON.stringify(res[0])}`);
-  log("cadastro na hora: sem nome, apartamento ou selfie é recusado; bloco longo entra e vota");
+  const manuais = await json(await adm.api.get(`${API}/votos/${asm.id}/votos-manuais/`), "votos manuais");
+  if (manuais.votantes[0]?.cpf_mascarado !== "***.982.247-**") falhar(`CPF no painel: ${JSON.stringify(manuais.votantes[0]?.cpf_mascarado)}`);
+  log("cadastro na hora: sem nome, apartamento ou selfie é recusado; CPF opcional, errado é recusado e certo chega mascarado ao painel; bloco longo entra e vota");
 
   await adm.api.post(`${API}/assembleias/${asm.id}/encerrar/`);
   await adm.api.delete(`${API}/assembleias/${asm.id}/`);

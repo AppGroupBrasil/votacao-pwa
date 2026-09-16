@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { api } from "@/lib/api";
+import { entradaDireta } from "@/lib/entrada";
 
 const ALPHABET =
   "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -49,12 +50,12 @@ export default function ShortVotacaoRedirect() {
         const r = await api.resolverCodigo(code);
         if (ativo && r?.assembleia_id) {
           // Código de um item: abre a votação só daquela questão.
-          // "?entrada=manual" do link curto segue junto: a votação abre
-          // direto no cadastro manual, sem a câmera da biometria.
+          // "?entrada=direta" (ou o antigo "manual") segue junto, já com o
+          // valor novo: a votação abre direto na identificação com selfie.
           const extra = new URLSearchParams();
           if (r.questao_id) extra.set("q", r.questao_id);
-          if (new URLSearchParams(window.location.search).get("entrada") === "manual") {
-            extra.set("entrada", "manual");
+          if (entradaDireta(window.location.search)) {
+            extra.set("entrada", "direta");
           }
           const busca = extra.toString();
           router.replace(`/votacao/${r.assembleia_id}${busca ? `?${busca}` : ""}`);

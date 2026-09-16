@@ -21,6 +21,7 @@ from rest_framework.response import Response
 from apps.assembleias.apuracao import base_unidades, questao_encerrada, unidades_presentes
 from apps.assembleias.models import Assembleia, OpcaoVoto, Presenca, Questao
 from apps.assembleias.regras import cadastro_fechado, regra_cadastro
+from apps.enquetes.views import documento_informado
 from apps.eleitores.models import (
     Eleitor,
     IdentidadeFacial,
@@ -806,8 +807,8 @@ def questoes_votadas(request, assembleia_id):
 @permission_classes([AllowAny])
 def acesso_manual(request, assembleia_id):
     """Entrada pela votação manual: morador sem cadastro (ou que não lembra o
-    e-mail) informa nome/unidade e uma selfie de comprovação. Registra a
-    presença e emite o token de voto."""
+    e-mail) informa nome/unidade, o CPF se quiser, e uma selfie de comprovação.
+    Registra a presença e emite o token de voto."""
     assembleia = get_object_or_404(Assembleia, id=assembleia_id)
 
     if assembleia.status != Assembleia.Status.ABERTA:
@@ -832,6 +833,10 @@ def acesso_manual(request, assembleia_id):
     apartamento = str(request.data.get("apartamento", "")).strip()[:20]
     selfie = str(request.data.get("selfie", ""))
     device_id = str(request.data.get("device_id", "")).strip()[:64]
+    # Opcional: sem CPF (ou com par hash/máscara que não fecha) entra do mesmo jeito.
+    cpf_hash, cpf_mascarado = documento_informado(
+        request.data.get("cpf_hash"), request.data.get("cpf_mascarado")
+    )
 
     if not nome or not apartamento:
         return Response(
@@ -840,7 +845,7 @@ def acesso_manual(request, assembleia_id):
         )
     if not selfie.startswith("data:image/"):
         return Response(
-            {"error": "A selfie é obrigatória na votação manual."},
+            {"error": "A selfie é obrigatória para votar."},
             status=status.HTTP_400_BAD_REQUEST,
         )
     if len(selfie) > 3_500_000:
@@ -856,8 +861,8 @@ def acesso_manual(request, assembleia_id):
     # recarregada, link reaberto) mintavam um votante novo por vez, o que furava
     # a deduplicação por votante e gerou votos repetidos (incidente 27/07: gente
     # com 2 e até 5 votos). Casa primeiro pelo mesmo aparelho+unidade e, na
-    # falta, pela unidade+nome normalizados. Fail open: se nada casar, cria como
-    # antes.
+    # falta, pela unidade+nome (ou unidade+CPF, quando o nome veio escrito de
+    # outro jeito). Fail open: se nada casar, cria como antes.
     napto = normalizar_unidade(apartamento)
     nbloco = normalizar_unidade(bloco)
     nnome = re.sub(r"\s+", " ", nome).strip().lower()
@@ -881,7 +886,7 @@ def acesso_manual(request, assembleia_id):
             if (
                 normalizar_unidade(v.apartamento) == napto
                 and normalizar_unidade(v.bloco) == nbloco
-                and _mesmo_nome(v)
+                and (_mesmo_nome(v) or (cpf_hash and v.cpf_hash == cpf_hash))
             ):
                 votante = v
                 break
@@ -898,6 +903,8 @@ def acesso_manual(request, assembleia_id):
             user_agent=user_agent,
             device_info=infer_device_info(user_agent),
             device_id=device_id,
+            cpf_hash=cpf_hash,
+            cpf_mascarado=cpf_mascarado,
         )
     else:
         # Mesma pessoa reentrando: completa dados úteis sem duplicar o registro.
@@ -908,6 +915,14 @@ def acesso_manual(request, assembleia_id):
         if selfie and not votante.selfie:
             votante.selfie = selfie
             mudou.append("selfie")
+        if cpf_hash and not votante.cpf_hash:
+            votante.cpf_hash, votante.cpf_mascarado = cpf_hash, cpf_mascarado
+            mudou += ["cpf_hash", "cpf_mascarado"]
+            Presenca.objects.filter(
+                assembleia=assembleia, eleitor=None, metodo_auth="selfie",
+                nome=votante.nome, bloco=votante.bloco,
+                apartamento=votante.apartamento, cpf_mascarado="",
+            ).update(cpf_mascarado=cpf_mascarado)
         if mudou:
             votante.save(update_fields=mudou)
 
@@ -922,6 +937,7 @@ def acesso_manual(request, assembleia_id):
             apartamento=apartamento,
             metodo_auth="selfie",
             selfie=selfie,
+            cpf_mascarado=cpf_mascarado,
             ip_address=get_client_ip(request),
             user_agent=user_agent,
             device_info=infer_device_info(user_agent),
@@ -1525,6 +1541,7 @@ def votos_manuais(request, assembleia_id):
                 "nome": votante.nome,
                 "bloco": votante.bloco,
                 "apartamento": votante.apartamento,
+                "cpf_mascarado": votante.cpf_mascarado,
                 "selfie": votante.selfie,
                 "horario": votante.criado_em,
                 "device_info": votante.device_info,

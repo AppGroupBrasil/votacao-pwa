@@ -24,6 +24,10 @@ class VotanteManual(models.Model):
     user_agent = models.TextField(blank=True, default="")
     device_info = models.CharField(max_length=255, blank=True, default="")
     device_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    # CPF opcional digitado na entrada: só o hash (para reconhecer a mesma
+    # pessoa) e a máscara (para a mesa conferir), nunca o número.
+    cpf_hash = models.CharField(max_length=64, blank=True, default="")
+    cpf_mascarado = models.CharField(max_length=20, blank=True, default="")
     identidade_facial = models.ForeignKey(
         "eleitores.IdentidadeFacial",
         on_delete=models.SET_NULL,

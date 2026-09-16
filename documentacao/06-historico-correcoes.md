@@ -303,6 +303,23 @@ exige presença e o IP do morador no voto, na presença e no comprovante. Suíte
 pendente, páginas públicas e do painel em 200, rotas protegidas em 401, inexistentes em 404 e
 nenhum erro nos registros dos últimos dias.
 
+## 13. Entrada com selfie: sem a palavra "manual" e com CPF opcional — 16/09/2026
+
+Pedido para a demonstração do MCA: o morador não deve saber que existem outros jeitos de entrar.
+
+- A tela passou a se chamar "Identifique-se para votar"; os avisos da selfie (tela e servidor) e o
+  rodapé não falam mais em votação manual nem em cadastro por e-mail.
+- Link novo `?entrada=direta` (o antigo `?entrada=manual` continua valendo e já é trocado pelo novo
+  no redirecionamento do link curto). Lógica em `frontend/src/lib/entrada.ts`.
+- Campo **CPF opcional**: em branco entra normalmente; digitado com dígito errado, a tela pede para
+  corrigir ou apagar. Vai só o hash e a máscara (`***.456.789-**`), como na lista de presença;
+  sem o par completo o servidor não guarda nada. Fica no votante (`VotanteManual.cpf_hash`,
+  `cpf_mascarado`, migração `votos.0015`) e na presença (`Presenca.cpf_mascarado`, migração
+  `assembleias.0022`), aparece no painel de votos e embaixo do nome no PDF da lista de presença.
+- Mesma unidade com o mesmo CPF e o nome escrito de outro jeito é reconhecida como a mesma pessoa.
+- Testes: `CpfNaEntradaTests` (6) e a fase `cadastro` de `verificacao/telas.js` (CPF errado recusado,
+  CPF certo mascarado no painel). Suíte: 81 testes.
+
 ## Lições
 
 - Toda rota usada pelo morador precisa ser pública e **não** vazar identidade/voto.

@@ -213,6 +213,7 @@ export interface VotanteManualAdmin {
   nome: string;
   bloco: string;
   apartamento: string;
+  cpf_mascarado?: string;
   selfie: string;
   horario: string;
   device_info: string;

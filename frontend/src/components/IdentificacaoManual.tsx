@@ -3,11 +3,12 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { ArrowLeft, Camera, CheckCircle, Loader2, RefreshCw, UserRound } from "lucide-react";
 import { api, getDeviceId } from "@/lib/api";
+import { documentoValido, hashDocumento, mascararDocumento, soDigitos } from "@/lib/cpf";
 
 interface IdentificacaoManualProps {
   assembleiaId: string;
   onSuccess: (token: string, votanteManualId: string, avisoUnidade?: string) => void;
-  /** Sem ele (votação só manual), não há para onde voltar. */
+  /** Sem ele (link que abre direto nesta tela), não há para onde voltar. */
   onBack?: () => void;
 }
 
@@ -17,6 +18,7 @@ export default function IdentificacaoManual({
   onBack,
 }: IdentificacaoManualProps) {
   const [nome, setNome] = useState("");
+  const [cpf, setCpf] = useState("");
   const [bloco, setBloco] = useState("");
   const [apartamento, setApartamento] = useState("");
   const [selfie, setSelfie] = useState("");
@@ -92,8 +94,14 @@ export default function IdentificacaoManual({
       setErro("Informe o apartamento/unidade.");
       return;
     }
+    // CPF é opcional: em branco segue; digitado errado, pede para corrigir.
+    const temCpf = soDigitos(cpf).length > 0;
+    if (temCpf && !documentoValido(cpf)) {
+      setErro("CPF inválido. Corrija o número ou deixe o campo em branco.");
+      return;
+    }
     if (!selfie) {
-      setErro("A selfie é obrigatória na votação manual.");
+      setErro("A selfie é obrigatória para votar.");
       return;
     }
     setEnviando(true);
@@ -104,6 +112,9 @@ export default function IdentificacaoManual({
         apartamento: apartamento.trim(),
         selfie,
         device_id: getDeviceId(),
+        ...(temCpf
+          ? { cpf_hash: await hashDocumento(cpf), cpf_mascarado: mascararDocumento(cpf) }
+          : {}),
       });
       setSucesso(true);
       setTimeout(() => onSuccess(result.token, result.votante_manual_id, result.aviso_unidade || ""), 800);
@@ -137,7 +148,7 @@ export default function IdentificacaoManual({
 
       <div className="text-center space-y-2">
         <UserRound className="w-12 h-12 text-primary-600 mx-auto" />
-        <h3 className="font-semibold text-lg">Votação manual</h3>
+        <h3 className="font-semibold text-lg">Identifique-se para votar</h3>
         <p className="text-sm text-gray-500">
           Informe seus dados e tire uma selfie para comprovar que é você quem
           está votando. Seu voto vale imediatamente e a selfie fica disponível
@@ -155,6 +166,18 @@ export default function IdentificacaoManual({
           value={nome}
           onChange={(e) => setNome(e.target.value)}
           maxLength={200}
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-primary-500 focus:outline-none transition-colors"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-1">CPF</label>
+        <input
+          value={cpf}
+          onChange={(e) => setCpf(e.target.value)}
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder="000.000.000-00"
+          maxLength={18}
           className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-primary-500 focus:outline-none transition-colors"
         />
       </div>
@@ -240,8 +263,8 @@ export default function IdentificacaoManual({
       </button>
 
       <p className="text-xs text-gray-400 text-center">
-        Se não concordar em enviar a selfie, entre em contato com a
-        administradora ou o suporte do sistema para se cadastrar com seu e-mail.
+        Se não concordar em enviar a selfie, fale com a administração da
+        assembleia.
       </p>
     </div>
   );

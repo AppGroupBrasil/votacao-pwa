@@ -321,7 +321,11 @@ def pdf_lista_presenca(assembleia):
                 destaques.append(i)
             linhas.append([
                 Paragraph(str(i), st["RelCelula"]),
-                Paragraph(_esc(p.nome), st["RelCelula"]),
+                Paragraph(
+                    _esc(p.nome)
+                    + (f"<br/>CPF {_esc(p.cpf_mascarado)}" if p.cpf_mascarado else ""),
+                    st["RelCelula"],
+                ),
                 Paragraph(_esc(_unidade(p.bloco, p.apartamento)), st["RelCelula"]),
                 Paragraph(
                     "Procurador" if p.perfil == "procurador" else "Proprietário",
