@@ -696,6 +696,7 @@ export default function AssembleiasHubPage() {
                           <p className="text-xs text-gray-500">
                             Conferido{" "}
                             {new Date(v.conferido_em).toLocaleTimeString("pt-BR", {
+                              timeZone: "America/Sao_Paulo",
                               hour: "2-digit",
                               minute: "2-digit",
                             })}
@@ -708,7 +709,10 @@ export default function AssembleiasHubPage() {
                             v.inadimplente ? "text-red-600" : "text-gray-500"
                           )}
                         >
-                          {new Date(v.horario).toLocaleString("pt-BR")} ·{" "}
+                          {new Date(v.horario).toLocaleString("pt-BR", {
+                            timeZone: "America/Sao_Paulo",
+                          })}{" "}
+                          ·{" "}
                           {v.total_votos} voto{v.total_votos !== 1 ? "s" : ""} ·{" "}
                           <span
                             className={
@@ -814,11 +818,30 @@ export default function AssembleiasHubPage() {
                         )}`}
                     </p>
                     <p className="text-sm text-gray-600 mt-2">
-                      <span className="font-medium">
-                        {selecionada.total_votantes}
-                      </span>{" "}
-                      unidade{selecionada.total_votantes !== 1 ? "s" : ""} apta
-                      {selecionada.total_votantes !== 1 ? "s" : ""} a votar
+                      {/* Sem relação de moradores ninguém sabe quantas
+                          unidades são aptas: mostra as que compareceram. */}
+                      {(resultados[0]?.base_unidades ?? selecionada.total_votantes) > 0 ? (
+                        <>
+                          <span className="font-medium">
+                            {resultados[0]?.base_unidades ?? selecionada.total_votantes}
+                          </span>{" "}
+                          unidade
+                          {(resultados[0]?.base_unidades ?? selecionada.total_votantes) !== 1
+                            ? "s aptas"
+                            : " apta"}{" "}
+                          a votar
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-medium">
+                            {resultados[0]?.unidades_presentes ?? 0}
+                          </span>{" "}
+                          unidade
+                          {(resultados[0]?.unidades_presentes ?? 0) !== 1
+                            ? "s presentes"
+                            : " presente"}
+                        </>
+                      )}
                     </p>
                   </div>
                   <button

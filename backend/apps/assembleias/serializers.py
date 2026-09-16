@@ -2,6 +2,7 @@ import json
 
 from rest_framework import serializers
 
+from .apuracao import base_unidades, unidades_cadastradas, unidades_presentes
 from .models import Assembleia, Ata, LogAuditoria, OpcaoVoto, Presenca, Questao
 
 
@@ -228,22 +229,25 @@ class AssembleiaSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "codigo_curto", "criado_em", "atualizado_em"]
 
     def get_total_votantes(self, obj):
-        return self._base_eleitores(obj)
+        # Sem relação de moradores (o morador se identifica na hora), mostra
+        # quantos entraram para votar em vez de zero.
+        return self._base_eleitores(obj) or obj.votantes_manuais.count()
 
     def get_total_presentes(self, obj):
         return obj.presencas.count()
 
     def _base_eleitores(self, obj):
-        total = obj.votantes.count()
-        if total == 0:
-            total = obj.condominio.eleitores.count()
-        return total
+        return base_unidades(obj)
 
     def get_quorum(self, obj):
         import math
 
         base = self._base_eleitores(obj)
-        presentes = obj.presencas.count()
+        # Sem relação de moradores, o quórum conta unidades presentes: duas
+        # pessoas do mesmo apartamento são uma unidade.
+        presentes = (
+            obj.presencas.count() if unidades_cadastradas(obj) else unidades_presentes(obj)
+        )
 
         if obj.primeira_chamada_50_mais_1:
             necessario_1 = base // 2 + 1 if base else 0
@@ -299,7 +303,7 @@ class AssembleiaListSerializer(serializers.ModelSerializer):
         ]
 
     def get_total_votantes(self, obj):
-        return obj.votantes.count()
+        return obj.votantes.count() or obj.votantes_manuais.count()
 
     def get_total_questoes(self, obj):
         return obj.questoes.count()

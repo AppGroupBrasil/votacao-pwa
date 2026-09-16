@@ -231,6 +231,31 @@ PDF, repetição no mesmo aparelho e em outro, painel).
 `verificacao/rotas_publicas.txt` estava fora do Git (o `.gitignore` ignora `*.txt`); passou a ser
 versionado.
 
+## 11. Apuração da assembleia sem relação de moradores — 16/09/2026
+
+Simulação local de "Criar assembleia" com 5 votantes (2 perguntas, entrada por selfie): a contagem
+estava certa na tela e nos PDFs, mas a apresentação enganava no fluxo sem planilha, em que a
+assembleia não tem lista de votantes.
+
+- **Base de unidades** (`apps/assembleias/apuracao.py`): votantes → moradores do condomínio →
+  `Condominio.total_unidades` → 0 (desconhecida). Antes caía em 0 e a tela mostrava "0 unidades aptas"
+  e "0% de participação".
+- **Abstenção e quórum por unidade presente** quando não há relação de moradores: a segunda pessoa
+  de um apartamento que já votou não vira abstenção nem infla o quórum.
+- **Sem total de unidades**, o PDF de presença mostra quórum "—" com a explicação, e a tela mostra
+  "N unidades presentes" no lugar de "unidades aptas".
+- **Fechar a assembleia encerra os itens** na apuração (`encerrada` na API e "Encerrada" no PDF):
+  a tela só mostra a vencedora de item encerrado, e o painel não tem botão de encerrar item, então a
+  vencedora nunca aparecia.
+- Cards de assembleia mostram quantos entraram para votar (antes "0 votantes").
+- Horários da lista de votos com selfie fixados em Brasília (seguiam o fuso do navegador).
+- PDFs: linha de assinatura desenhada pela tabela (a fileira de "_" quebrava), título do item junto
+  com a tabela no relatório de votação e coluna do código sem quebra.
+
+**Verificação:** `apps/votos/tests.py::AssembleiaSemCadastroApuracaoTests` (5 votantes, repetição,
+segunda pessoa da unidade, voto antes de abrir e depois de fechar, números da tela, textos dos 3 PDFs,
+total de unidades informado, isolamento), suíte inteira (60) e simulação ponta a ponta nas telas.
+
 ## Lições
 
 - Toda rota usada pelo morador precisa ser pública e **não** vazar identidade/voto.

@@ -27,6 +27,12 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from apps.assembleias.apuracao import (
+    base_unidades,
+    questao_encerrada,
+    unidades_cadastradas,
+    unidades_presentes,
+)
 from apps.votos.models import Voto
 
 # Mesma paleta do frontend (tailwind.config.js): primary indigo + slate.
@@ -238,15 +244,23 @@ def _cabecalho(st, textos):
 
 
 def _assinatura(st, rotulos):
-    el = [Spacer(1, 26)]
-    linha = [Paragraph("_" * 42, st["RelCorpo"]) for _ in rotulos]
-    nomes = [Paragraph(_esc(r), st["RelNota"]) for r in rotulos]
-    t = Table([linha, nomes], colWidths=[8.2 * cm] * len(rotulos))
-    t.setStyle(TableStyle([
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
+    # A linha é traçada pela tabela: a fileira de "_" quebrava e deixava um
+    # traço solto embaixo. Uma coluna vazia separa as duas linhas.
+    el = [Spacer(1, 40)]
+    celulas, larguras, estilo = [], [], [
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-    ]))
+    ]
+    for i, rotulo in enumerate(rotulos):
+        if i:
+            celulas.append("")
+            larguras.append(1.2 * cm)
+        coluna = len(celulas)
+        celulas.append(Paragraph(_esc(rotulo), st["RelSub"]))
+        larguras.append(7.4 * cm)
+        estilo.append(("LINEABOVE", (coluna, 0), (coluna, 0), 0.8, COR_TEXTO))
+    t = Table([celulas], colWidths=larguras)
+    t.setStyle(TableStyle(estilo))
     el.append(t)
     return el
 
@@ -261,11 +275,16 @@ def pdf_lista_presenca(assembleia):
     largura = doc.width
 
     presencas = list(assembleia.presencas.all().order_by("horario_entrada"))
-    base = assembleia.votantes.count() or assembleia.condominio.eleitores.count()
+    base = base_unidades(assembleia)
     presentes = len(presencas)
     inadimplentes = sum(1 for p in presencas if p.inadimplente)
     online = sum(1 for p in presencas if p.modo_participacao == "online")
-    percentual = round(presentes / base * 100, 1) if base else 0
+    # Sem relação de moradores o quórum conta unidades presentes (duas pessoas
+    # do mesmo apartamento são uma unidade), contra o total do condomínio.
+    presentes_quorum = (
+        presentes if unidades_cadastradas(assembleia) else unidades_presentes(assembleia)
+    )
+    quorum = f"{round(presentes_quorum / base * 100, 1)}%" if base else "—"
 
     el = _capa(
         st, assembleia, "Lista de presença",
@@ -274,10 +293,17 @@ def pdf_lista_presenca(assembleia):
     el.append(_kpis(st, [
         (presentes, "Presentes"),
         (base or "—", "Unidades aptas"),
-        (f"{percentual}%", "Quórum"),
+        (quorum, "Quórum"),
         (online, "Online"),
         (inadimplentes, "Inadimplentes"),
     ], largura))
+    if not base:
+        el.append(Spacer(1, 4))
+        el.append(Paragraph(
+            "O quórum não foi calculado porque o total de unidades do condomínio "
+            "não está informado. Informe-o no cadastro do condomínio.",
+            st["RelNota"],
+        ))
     el.append(Spacer(1, 14))
 
     if not presencas:
@@ -388,12 +414,16 @@ def pdf_votacao(assembleia):
             if not do_item:
                 continue
             validos_item = sum(1 for v in do_item if v.status == Voto.Status.VALIDADO)
-            el.append(Paragraph(_esc(questao.titulo), st["RelSecao"]))
-            el.append(Paragraph(
-                f"{len(do_item)} registro(s) · {validos_item} válido(s)",
-                st["RelNota"],
-            ))
-            el.append(Spacer(1, 5))
+            # Título e contagem vão junto com a tabela: sozinhos no pé da folha
+            # pareciam um item sem votos.
+            cabeca = [
+                Paragraph(_esc(questao.titulo), st["RelSecao"]),
+                Paragraph(
+                    f"{len(do_item)} registro(s) · {validos_item} válido(s)",
+                    st["RelNota"],
+                ),
+                Spacer(1, 5),
+            ]
 
             linhas = [_cabecalho(st, [
                 "#", "Nome", "Unidade", "Voto", "Autenticação",
@@ -424,16 +454,20 @@ def pdf_votacao(assembleia):
                     Paragraph(_esc(v.get_status_display()), st["RelCelula"]),
                     Paragraph(_esc((v.hash_voto or "")[:10]), st["RelCelula"]),
                 ])
+            # Soma igual à largura útil da folha deitada (26,5 cm); o código
+            # do voto (10 caracteres) cabe numa linha só.
             t = Table(
                 linhas,
                 colWidths=[
-                    0.8 * cm, 5.4 * cm, 2.4 * cm, 3.6 * cm, 2.8 * cm,
-                    2.4 * cm, 3.0 * cm, 2.4 * cm, 1.9 * cm, 2.0 * cm,
+                    0.8 * cm, 4.9 * cm, 2.4 * cm, 3.6 * cm, 2.8 * cm,
+                    2.4 * cm, 3.0 * cm, 2.4 * cm, 1.9 * cm, 2.3 * cm,
                 ],
                 repeatRows=1,
             )
             t.setStyle(TableStyle(estilo))
-            el.append(t)
+            # A cabeça segue com as primeiras linhas; tabela maior que a folha
+            # continua quebrando normalmente.
+            el.append(KeepTogether([*cabeca, t]))
             el.append(Spacer(1, 10))
 
         el.append(Paragraph(
@@ -483,7 +517,13 @@ def pdf_resultado(assembleia):
     largura = doc.width
 
     presentes = assembleia.presencas.count()
-    base = assembleia.votantes.count() or assembleia.condominio.eleitores.count()
+    base = base_unidades(assembleia)
+    # Abstenção é quem estava presente e não votou. Sem relação de moradores,
+    # conta por unidade: a segunda pessoa de um apartamento que já votou não é
+    # abstenção.
+    presentes_abstencao = (
+        presentes if unidades_cadastradas(assembleia) else unidades_presentes(assembleia)
+    )
     questoes = list(assembleia.questoes.prefetch_related("opcoes").order_by("ordem", "id"))
     total_geral = Voto.objects.filter(
         assembleia=assembleia, status=Voto.Status.VALIDADO
@@ -522,10 +562,14 @@ def pdf_resultado(assembleia):
         bloco = [
             Paragraph(f"{indice}. {_esc(questao.titulo)}", st["RelSecao"]),
         ]
-        situacao = "Encerrada" if questao.encerrada else "Em aberto"
+        situacao = "Encerrada" if questao_encerrada(questao, assembleia) else "Em aberto"
         bloco.append(Paragraph(
             f"{situacao} · {total_q} voto(s) válido(s)"
-            + (f" · {max(presentes - total_q, 0)} abstenção(ões)" if presentes else ""),
+            + (
+                f" · {max(presentes_abstencao - total_q, 0)} abstenção(ões)"
+                if presentes
+                else ""
+            ),
             st["RelNota"],
         ))
         bloco.append(Spacer(1, 5))

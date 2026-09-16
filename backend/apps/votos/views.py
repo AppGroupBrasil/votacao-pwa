@@ -18,6 +18,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.assembleias.apuracao import base_unidades, questao_encerrada, unidades_presentes
 from apps.assembleias.models import Assembleia, OpcaoVoto, Presenca, Questao
 from apps.assembleias.regras import cadastro_fechado, regra_cadastro
 from apps.eleitores.models import (
@@ -1851,6 +1852,14 @@ def resultados(request, assembleia_id):
     total_votos_possiveis = (
         assembleia.votantes.aggregate(s=Sum("votos_permitidos"))["s"] or 0
     )
+    base = base_unidades(assembleia)
+    presentes_unid = unidades_presentes(assembleia)
+    if total_votantes == 0:
+        # Sem lista de votantes (o morador se identificou na hora): abstenção é
+        # unidade presente que não votou, e a participação é sobre as unidades
+        # aptas informadas no condomínio ou, sem elas, sobre as presentes.
+        total_votantes = presentes_unid
+        total_votos_possiveis = base or presentes_unid
 
     procuracoes_pendentes = (
         Voto.objects.filter(
@@ -1938,7 +1947,9 @@ def resultados(request, assembleia_id):
             {
                 "questao_id": str(questao.id),
                 "questao_titulo": questao.titulo,
-                "encerrada": questao.encerrada,
+                "encerrada": questao_encerrada(questao, assembleia),
+                "base_unidades": base,
+                "unidades_presentes": presentes_unid,
                 "total_votos": total_votos_questao,
                 "total_pessoas": total_pessoas,
                 "total_votantes": total_votantes,

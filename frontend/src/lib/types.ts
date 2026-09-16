@@ -250,6 +250,9 @@ export interface Resultado {
   questao_id: string;
   questao_titulo: string;
   encerrada?: boolean;
+  // Unidades aptas (0 = condomínio sem esse número) e unidades presentes.
+  base_unidades?: number;
+  unidades_presentes?: number;
   total_votos: number;
   total_pessoas?: number;
   total_votantes: number;
