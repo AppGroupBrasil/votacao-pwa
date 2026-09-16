@@ -40,6 +40,7 @@ from apps.eleitores.facial import (
     verificar,
 )
 from core.permissions import IsAdminWithRole, get_user_condominios
+from core.request_info import get_client_ip as _ip_do_morador
 
 from .models import VotanteManual, Voto
 from .serializers import RelatorioVotoSerializer, VotoCreateSerializer
@@ -55,10 +56,8 @@ BLOQUEAR_UNIDADE = True
 
 
 def get_client_ip(request):
-    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if x_forwarded_for:
-        return x_forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR", "0.0.0.0")
+    # Voto.ip_address é obrigatório: sem IP nenhum, grava 0.0.0.0.
+    return _ip_do_morador(request) or "0.0.0.0"
 
 
 def get_client_user_agent(request):

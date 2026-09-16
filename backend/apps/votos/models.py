@@ -73,6 +73,9 @@ class Voto(models.Model):
         SELFIE = "selfie", "Selfie"
         WEBAUTHN = "webauthn", "WebAuthn"
         OTP = "otp", "OTP"
+        # Entrada direta pelo e-mail da planilha, quando a assembleia não exige
+        # o código: o token sai com este método e o voto era recusado.
+        EMAIL = "email", "E-mail sem código"
         MANUAL = "manual", "Manual com selfie"
 
     class Status(models.TextChoices):

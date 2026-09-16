@@ -30,6 +30,7 @@ from core.authentication import (
     set_auth_cookies,
 )
 from core.models import PerfilAdmin
+from core.request_info import get_client_ip
 
 audit = logging.getLogger("audit")
 
@@ -135,7 +136,7 @@ def login_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip()
+    ip = get_client_ip(request) or ""
     # Login por e-mail. Também aceita o antigo "usuário" (contas criadas antes
     # da unificação) e é insensível a maiúsculas/minúsculas.
     user = authenticate(username=login_id, password=password)

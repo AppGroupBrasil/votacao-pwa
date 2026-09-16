@@ -209,6 +209,16 @@ export default function ListasPresencaPage() {
           (res.inadimplentes_marcados
             ? `.\n${res.inadimplentes_marcados} unidade(s) marcada(s) como inadimplente — poderão participar, mas não votar`
             : "") +
+          // Linha recusada (e-mail inválido, apartamento vazio) não pode
+          // sumir calada: o síndico precisa saber quem ficou de fora.
+          (res.erros?.length
+            ? `.\n${res.erros.length} linha(s) não importada(s) por dado inválido: ` +
+              res.erros
+                .slice(0, 10)
+                .map((e) => e.linha)
+                .join(", ") +
+              (res.erros.length > 10 ? "…" : "")
+            : "") +
           `.\nCondomínio, lista de presença e votação foram criados. ` +
           `Agora é só adicionar as perguntas da votação.`
       );

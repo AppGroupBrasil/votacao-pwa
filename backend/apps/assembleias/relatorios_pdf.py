@@ -52,6 +52,9 @@ METODOS = {
     "facial": "Reconhecimento facial",
     "webauthn": "Biometria do aparelho",
     "otp": "Código por e-mail",
+    "email": "E-mail (sem código)",
+    "cpf": "CPF",
+    "cpf_facial": "CPF e reconhecimento facial",
     "manual": "Registro manual",
     "selfie": "Selfie",
 }

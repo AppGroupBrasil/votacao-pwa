@@ -16,6 +16,7 @@ from apps.assembleias.regras import cadastro_fechado, regra_cadastro
 from apps.condominios.models import Condominio
 from core.otp import gerar_otp, validar_otp
 from core.permissions import IsAdminWithRole, IsMaster, get_user_condominios
+from core.request_info import get_client_ip as _get_client_ip
 from core.request_info import get_client_user_agent
 
 from .facial import (
@@ -35,13 +36,6 @@ from .serializers import (
     EleitorSerializer,
     SolicitacaoExclusaoSerializer,
 )
-
-
-def _get_client_ip(request):
-    xff = request.META.get("HTTP_X_FORWARDED_FOR")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
 
 
 # --- Cadastro antecipado do rosto -------------------------------------------

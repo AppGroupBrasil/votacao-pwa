@@ -46,7 +46,7 @@ from core.permissions import (
     get_user_condominios,
     resolver_condominio_por_nome,
 )
-from core.request_info import get_client_user_agent, infer_device_info
+from core.request_info import get_client_ip, get_client_user_agent, infer_device_info
 
 from .comprovante_pdf import (
     dados_comprovante,
@@ -67,13 +67,6 @@ from .serializers import (
     ListaPresencaSerializer,
     PresencaManualSerializer,
 )
-
-
-def get_client_ip(request):
-    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if x_forwarded_for:
-        return x_forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
 
 
 def coordenada(valor):
@@ -277,6 +270,17 @@ def importar_planilha_completa(request):
         pulados = 0
         erros = []
         for i, row in enumerate(rows, start=2):  # linha 2 = 1ª linha de dados
+            # Mesmo morador na mesma unidade já importado: conta como "já
+            # existia". Antes a trava de nome+unidade do cadastro devolvia erro,
+            # e reimportar a planilha dizia "0 importados" sem explicar.
+            if isinstance(row, dict) and Eleitor.objects.filter(
+                condominio_id=condominio.id,
+                bloco__iexact=str(row.get("bloco") or "").strip(),
+                apartamento__iexact=str(row.get("apartamento") or "").strip(),
+                nome__iexact=str(row.get("nome") or "").strip(),
+            ).exists():
+                pulados += 1
+                continue
             serializer = EleitorSerializer(
                 data={**row, "condominio": str(condominio.id)}
             )

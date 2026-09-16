@@ -2,10 +2,17 @@
 
 
 def get_client_ip(request):
-    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if x_forwarded_for:
-        return x_forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
+    """IP de quem fez o pedido.
+
+    Atrás da Cloudflare + Traefik, o primeiro item do X-Forwarded-For é o IP da
+    Cloudflare, não o do morador — era esse que ia para votos, presenças e
+    comprovantes. O IP do morador vem no CF-Connecting-IP, que o
+    RealClientIpMiddleware já copiou para o REMOTE_ADDR (sem a Cloudflare, ele
+    usa o X-Forwarded-For)."""
+    return (
+        request.META.get("HTTP_CF_CONNECTING_IP", "").strip()
+        or request.META.get("REMOTE_ADDR")
+    )
 
 
 def get_client_user_agent(request):

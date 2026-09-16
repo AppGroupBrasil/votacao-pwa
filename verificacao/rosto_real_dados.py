@@ -24,6 +24,7 @@ from django.utils import timezone  # noqa: E402
 
 from apps.assembleias.models import Assembleia  # noqa: E402
 from apps.condominios.models import Condominio  # noqa: E402
+from apps.enquetes.models import ListaPresenca, PresencaManual  # noqa: E402
 from apps.eleitores.facial import distancia  # noqa: E402
 from apps.eleitores.models import Eleitor, IdentidadeFacial  # noqa: E402
 
@@ -61,7 +62,24 @@ def semear():
         somente_cadastro_antecipado=True,
         cadastro_antecedencia_horas=24,
     )
-    print(json.dumps({"condominio": str(cond.id), "assembleia": str(assembleia.id)}))
+    # Listas de presença por biometria: uma no condomínio com planilha (o CPF
+    # traz a unidade) e outra num condomínio sem planilha (o rosto é quem
+    # reconhece).
+    lista = ListaPresenca.objects.create(condominio=cond, titulo="Lista AGE Teste Real")
+    cond_sem = Condominio.objects.create(
+        nome="Residencial Sem Planilha",
+        cnpj=f"SP-{agora.timestamp():.0f}",  # a coluna tem 18 caracteres
+        total_unidades=8,
+    )
+    lista_sem = ListaPresenca.objects.create(
+        condominio=cond_sem, titulo="Lista sem planilha"
+    )
+    print(json.dumps({
+        "condominio": str(cond.id),
+        "assembleia": str(assembleia.id),
+        "lista": str(lista.id),
+        "lista_sem_planilha": str(lista_sem.id),
+    }))
 
 
 def fechar(assembleia_id):
@@ -96,6 +114,40 @@ def conferir(condominio_id):
     print("banco: Ana ok, Carla marcada como mesmo rosto de outro CPF, Paula como procuradora")
 
 
+def conferir_lista(lista_id, lista_sem_id):
+    erros = []
+    com = {r.nome: r for r in PresencaManual.objects.filter(lista_id=lista_id)}
+    sem = list(PresencaManual.objects.filter(lista_id=lista_sem_id))
+    ana = com.get("Ana Real")
+    if len(com) != 1 or ana is None:
+        erros.append(f"lista com planilha: esperado só a Ana, veio {sorted(com)}")
+    else:
+        if ana.metodo_auth != "cpf_facial":
+            erros.append(f"Ana entrou como {ana.metodo_auth}, não pelo CPF + rosto")
+        if ana.cpf_mascarado != "***.444.777-**":
+            erros.append(f"CPF mascarado da Ana: {ana.cpf_mascarado}")
+        if not ana.observacao:
+            erros.append("observação da Ana não foi gravada")
+        if not ana.conferir_na_mesa:
+            erros.append("outra pessoa usou o CPF da Ana e o registro não ficou para a mesa")
+    if len(sem) != 1:
+        erros.append(f"lista sem planilha: {len(sem)} registro(s), esperado 1")
+    elif not sem[0].identidade_id or not sem[0].cpf_mascarado:
+        erros.append("lista sem planilha: registro sem rosto guardado ou sem CPF")
+    if erros:
+        print(chr(10).join(erros))
+        sys.exit(1)
+    print(
+        "banco: lista com planilha só com a Ana (CPF + rosto, marcada para a mesa) "
+        "e lista sem planilha reconhecendo o mesmo rosto"
+    )
+
+
 if __name__ == "__main__":
     comando, *args = sys.argv[1:]
-    {"semear": semear, "fechar": fechar, "conferir": conferir}[comando](*args)
+    {
+        "semear": semear,
+        "fechar": fechar,
+        "conferir": conferir,
+        "conferir_lista": conferir_lista,
+    }[comando](*args)

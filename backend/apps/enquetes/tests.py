@@ -355,3 +355,117 @@ class ComprovantePresencaTests(BaseListaPresenca):
         self.client.delete(f"/api/enquetes/listas-presenca/{lista.id}/registros/{reg.id}/")
         self.client.force_authenticate(None)
         self.assertEqual(self.client.get(f"{base}/{token}/").status_code, 404)
+
+
+class ImportarPlanilhaTests(BaseListaPresenca):
+    """Botão "Importar planilha": moradores com CPF, inadimplentes, lista de
+    presença por biometria e votação já ligadas."""
+
+    def _importar(self, linhas, inadimplentes=()):
+        self.client.force_authenticate(self.sindico)
+        r = self.client.post(
+            "/api/enquetes/listas-presenca/importar-planilha/",
+            {
+                "nome_condominio": self.cond.nome,
+                "titulo": "AGO 2026",
+                "eleitores": linhas,
+                "inadimplentes": list(inadimplentes),
+            },
+            format="json",
+        )
+        self.client.force_authenticate(None)
+        return r
+
+    def test_importa_moradores_marca_inadimplentes_e_nao_duplica(self):
+        linhas = [
+            {"nome": "Ana Souza", "cpf_hash": hash_cpf(CPF_ANA), "bloco": "A", "apartamento": "101", "email": "ana@exemplo.com"},
+            {"nome": "Bruno Lima", "cpf_hash": hash_cpf("111.444.777-35"), "bloco": "A", "apartamento": "102", "email": ""},
+            {"nome": "Carla Dias", "cpf_hash": "", "bloco": "B", "apartamento": "201", "email": ""},
+        ]
+        r = self._importar(linhas, [{"bloco": "a", "apartamento": "Apto 102"}])
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual((r.data["criados"], r.data["pulados"], r.data["inadimplentes_marcados"]), (3, 0, 1))
+        self.assertTrue(Eleitor.objects.get(nome="Bruno Lima").inadimplente)
+        self.cond.refresh_from_db()
+        self.assertEqual((self.cond.total_unidades, self.cond.blocos), (3, ["A", "B"]))
+        lista = ListaPresenca.objects.get(id=r.data["lista_id"])
+        self.assertFalse(lista.modo_rapido)
+        from apps.assembleias.models import Assembleia
+
+        assembleia = Assembleia.objects.get(id=r.data["assembleia_id"])
+        self.assertEqual(assembleia.votantes.count(), 3)
+        self.assertEqual(assembleia.status, Assembleia.Status.RASCUNHO)
+        # A lista pede o CPF e acha a unidade pela planilha.
+        publica = self.client.get(f"/api/enquetes/listas-presenca/{lista.id}/publica/").data
+        self.assertTrue(publica["tem_cpf"])
+        r2 = self.client.post(
+            f"/api/enquetes/listas-presenca/{lista.id}/consultar-cpf/",
+            {"cpf_hash": hash_cpf(CPF_ANA)}, format="json",
+        )
+        self.assertEqual(r2.data["unidades"][0]["apartamento"], "101")
+        # Importar de novo não duplica ninguém.
+        r = self._importar(linhas)
+        self.assertEqual((r.data["criados"], r.data["pulados"]), (0, 3))
+        self.assertEqual(Eleitor.objects.filter(condominio=self.cond).count(), 3)
+
+    def test_planilha_vazia_ou_sem_titulo_e_recusada(self):
+        self.assertEqual(self._importar([]).status_code, 400)
+        self.client.force_authenticate(self.sindico)
+        r = self.client.post(
+            "/api/enquetes/listas-presenca/importar-planilha/",
+            {"nome_condominio": self.cond.nome, "titulo": "", "eleitores": [{"nome": "X", "apartamento": "1"}]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+        self.client.force_authenticate(None)
+        r = self.client.post(
+            "/api/enquetes/listas-presenca/importar-planilha/",
+            {"nome_condominio": self.cond.nome, "titulo": "AGO", "eleitores": [{"nome": "X", "apartamento": "1"}]},
+            format="json",
+        )
+        self.assertIn(r.status_code, (401, 403))
+
+
+class VotacaoRapidaComListaTests(BaseListaPresenca):
+    """Votação rápida que exige presença: só vota a unidade que está na lista
+    manual (que agora pede CPF)."""
+
+    def test_so_vota_quem_registrou_presenca(self):
+        from .models import Enquete, EnqueteOpcao
+
+        lista = self.criar_lista(modo_rapido=True)
+        enquete = Enquete.objects.create(
+            condominio=self.cond, titulo="Pintura", voto_aberto=True,
+            lista_presenca=lista, exige_presenca=True, um_voto_por_unidade=True,
+        )
+        sim = EnqueteOpcao.objects.create(enquete=enquete, texto="Sim", ordem=1)
+        votar = lambda apto, aparelho: self.client.post(  # noqa: E731
+            f"/api/enquetes/{enquete.id}/votar/",
+            {"opcao_id": str(sim.id), "device_id": aparelho, "votante_nome": "Ana",
+             "votante_bloco": "A", "votante_apartamento": apto},
+            format="json",
+        )
+        self.assertEqual(votar("101", "d1").status_code, 403)
+        r = self.client.post(
+            f"/api/enquetes/listas-presenca/{lista.id}/registrar/", self.entrada_manual(), format="json"
+        )
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(votar("101", "d1").status_code, 201)
+        # Mesma unidade de novo, de outro aparelho: recusado.
+        self.assertEqual(votar("101", "d2").status_code, 409)
+        self.assertEqual(votar("999", "d3").status_code, 403)
+
+
+class IpNaListaTests(BaseListaPresenca):
+    def test_presenca_e_comprovante_gravam_o_ip_do_morador(self):
+        lista = self.criar_lista(modo_rapido=True)
+        r = self.client.post(
+            f"/api/enquetes/listas-presenca/{lista.id}/registrar/",
+            self.entrada_manual(),
+            format="json",
+            HTTP_CF_CONNECTING_IP="200.100.50.25",
+            HTTP_X_FORWARDED_FOR="172.69.39.130",
+        )
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["comprovante"]["ip"], "200.100.50.25")
+        self.assertEqual(PresencaManual.objects.get().ip_address, "200.100.50.25")

@@ -344,6 +344,13 @@ export default function PresencaRapidaPage() {
         registradoEm: r?.registrado_em || "",
         comprovante: r?.comprovante || null,
       });
+      // O contador do topo acompanha a presença que acabou de entrar.
+      if (!r?.ja_presente)
+        setLista((l) =>
+          l && typeof l.total_registros === "number"
+            ? { ...l, total_registros: l.total_registros + 1 }
+            : l
+        );
     } catch (e: any) {
       setErro(
         e?.response?.data?.error ||

@@ -264,6 +264,45 @@ limita o nome e as telas limitam os campos (`maxLength`). Confirmado com o teste
 16 antes da correção e passando depois (63 testes). Na tela: campos obrigatórios recusados, bloco
 limitado, voto registrado e edição do total de unidades de um condomínio criado por "Criar assembleia".
 
+## 12. Varredura do que não tinha teste — 16/09/2026
+
+Revisão item a item do que a sessão ainda não tinha verificado. Três defeitos vivos apareceram.
+
+**IP da Cloudflare no lugar do IP do morador.** Atrás da Cloudflare + Traefik, o primeiro item do
+`X-Forwarded-For` é a Cloudflare; o IP do morador vem no `CF-Connecting-IP`, que o
+`RealClientIpMiddleware` já copiava para o `REMOTE_ADDR` (é o que faz o limite por IP valer por
+pessoa). Mas voto, presença, comprovante e o log de login liam o `X-Forwarded-For` e gravavam
+`172.69.x`. Agora todos usam `core.request_info.get_client_ip`, que lê o CF-Connecting-IP/REMOTE_ADDR.
+Visto nos logs de produção antes da correção.
+
+**Entrada por e-mail sem código não conseguia votar.** Com `exigir_confirmacao_email=False` (é o
+padrão de "Criar assembleia"), `otp/acesso-direto/` emite token com `method="email"`, que não existia
+em `Voto.MetodoAuth`: o voto voltava 403 "Método de autenticação inválido no token". Método `email`
+criado (migração `votos/0014`, só a lista de opções) e nomeado nos relatórios.
+
+**Reimportar a planilha não dizia nada.** A trava de nome+unidade do cadastro devolvia erro de
+validação antes do "já existe", então a tela dizia "0 importados" sem explicar. Agora o duplicado
+conta como pulado e a tela avisa quantas linhas ficaram de fora por dado inválido (e quais).
+
+Também: o contador "0 presenças registradas" da lista manual passou a subir ao registrar.
+
+**Check-up ampliado.** As simulações de tela saíram da pasta temporária e viraram
+`verificacao/telas.js` (+ `telas_dados.py`), rodando dentro do check-up: painel criando listas nos
+dois modos e assembleia com perguntas, morador registrando presença com CPF/observação/assinatura,
+comprovante em PDF (inclusive o compartilhamento como arquivo), trava de repetição, 5 votantes com
+apuração e relatórios, importação de planilha e entrada com bloco longo. O teste de rostos reais
+ganhou a fase da lista de presença (`rosto_real.js lista`): com planilha o CPF traz a unidade e o
+rosto confirma; sem planilha o rosto reconhece quem já registrou.
+
+**Testes novos no servidor:** empate, voto invalidado, unidade inadimplente (ida e volta),
+procuração e unidade declarada pendentes até a aprovação, entrada por e-mail (com e sem código),
+importação de planilha (inadimplentes, duplicados, linha inválida, sem login), Votação rápida que
+exige presença e o IP do morador no voto, na presença e no comprovante. Suíte: 75 testes.
+
+**Produção conferida (só leitura):** commit `bf7b90b` no ar, containers saudáveis, nenhuma migração
+pendente, páginas públicas e do painel em 200, rotas protegidas em 401, inexistentes em 404 e
+nenhum erro nos registros dos últimos dias.
+
 ## Lições
 
 - Toda rota usada pelo morador precisa ser pública e **não** vazar identidade/voto.

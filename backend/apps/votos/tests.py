@@ -295,18 +295,9 @@ class VotoReportTests(APITestCase):
         self.assertNotIn(self.opcao.texto, corpo)
 
 
-class AssembleiaSemCadastroApuracaoTests(APITestCase):
-    """O fluxo de "Criar assembleia": sem relação de moradores, cada um entra
-    com selfie. Cinco unidades votam em duas perguntas; a apuração, a tela e os
-    PDFs precisam contar igual."""
-
-    VOTOS = [
-        ("Ana Lima", "A", "101", "Sim", "Azul"),
-        ("Bruno Castro", "A", "102", "Sim", "Verde"),
-        ("Carla Dias", "B", "201", "Não", "Azul"),
-        ("Diego Rocha", "B", "202", "Sim", "Azul"),
-        ("Elisa Prado", "B", "203", "Abstenção", "Verde"),
-    ]
+class BaseAssembleiaSemCadastro(APITestCase):
+    """Assembleia do "Criar assembleia" (sem relação de moradores), com duas
+    perguntas criadas pela API como a tela faz."""
 
     def setUp(self):
         self.admin = User.objects.create_superuser(
@@ -395,6 +386,18 @@ class AssembleiaSemCadastroApuracaoTests(APITestCase):
         r = self.client.get(f"/api/assembleias/{self.assembleia.id}/relatorio-{tipo}-pdf/")
         self.assertEqual(r.status_code, 200)
         return texto_pdf(r.content)
+
+class AssembleiaSemCadastroApuracaoTests(BaseAssembleiaSemCadastro):
+    """Cinco unidades entram com selfie e votam em duas perguntas; a apuração,
+    a tela e os PDFs precisam contar igual."""
+
+    VOTOS = [
+        ("Ana Lima", "A", "101", "Sim", "Azul"),
+        ("Bruno Castro", "A", "102", "Sim", "Verde"),
+        ("Carla Dias", "B", "201", "Não", "Azul"),
+        ("Diego Rocha", "B", "202", "Sim", "Azul"),
+        ("Elisa Prado", "B", "203", "Abstenção", "Verde"),
+    ]
 
     def test_cinco_votantes_apuracao_tela_e_pdfs(self):
         # Assembleia ainda fechada: ninguém entra.
@@ -515,3 +518,190 @@ class AssembleiaSemCadastroApuracaoTests(APITestCase):
             ).status_code,
             404,
         )
+
+
+class ApuracaoCasosEspeciaisTests(BaseAssembleiaSemCadastro):
+    """O que a simulação de 5 votantes não passou: empate, voto invalidado,
+    unidade inadimplente, procuração e unidade declarada."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(self.admin)
+        self.client.post(f"/api/assembleias/{self.assembleia.id}/abrir/")
+        self.client.force_authenticate(None)
+
+    def _entrar_e_votar(self, nome, apto, texto, aparelho):
+        r = self._entrar(nome, "A", apto, aparelho)
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(self._votar(r.data["token"], self.q1, texto, aparelho).status_code, 201)
+        return r.data
+
+    def _contagem(self):
+        q = self._resultados()["Aprovação das contas"]
+        return {o["texto"]: o["votos"] for o in q["opcoes"]}
+
+    def test_empate_nao_aponta_vencedora(self):
+        self._entrar_e_votar("Ana", "101", "Sim", "a1")
+        self._entrar_e_votar("Bia", "102", "Não", "a2")
+        self.client.force_authenticate(self.admin)
+        self.client.post(f"/api/assembleias/{self.assembleia.id}/encerrar/")
+        self.assertEqual(self._contagem(), {"Sim": 1, "Não": 1, "Abstenção": 0})
+        resultado = self._pdf("resultado")
+        self.assertIn("Houve empate", resultado)
+        # "vencedora" só aparece no aviso do empate, nunca numa opção.
+        self.assertEqual(resultado.count("vencedora"), 1)
+
+    def test_voto_invalidado_sai_da_contagem_e_aparece_no_relatorio(self):
+        ana = self._entrar_e_votar("Ana", "101", "Sim", "a1")
+        self._entrar_e_votar("Bia", "102", "Não", "a2")
+        self.client.force_authenticate(self.admin)
+        r = self.client.post(
+            f"/api/votos/{self.assembleia.id}/votos-manuais/validar/",
+            {"votante_manual_id": ana["votante_manual_id"], "acao": "rejeitar"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(self._contagem(), {"Sim": 0, "Não": 1, "Abstenção": 0})
+        votacao = self._pdf("votacao")
+        self.assertEqual(votacao.count("(Rejeitado)"), 1)
+        self.assertEqual(votacao.count("(Validado)"), 1)
+        self.assertIn(r"1 voto\(s\) v", self._pdf("resultado"))
+
+    def test_unidade_inadimplente_perde_o_voto_e_volta_ao_regularizar(self):
+        ana = self._entrar_e_votar("Ana", "101", "Sim", "a1")
+        self.client.force_authenticate(self.admin)
+        url = f"/api/votos/{self.assembleia.id}/votos-manuais/validar/"
+        r = self.client.post(
+            url, {"votante_manual_id": ana["votante_manual_id"], "acao": "inadimplente"}, format="json"
+        )
+        self.assertEqual(r.data["votos_atualizados"], 1)
+        self.assertEqual(self._contagem()["Sim"], 0)
+        # A unidade não vota mais, nem na outra pergunta.
+        self.client.force_authenticate(None)
+        r = self._votar(ana["token"], self.q2, "Azul", "a1")
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.data["code"], "inadimplente")
+        # Regularizar devolve o voto à contagem.
+        self.client.force_authenticate(self.admin)
+        r = self.client.post(
+            url, {"votante_manual_id": ana["votante_manual_id"], "acao": "regularizar"}, format="json"
+        )
+        self.assertEqual(r.data["votos_atualizados"], 1)
+        self.assertEqual(self._contagem()["Sim"], 1)
+
+    def _eleitor(self, nome, apto, **extra):
+        e = Eleitor.objects.create(
+            condominio=self.cond, nome=nome, bloco="B", apartamento=apto,
+            email=f"{apto}@exemplo.com", **extra,
+        )
+        self.assembleia.votantes.add(e)
+        return e
+
+    def _token_eleitor(self, eleitor):
+        return signing.dumps(
+            {"eleitor_id": str(eleitor.id), "assembleia_id": str(self.assembleia.id), "method": "otp"},
+            salt="vote-auth",
+        )
+
+    def _voto_eleitor(self, eleitor, texto, **extra):
+        return self.client.post(
+            f"/api/votos/{self.assembleia.id}/votar/",
+            {
+                "eleitor_id": str(extra.pop("eleitor_id", eleitor.id)),
+                "questao_id": str(self.q1.id),
+                "opcao_id": str(self.q1.opcoes.get(texto=texto).id),
+                "auth_token": self._token_eleitor(eleitor),
+                **extra,
+            },
+            format="json",
+        )
+
+    def test_procuracao_so_conta_depois_de_aprovada(self):
+        procurador = self._eleitor("Procurador", "301")
+        representado = self._eleitor("Representado", "302")
+        self.assertEqual(self._voto_eleitor(procurador, "Sim").status_code, 201)
+        r = self._voto_eleitor(procurador, "Não", eleitor_id=representado.id, por_procuracao=True)
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(Voto.objects.get(eleitor=representado).status, Voto.Status.PENDENTE)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self._contagem(), {"Sim": 1, "Não": 0, "Abstenção": 0})
+        self.assertEqual(self._resultados()["Aprovação das contas"]["procuracoes_pendentes"], 1)
+        r = self.client.post(
+            f"/api/votos/{self.assembleia.id}/procuracoes/validar/",
+            {"eleitor_id": str(representado.id), "acao": "aprovar"},
+            format="json",
+        )
+        self.assertEqual(r.data["votos_atualizados"], 1)
+        self.assertEqual(self._contagem(), {"Sim": 1, "Não": 1, "Abstenção": 0})
+        # Eleitor inadimplente da planilha não vota.
+        devedor = self._eleitor("Devedor", "303", inadimplente=True)
+        self.client.force_authenticate(None)
+        r = self._voto_eleitor(devedor, "Sim")
+        self.assertEqual((r.status_code, r.data["code"]), (403, "inadimplente"))
+
+    def test_unidade_declarada_fica_pendente_e_nao_repete(self):
+        # update(): a instância do teste ainda está em rascunho; save() fecharia
+        # a assembleia aberta pela API.
+        Assembleia.objects.filter(id=self.assembleia.id).update(modo_multiplas_unidades="morador")
+        dono = self._eleitor("Dono", "401")
+        self.assertEqual(self._voto_eleitor(dono, "Sim").status_code, 201)
+        declarada = {
+            "unidade_declarada": True, "decl_bloco": "C", "decl_apartamento": "501",
+            "decl_nome": "Dono", "grupo_declaracao": "6f1c7d3e-1111-4222-8333-444455556666",
+        }
+        r = self._voto_eleitor(dono, "Não", **declarada)
+        self.assertEqual(r.status_code, 201, r.data)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self._contagem()["Não"], 0)
+        r = self.client.post(
+            f"/api/votos/{self.assembleia.id}/procuracoes/validar/",
+            {"grupo_declaracao": declarada["grupo_declaracao"], "acao": "aprovar"},
+            format="json",
+        )
+        self.assertEqual(r.data["votos_atualizados"], 1)
+        self.assertEqual(self._contagem(), {"Sim": 1, "Não": 1, "Abstenção": 0})
+        # A mesma unidade declarada de novo (outro grupo) é recusada.
+        self.client.force_authenticate(None)
+        r = self._voto_eleitor(
+            dono, "Sim", **{**declarada, "grupo_declaracao": "7f1c7d3e-1111-4222-8333-444455556666"}
+        )
+        self.assertEqual(r.status_code, 409)
+        # A própria unidade não pode ser declarada.
+        r = self._voto_eleitor(
+            dono, "Sim", **{**declarada, "decl_bloco": "B", "decl_apartamento": "401",
+                             "grupo_declaracao": "8f1c7d3e-1111-4222-8333-444455556666"}
+        )
+        self.assertEqual(r.status_code, 400)
+
+
+class IpDoMoradorTests(BaseAssembleiaSemCadastro):
+    """Atrás da Cloudflare o primeiro item do X-Forwarded-For é o IP da
+    Cloudflare; o do morador vem no CF-Connecting-IP."""
+
+    def test_voto_e_presenca_gravam_o_ip_do_morador(self):
+        self.client.force_authenticate(self.admin)
+        self.client.post(f"/api/assembleias/{self.assembleia.id}/abrir/")
+        self.client.force_authenticate(None)
+        cabecalhos = {"HTTP_CF_CONNECTING_IP": "200.100.50.25", "HTTP_X_FORWARDED_FOR": "172.69.39.130"}
+        r = self.client.post(
+            f"/api/votos/{self.assembleia.id}/acesso-manual/",
+            {"nome": "Ana", "bloco": "A", "apartamento": "101",
+             "selfie": "data:image/jpeg;base64,AAAA", "device_id": "x"},
+            format="json",
+            **cabecalhos,
+        )
+        self.assertEqual(r.status_code, 201)
+        r = self.client.post(
+            f"/api/votos/{self.assembleia.id}/votar/",
+            {"questao_id": str(self.q1.id), "opcao_id": str(self.q1.opcoes.first().id),
+             "auth_token": r.data["token"], "device_id": "x"},
+            format="json",
+            **cabecalhos,
+        )
+        self.assertEqual(r.status_code, 201)
+        from apps.assembleias.models import Presenca
+        from apps.votos.models import VotanteManual
+
+        self.assertEqual(Voto.objects.get().ip_address, "200.100.50.25")
+        self.assertEqual(VotanteManual.objects.get().ip_address, "200.100.50.25")
+        self.assertEqual(Presenca.objects.get().ip_address, "200.100.50.25")

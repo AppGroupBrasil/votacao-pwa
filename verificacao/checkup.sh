@@ -82,7 +82,7 @@ paginas_montam() {
 }
 rodar "páginas públicas montam no servidor (sem 500)" paginas_montam
 
-etapa "Postgres (mesmo banco da produção) e rostos reais"
+etapa "Postgres (mesmo banco da produção), rostos reais e telas"
 # SQLite dos testes esconde diferença de banco. Aqui sobe um Postgres 16 igual ao
 # de produção, aplica as migrações, roda os testes nele e usa o mesmo banco para
 # o teste com rostos reais: cadastro antecipado pela câmera e entrada na votação.
@@ -104,7 +104,7 @@ porta_ocupada() {
 }
 
 postgres_e_rostos() {
-  local ok=0 ids cond asm
+  local ok=0 ids cond asm lista lista_sem
   docker rm -f "$PG_CONTAINER" >/dev/null 2>&1
   docker run -d --rm --name "$PG_CONTAINER" -e POSTGRES_DB=votacao_db -e POSTGRES_USER=votacao \
     -e POSTGRES_PASSWORD=checkup -p 55432:5432 postgres:16-alpine >/dev/null || return 1
@@ -123,7 +123,11 @@ postgres_e_rostos() {
     ids=$(cd backend && DATABASE_URL="$PG_URL" "$PYTHON" ../verificacao/rosto_real_dados.py semear)
     cond=$(echo "$ids" | sed -E 's/.*"condominio": "([^"]+)".*/\1/')
     asm=$(echo "$ids" | sed -E 's/.*"assembleia": "([^"]+)".*/\1/')
+    lista=$(echo "$ids" | sed -E 's/.*"lista": "([^"]+)".*/\1/')
+    lista_sem=$(echo "$ids" | sed -E 's/.*"lista_sem_planilha": "([^"]+)".*/\1/')
+    (cd backend && DATABASE_URL="$PG_URL" "$PYTHON" ../verificacao/telas_dados.py semear >/dev/null)
     (cd backend && DATABASE_URL="$PG_URL" CORS_ALLOWED_ORIGINS=http://localhost:3998 \
+      DJANGO_CSRF_TRUSTED_ORIGINS=http://localhost:3998,http://127.0.0.1:3998 \
       "$PYTHON" manage.py runserver 127.0.0.1:8000 --noreload >/dev/null 2>&1) &
     (cd frontend && npx next start -p 3998 >/dev/null 2>&1) &
     for _ in $(seq 1 60); do
@@ -131,11 +135,16 @@ postgres_e_rostos() {
       sleep 1
     done
     npx --prefix frontend playwright install chromium >/dev/null 2>&1
+    # Rostos reais: cadastro antecipado, lista de presença e entrada na
+    # votação. Depois, as telas do painel e do morador.
     node verificacao/rosto_real.js rostos \
       && node verificacao/rosto_real.js cadastro "$cond" \
       && (cd backend && DATABASE_URL="$PG_URL" "$PYTHON" ../verificacao/rosto_real_dados.py conferir "$cond" | sed 's/^/   /') \
+      && node verificacao/rosto_real.js lista "$lista" "$lista_sem" \
+      && (cd backend && DATABASE_URL="$PG_URL" "$PYTHON" ../verificacao/rosto_real_dados.py conferir_lista "$lista" "$lista_sem" | sed 's/^/   /') \
       && (cd backend && DATABASE_URL="$PG_URL" "$PYTHON" ../verificacao/rosto_real_dados.py fechar "$asm") \
       && node verificacao/rosto_real.js porta "$asm" \
+      && node verificacao/telas.js todas \
       || ok=1
     parar_porta 3998
     parar_porta 8000
@@ -152,7 +161,7 @@ elif porta_ocupada 8000 || porta_ocupada 3998; then
   echo "   pulado: portas 8000 ou 3998 em uso (feche o servidor local e rode de novo)"
   pulados+=("Postgres e rostos reais (portas ocupadas)")
 else
-  rodar "Postgres + cadastro e entrada com rostos reais" postgres_e_rostos
+  rodar "Postgres + rostos reais + telas (painel e morador)" postgres_e_rostos
 fi
 
 etapa "Schema no banco de produção"

@@ -5,6 +5,7 @@
 //   node verificacao/rosto_real.js rostos
 //   node verificacao/rosto_real.js cadastro <condominio_id>
 //   node verificacao/rosto_real.js porta <assembleia_id>
+//   node verificacao/rosto_real.js lista <lista_id> <lista_sem_planilha_id>
 //
 // BASE_URL (padrão http://localhost:3998) é o frontend já compilado.
 const fs = require("fs");
@@ -15,7 +16,7 @@ const FRONT = path.resolve(__dirname, "..", "frontend");
 const { chromium } = require(path.join(FRONT, "node_modules", "@playwright", "test"));
 const TMP = path.join(os.tmpdir(), "votacao-rosto-real");
 const BASE = process.env.BASE_URL || "http://localhost:3998";
-const [fase, alvo] = process.argv.slice(2);
+const [fase, alvo, alvo2] = process.argv.slice(2);
 fs.mkdirSync(TMP, { recursive: true });
 
 // WebGL por software: sem isso o TensorFlow cai para CPU e cada leitura demora.
@@ -56,9 +57,22 @@ async function comCamera(browser, foto) {
   return { ctx, page };
 }
 
+async function assinar(page) {
+  const canvas = page.locator("canvas").first();
+  await canvas.scrollIntoViewIfNeeded();
+  const box = await canvas.boundingBox();
+  await page.mouse.move(box.x + 30, box.y + 40);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) {
+    await page.mouse.move(box.x + 30 + i * 15, box.y + 40 + (i % 2 ? 30 : 0));
+  }
+  await page.mouse.up();
+}
+
 async function esperar(page, locator, nome, timeout = 180000) {
   try {
-    await locator.waitFor({ timeout });
+    // .first(): texto que aparece em dois lugares da tela não é erro do teste.
+    await locator.first().waitFor({ timeout });
   } catch {
     const arquivo = path.join(TMP, `falha-${nome}.png`);
     await page.screenshot({ path: arquivo, fullPage: true }).catch(() => {});
@@ -253,6 +267,85 @@ async function fasePorta() {
   await browser.close();
 }
 
-const fases = { rostos: faseRostos, cadastro: faseCadastro, porta: fasePorta };
+// Lista de presença por biometria, com o rosto de verdade: no condomínio com
+// planilha o CPF diz quem é e o rosto confirma; no condomínio sem planilha é o
+// rosto que reconhece a pessoa.
+async function faseLista() {
+  const rostos = rostosSalvos();
+  const browser = await lancar();
+
+  const abrirLista = async (foto, lista) => {
+    const { ctx, page } = await comCamera(browser, foto);
+    await page.goto(`${BASE}/presenca-manual/${lista}`);
+    await page.fecharCookies();
+    return { ctx, page };
+  };
+  const fotografar = async (page) => {
+    await page.getByRole("button", { name: "Abrir câmera" }).click();
+    await page.getByRole("button", { name: /Capturar agora/ }).click({ timeout: 30000 });
+    await esperar(page, page.getByText("Rosto lido", { exact: true }), "leitura do rosto na lista");
+  };
+  const concluir = async (page, observacao) => {
+    await page.getByPlaceholder(/sou procurador/).fill(observacao);
+    await assinar(page);
+    await page.locator('input[type="checkbox"]').first().check();
+    await page.getByRole("button", { name: "Confirmar presença" }).click();
+  };
+
+  // 1. Com planilha: CPF + rosto da Ana (outra captura, mais escura e de lado).
+  let { ctx, page } = await abrirLista(rostos.Aoutra, alvo);
+  await esperar(page, page.getByPlaceholder("000.000.000-00"), "portão de CPF da lista", 30000);
+  await page.getByPlaceholder("000.000.000-00").fill("111.444.777-35");
+  await page.getByRole("button", { name: "Continuar" }).click();
+  await esperar(page, page.getByRole("button", { name: "Sim, sou eu" }), "CPF achou a unidade", 30000);
+  await page.getByRole("button", { name: "Sim, sou eu" }).click();
+  await fotografar(page);
+  await concluir(page, "Cheguei cedo.");
+  await esperar(page, page.getByText("Presença registrada!"), "presença da Ana pelo rosto");
+  console.log("   Ana entrou na lista pelo CPF com o rosto confirmado");
+  await ctx.close();
+
+  // 2. Outra pessoa com o CPF da Ana: a lista não aceita uma segunda presença.
+  ({ ctx, page } = await abrirLista(rostos.B, alvo));
+  await page.getByPlaceholder("000.000.000-00").fill("111.444.777-35");
+  await page.getByRole("button", { name: "Continuar" }).click();
+  await page.getByRole("button", { name: "Sim, sou eu" }).click();
+  await fotografar(page);
+  await concluir(page, "Sou eu mesma.");
+  await esperar(page, page.getByText("Você já está presente"), "segunda pessoa com o CPF da Ana");
+  console.log("   outra pessoa com o CPF da Ana: não entrou na lista");
+  await ctx.close();
+
+  // 3. Sem planilha: o rosto é quem reconhece; o CPF é só registro.
+  ({ ctx, page } = await abrirLista(rostos.A, alvo2));
+  await esperar(page, page.getByPlaceholder("000.000.000-00"), "formulário da lista sem planilha", 30000);
+  await fotografar(page);
+  const campos = page.locator(".card input:not([type=checkbox])");
+  await campos.nth(0).fill("Ana Real");
+  await page.getByPlaceholder("000.000.000-00").fill("111.444.777-35");
+  await campos.nth(3).fill("101");
+  await concluir(page, "Primeira vez nesta lista.");
+  await esperar(page, page.getByText("Presença registrada!"), "presença sem planilha");
+  console.log("   sem planilha: rosto novo entrou e ficou guardado");
+  await ctx.close();
+
+  // 4. O mesmo rosto de novo, com outro nome: reconhecido, sem duplicar.
+  ({ ctx, page } = await abrirLista(rostos.Aoutra, alvo2));
+  await esperar(page, page.getByPlaceholder("000.000.000-00"), "formulário da lista sem planilha", 30000);
+  await fotografar(page);
+  const campos2 = page.locator(".card input:not([type=checkbox])");
+  await campos2.nth(0).fill("Outra Pessoa");
+  await page.getByPlaceholder("000.000.000-00").fill("529.982.247-25");
+  await campos2.nth(3).fill("102");
+  await concluir(page, "Tentando de novo.");
+  await esperar(page, page.getByText("Você já está presente"), "mesmo rosto reconhecido");
+  await esperar(page, page.getByText("Ana Real"), "aviso de que a presença é de outra pessoa", 10000);
+  console.log("   mesmo rosto com outro nome: reconhecido como a Ana, sem segunda presença");
+  await ctx.close();
+
+  await browser.close();
+}
+
+const fases = { rostos: faseRostos, cadastro: faseCadastro, porta: fasePorta, lista: faseLista };
 if (!fases[fase]) falhar(`fase desconhecida: ${fase}`);
 fases[fase]().catch((e) => falhar(e.message.split("\n")[0]));
