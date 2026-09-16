@@ -108,6 +108,27 @@ const jsonLdApp = {
   publisher: { "@type": "Organization", name: "App Group Brasil", url: "https://appgroupbrasil.com.br/" },
   featureList:
     "Biometria facial, WebAuthn, Votação segura, Sem limite de votantes, Resultados em tempo real, Votação simples por link, Gravação da assembleia, Resumo e ata com IA, Controle de votação, Lista de presença manual, Bloqueio de inadimplentes",
+  // Os mesmos preços mostrados na seção "Preços e Planos" logo abaixo.
+  offers: [
+    {
+      "@type": "Offer",
+      name: "Plano Completo",
+      description: "Votação e assembleia virtual integrada, por assembleia.",
+      price: "199",
+      priceCurrency: "BRL",
+      url: "https://appvotacao.com.br/#precos",
+      availability: "https://schema.org/InStock",
+    },
+    {
+      "@type": "Offer",
+      name: "Plano Votação",
+      description: "Sistema completo de votação digital, por mês, sem fidelidade.",
+      price: "350",
+      priceCurrency: "BRL",
+      url: "https://appvotacao.com.br/#precos",
+      availability: "https://schema.org/InStock",
+    },
+  ],
 };
 
 const jsonLdSite = {

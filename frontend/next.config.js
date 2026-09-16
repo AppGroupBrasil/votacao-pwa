@@ -21,9 +21,38 @@ const nextConfig = {
   output: "standalone",
   poweredByHeader: false,
   async headers() {
+    // Telas de uso (painel, link de votação, lista de presença, cadastro) não
+    // são resultado de busca: o cabeçalho tira do índice do Google mesmo o que
+    // ele já tenha achado por um link compartilhado. A vitrine
+    // (/, /passo-a-passo, documentos) fica de fora desta lista.
+    const semIndice = [
+      "/admin/:path*",
+      "/login",
+      "/acesso",
+      "/painel",
+      "/sso",
+      "/assembleia",
+      "/votacao/:path*",
+      "/presenca/:path*",
+      "/presenca-manual/:path*",
+      "/vote/:path*",
+      "/v/:path*",
+      "/enquete/:path*",
+      "/cadastro/:path*",
+      "/autocadastro/:path*",
+      "/cadastro-facial/:path*",
+      "/diagnostico-facial",
+      "/recuperar-senha",
+      "/redefinir-senha/:path*",
+    ].map((source) => ({
+      source,
+      headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+    }));
+
     // Os modelos do reconhecimento facial (~6 MB) nunca mudam: o aparelho baixa
     // uma vez e reusa nas próximas assembleias.
     return [
+      ...semIndice,
       {
         source: "/models/:path*",
         headers: [

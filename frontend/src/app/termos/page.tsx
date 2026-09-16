@@ -1,7 +1,10 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Termos de Uso — Votação Online",
+  title: "Termos de Uso",
+  description:
+    "Regras de uso do App Votação por administradoras, síndicos e moradores: contas, responsabilidades, validade dos votos e cancelamento.",
+  alternates: { canonical: "/termos" },
 };
 
 export default function TermosPage() {

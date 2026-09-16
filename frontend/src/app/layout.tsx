@@ -9,7 +9,9 @@ const ogImage = { url: "/feature-graphic-1024x500.png", width: 1024, height: 500
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://appvotacao.com.br"),
-  title: seoTitle,
+  // As páginas internas declaram só o próprio nome; o template completa com a
+  // marca, para o resultado do Google ficar igual em todas.
+  title: { default: seoTitle, template: "%s — App Votação" },
   description: seoDescription,
   keywords: [
     "votação online condomínio",

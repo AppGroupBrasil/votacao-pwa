@@ -1,9 +1,10 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Excluir Conta — Votação Online",
+  title: "Excluir conta",
   description:
-    "Solicite a exclusão da sua conta e dos seus dados pessoais no Votação Online.",
+    "Peça a exclusão da sua conta e dos seus dados pessoais no App Votação e veja o prazo de atendimento.",
+  alternates: { canonical: "/excluir-conta" },
 };
 
 export default function ExcluirContaPage() {

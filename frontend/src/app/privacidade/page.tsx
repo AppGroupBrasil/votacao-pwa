@@ -1,7 +1,10 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Política de Privacidade — Votação Online",
+  title: "Política de Privacidade",
+  description:
+    "Como o App Votação coleta, usa e protege os dados das assembleias de condomínio (foto, assinatura, biometria facial e votos), conforme a LGPD.",
+  alternates: { canonical: "/privacidade" },
 };
 
 export default function PrivacidadePage() {
