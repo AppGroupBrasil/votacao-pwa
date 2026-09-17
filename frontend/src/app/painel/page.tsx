@@ -9,6 +9,8 @@ import {
   BarChart3,
   ChevronRight,
   LogOut,
+  Radio,
+  History,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
@@ -97,6 +99,37 @@ export default function PainelPage() {
               <h2 className="text-xl font-bold">Votações</h2>
               <p className="text-sm text-white/85">
                 Acompanhe a votação, os resultados e os relatórios.
+              </p>
+            </div>
+            <ChevronRight className="h-6 w-6 shrink-0 opacity-70 transition group-hover:translate-x-0.5" />
+          </Link>
+
+          {/* Resultado ao vivo: o placar que atualiza sozinho e a chave que
+              libera o mesmo placar para os moradores. */}
+          <Link
+            href="/admin/assembleias?tab=resultados"
+            className="group flex items-center gap-4 rounded-2xl bg-gradient-to-br from-sky-600 to-indigo-700 p-6 text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+          >
+            <Radio className="h-10 w-10 shrink-0 opacity-90" />
+            <div className="flex-1">
+              <h2 className="text-xl font-bold">Resultado ao vivo</h2>
+              <p className="text-sm text-white/85">
+                Placar de cada questão atualizando sozinho. Libere o link para os
+                moradores acompanharem sem ver quem votou.
+              </p>
+            </div>
+            <ChevronRight className="h-6 w-6 shrink-0 opacity-70 transition group-hover:translate-x-0.5" />
+          </Link>
+
+          <Link
+            href="/admin/resumo"
+            className="group flex items-center gap-4 rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 p-6 text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+          >
+            <History className="h-10 w-10 shrink-0 opacity-90" />
+            <div className="flex-1">
+              <h2 className="text-xl font-bold">Resumo das votações</h2>
+              <p className="text-sm text-white/85">
+                Cada assembleia com presença, perguntas e resultado.
               </p>
             </div>
             <ChevronRight className="h-6 w-6 shrink-0 opacity-70 transition group-hover:translate-x-0.5" />

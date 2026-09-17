@@ -24,6 +24,9 @@ import {
   RotateCcw,
   Play,
   AlertTriangle,
+  Radio,
+  QrCode,
+  Copy,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
@@ -128,6 +131,11 @@ export default function AssembleiasHubPage() {
   const [loadingResultados, setLoadingResultados] = useState(false);
   // Qual dos três PDFs está sendo gerado agora (null = nenhum).
   const [exporting, setExporting] = useState<string | null>(null);
+  // Chave "resultado ao vivo": libera o placar (sem nomes) para morador e telão.
+  const [resultadoPublico, setResultadoPublico] = useState(false);
+  const [salvandoChave, setSalvandoChave] = useState(false);
+  const [qrResultado, setQrResultado] = useState("");
+  const [qrAberto, setQrAberto] = useState(false);
 
   function loadAssembleias() {
     api
@@ -175,6 +183,11 @@ export default function AssembleiasHubPage() {
       .then(setResultados)
       .finally(() => setLoadingResultados(false));
     carregarPendentes(selected);
+    setQrAberto(false);
+    api
+      .getAssembleia(selected)
+      .then((a) => setResultadoPublico(!!a.resultado_publico))
+      .catch(() => setResultadoPublico(false));
   }, [selected, carregarPendentes]);
 
   // Auto-atualiza a cada 5s enquanto a assembleia estiver aberta
@@ -187,6 +200,50 @@ export default function AssembleiasHubPage() {
     }, 5000);
     return () => clearInterval(interval);
   }, [selected, assembleias]);
+
+  // Link que o morador abre para acompanhar: o código curto quando existe
+  // (appvotacao.com.br/r/4RY), senão o endereço longo.
+  function linkResultado(a: AssembleiaListItem) {
+    if (typeof window === "undefined") return "";
+    if (a.codigo_curto) return `${window.location.origin}/r/${a.codigo_curto}`;
+    return `${window.location.origin}/resultado/${a.id}`;
+  }
+
+  async function alternarResultadoPublico(a: AssembleiaListItem, ligar: boolean) {
+    setSalvandoChave(true);
+    const anterior = resultadoPublico;
+    setResultadoPublico(ligar);
+    try {
+      await api.updateAssembleia(a.id, { resultado_publico: ligar });
+    } catch {
+      setResultadoPublico(anterior);
+      alert("Não foi possível mudar a liberação do resultado. Tente de novo.");
+    } finally {
+      setSalvandoChave(false);
+    }
+  }
+
+  async function copiarLinkResultado(a: AssembleiaListItem) {
+    await navigator.clipboard.writeText(linkResultado(a));
+    setCopiado(`resultado-${a.id}`);
+    setTimeout(() => setCopiado(""), 2000);
+  }
+
+  async function mostrarQrResultado(a: AssembleiaListItem) {
+    if (qrAberto) {
+      setQrAberto(false);
+      return;
+    }
+    try {
+      // Carregado só quando o síndico pede o QR: a biblioteca não pesa no
+      // primeiro carregamento do painel.
+      const QRCode = (await import("qrcode")).default;
+      setQrResultado(await QRCode.toDataURL(linkResultado(a), { width: 320, margin: 1 }));
+      setQrAberto(true);
+    } catch {
+      alert("Não foi possível gerar o QR Code.");
+    }
+  }
 
   function verResultado(id: string) {
     setSelected(id);
@@ -853,6 +910,96 @@ export default function AssembleiasHubPage() {
                   >
                     <Download className="w-4 h-4" /> Imprimir / PDF
                   </button>
+                </div>
+              )}
+
+              {/* Chave do resultado ao vivo: o que o morador e o telão veem.
+                  Fica junto da apuração porque é aqui que o síndico decide
+                  liberar, depois de conferir procurações e votos pendentes. */}
+              {selecionada && (
+                <div className="card print:hidden">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h3 className="flex items-center gap-2 font-semibold">
+                        <Radio className="w-5 h-5 text-sky-600" /> Resultado ao vivo
+                        para os moradores
+                      </h3>
+                      <p className="mt-1 max-w-xl text-sm text-gray-500">
+                        Ligada, quem tem o link acompanha o placar de cada questão
+                        enquanto a votação corre — sem ver quem votou em quê.
+                        Desligada, o resultado fica só aqui no painel.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={resultadoPublico}
+                      disabled={salvandoChave}
+                      onClick={() =>
+                        alternarResultadoPublico(selecionada, !resultadoPublico)
+                      }
+                      className={clsx(
+                        "relative h-8 w-14 shrink-0 rounded-full transition-colors disabled:opacity-50",
+                        resultadoPublico ? "bg-sky-600" : "bg-gray-300"
+                      )}
+                    >
+                      <span
+                        className={clsx(
+                          "absolute top-1 h-6 w-6 rounded-full bg-white transition-all",
+                          resultadoPublico ? "left-7" : "left-1"
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  {resultadoPublico && (
+                    <div className="mt-4 rounded-xl border border-sky-100 bg-sky-50 p-4">
+                      <p className="text-sm font-medium text-sky-900">
+                        Link do resultado — mande no grupo ou projete no telão:
+                      </p>
+                      <code className="mt-1 block break-all text-sm text-sky-800">
+                        {linkResultado(selecionada)}
+                      </code>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => copiarLinkResultado(selecionada)}
+                          className="btn-secondary inline-flex items-center gap-2"
+                        >
+                          {copiado === `resultado-${selecionada.id}` ? (
+                            <>
+                              <Check className="w-4 h-4" /> Copiado
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-4 h-4" /> Copiar link
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => mostrarQrResultado(selecionada)}
+                          className="btn-secondary inline-flex items-center gap-2"
+                        >
+                          <QrCode className="w-4 h-4" />
+                          {qrAberto ? "Esconder QR Code" : "Mostrar QR Code"}
+                        </button>
+                        <a
+                          href={`/resultado/${selecionada.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-secondary inline-flex items-center gap-2"
+                        >
+                          <ExternalLink className="w-4 h-4" /> Abrir a tela do morador
+                        </a>
+                      </div>
+                      {qrAberto && qrResultado && (
+                        <img
+                          src={qrResultado}
+                          alt="QR Code do resultado ao vivo"
+                          className="mt-4 h-52 w-52 rounded-lg bg-white p-2"
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

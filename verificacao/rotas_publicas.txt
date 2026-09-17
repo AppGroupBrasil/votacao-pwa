@@ -84,6 +84,7 @@ publica api/votos/<uuid:assembleia_id>/acesso-manual/
 publica api/votos/<uuid:assembleia_id>/consultar-cpf/
 publica api/votos/<uuid:assembleia_id>/ja-votadas/
 publica api/votos/<uuid:assembleia_id>/presenca/
+publica api/votos/<uuid:assembleia_id>/resultado-publico/
 publica api/votos/<uuid:assembleia_id>/unidades/
 publica api/votos/<uuid:assembleia_id>/votacao/
 publica api/votos/<uuid:assembleia_id>/votar/

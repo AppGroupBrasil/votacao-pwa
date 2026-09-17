@@ -9,6 +9,8 @@ número de página) e a paleta do site (primary = indigo #4f46e5), para o
 documento impresso ter a mesma cara do painel.
 """
 
+import base64
+import binascii
 import io
 
 from django.utils import timezone
@@ -18,7 +20,9 @@ from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
+    Image,
     KeepTogether,
     Paragraph,
     SimpleDocTemplate,
@@ -102,6 +106,10 @@ def _estilos():
     st.add(ParagraphStyle(
         "RelSecao", parent=st["Heading2"], fontSize=12.5, spaceBefore=14,
         spaceAfter=6, textColor=COR_PRIMARIA_ESCURA,
+    ))
+    st.add(ParagraphStyle(
+        "RelSubsecao", parent=st["Heading3"], fontSize=10.5, spaceBefore=2,
+        spaceAfter=2, textColor=COR_TEXTO,
     ))
     st.add(ParagraphStyle(
         "RelCorpo", parent=st["Normal"], fontSize=9.5, leading=14,
@@ -271,13 +279,156 @@ def _assinatura(st, rotulos):
 # ---------------------------------------------------------------- presença
 
 
+def _miniatura(bruto, lado_maior=420):
+    """Reduz a foto antes de entrar no PDF. Uma selfie de celular tem alguns MB;
+    numa assembleia de 100 pessoas o arquivo ficaria grande demais para mandar
+    por e-mail. Sem a biblioteca de imagem, vai como está."""
+    try:
+        from PIL import Image as PilImage
+
+        img = PilImage.open(io.BytesIO(bruto))
+        img.thumbnail((lado_maior, lado_maior))
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        saida = io.BytesIO()
+        img.save(saida, format="JPEG", quality=72)
+        return saida.getvalue()
+    except Exception:
+        return bruto
+
+
+def _imagem(data_url, largura_max, altura_max):
+    """Foto ou assinatura guardada em data URL. Imagem que não abre vira None e
+    o relatório sai assim mesmo, com o aviso no lugar."""
+    if not data_url or not data_url.startswith("data:image/") or "," not in data_url:
+        return None
+    try:
+        bruto = _miniatura(base64.b64decode(data_url.split(",", 1)[1]))
+        largura, altura = ImageReader(io.BytesIO(bruto)).getSize()
+    except (binascii.Error, OSError, ValueError):
+        return None
+    if not largura or not altura:
+        return None
+    escala = min(largura_max / largura, altura_max / altura)
+    return Image(io.BytesIO(bruto), width=largura * escala, height=altura * escala)
+
+
+def _sim_nao(valor):
+    return "Sim" if valor else "Não"
+
+
+def _fichas_presenca(st, presencas, largura):
+    """Uma ficha por participante: a foto da identificação e tudo o que foi
+    registrado — aparelho, IP, localização e consentimentos. É o que sustenta a
+    lista se alguém contestar uma presença depois."""
+    el = [
+        Paragraph("Ficha de cada participante", st["RelSecao"]),
+        Paragraph(
+            "Foto da identificação e os dados registrados no momento da entrada: "
+            "aparelho, endereço de IP, localização e consentimentos.",
+            st["RelNota"],
+        ),
+        Spacer(1, 6),
+    ]
+    largura_foto = 3.4 * cm
+    for i, p in enumerate(presencas, start=1):
+        # Uma consulta por pessoa, trazendo só a foto e a assinatura dela: o
+        # que fica na memória é a miniatura, não o arquivo original.
+        foto_bruta, assinatura_bruta = (
+            type(p).objects.filter(pk=p.pk).values_list("selfie", "assinatura").first()
+            or ("", "")
+        )
+        foto = _imagem(foto_bruta, largura_foto, 4.2 * cm)
+        assinatura = _imagem(assinatura_bruta, largura_foto, 1.8 * cm)
+        coluna_esquerda = [foto or Paragraph("Sem foto", st["RelNota"])]
+        if assinatura is not None:
+            coluna_esquerda.append(Spacer(1, 4))
+            coluna_esquerda.append(Paragraph("Assinatura", st["RelNota"]))
+            coluna_esquerda.append(assinatura)
+
+        dados = [
+            ("Unidade", _unidade(p.bloco, p.apartamento)),
+            ("CPF", p.cpf_mascarado or "não informado"),
+            ("Perfil", "Procurador" if p.perfil == "procurador" else "Proprietário"),
+            ("Identificação", _metodo(p.metodo_auth)),
+            ("Modo", "Online" if p.modo_participacao == "online" else "Presencial"),
+            ("Entrada", _fmt_dt(p.horario_entrada)),
+            ("Endereço de IP", p.ip_address or "—"),
+            ("Aparelho", p.marca_aparelho or "—"),
+            ("Sistema e navegador", p.device_info or "—"),
+            ("Navegador (completo)", (p.user_agent or "—")[:300]),
+            (
+                "Localização",
+                f"{p.geo_lat}, {p.geo_lng}"
+                if p.geo_lat is not None and p.geo_lng is not None
+                else "não informada",
+            ),
+            (
+                "Consentimento LGPD",
+                _sim_nao(p.consentimento_lgpd)
+                + (f" · {_fmt_dt(p.consentimento_em)}" if p.consentimento_em else ""),
+            ),
+            ("Declaração de veracidade", _sim_nao(p.declaracao_veracidade)),
+            ("Situação", "Inadimplente" if p.inadimplente else "Regular"),
+            ("Código do rosto", (p.assinatura_facial or "—")[:24]),
+            ("Registro", str(p.id)),
+        ]
+        linhas_dados = [
+            [
+                Paragraph(f"<b>{_esc(rotulo)}</b>", st["RelCelula"]),
+                Paragraph(_esc(str(valor)), st["RelCelula"]),
+            ]
+            for rotulo, valor in dados
+        ]
+        largura_dados = largura - largura_foto - 0.6 * cm
+        tabela_dados = Table(
+            linhas_dados,
+            colWidths=[4.6 * cm, largura_dados - 4.6 * cm],
+        )
+        # Tabela de dados sem faixa de cabeçalho: aqui cada linha é um campo.
+        tabela_dados.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.4, COR_LINHA),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, COR_ZEBRA]),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ]))
+
+        ficha = Table(
+            [[coluna_esquerda, tabela_dados]],
+            colWidths=[largura_foto + 0.6 * cm, largura_dados],
+        )
+        ficha.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (0, 0), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+
+        el.append(KeepTogether([
+            Paragraph(f"{i}. {_esc(p.nome)}", st["RelSubsecao"]),
+            Spacer(1, 4),
+            ficha,
+            Spacer(1, 12),
+        ]))
+    return el
+
+
 def pdf_lista_presenca(assembleia):
     """Quem esteve presente: unidade, identificação e horário de entrada."""
     st = _estilos()
     buffer, doc = _documento(assembleia, "Lista de presença")
     largura = doc.width
 
-    presencas = list(assembleia.presencas.all().order_by("horario_entrada"))
+    # Sem as fotos aqui: numa assembleia grande, carregar 200 selfies de uma vez
+    # derruba o servidor. Cada ficha busca a sua, uma de cada vez.
+    presencas = list(
+        assembleia.presencas.all()
+        .defer("selfie", "assinatura")
+        .order_by("horario_entrada")
+    )
     base = base_unidades(assembleia)
     presentes = len(presencas)
     inadimplentes = sum(1 for p in presencas if p.inadimplente)
@@ -355,6 +506,8 @@ def pdf_lista_presenca(assembleia):
                 "As linhas em vermelho são unidades marcadas como inadimplentes.",
                 st["RelNota"],
             ))
+        el.append(Spacer(1, 6))
+        el += _fichas_presenca(st, presencas, largura)
 
     el += _assinatura(st, ["Síndico(a)", "Secretário(a) da assembleia"])
     desenhar = _moldura(assembleia.condominio.nome, "Lista de presença")
@@ -419,6 +572,15 @@ def pdf_votacao(assembleia):
         for questao in assembleia.questoes.order_by("ordem", "id"):
             do_item = por_questao.get(questao.id, [])
             if not do_item:
+                # Pergunta sem nenhum voto continua no relatório, dita por
+                # escrito: sumir daqui faria parecer que ela não existiu.
+                el.append(KeepTogether([
+                    Paragraph(_esc(questao.titulo), st["RelSecao"]),
+                    Paragraph(
+                        "Nenhum voto registrado nesta pergunta.", st["RelNota"]
+                    ),
+                    Spacer(1, 10),
+                ]))
                 continue
             validos_item = sum(1 for v in do_item if v.status == Voto.Status.VALIDADO)
             # Título e contagem vão junto com a tabela: sozinhos no pé da folha
@@ -552,6 +714,9 @@ def pdf_resultado(assembleia):
     if not questoes:
         el.append(Paragraph("Nenhuma questão cadastrada.", st["RelCorpo"]))
 
+    # Guarda a apuração de cada item para repetir no resumo final do fim.
+    resumo_itens = []
+
     for indice, questao in enumerate(questoes, start=1):
         votos_q = list(
             Voto.objects.filter(questao=questao, status=Voto.Status.VALIDADO)
@@ -585,7 +750,9 @@ def pdf_resultado(assembleia):
         estilo = _estilo_tabela()
         for i, opcao in enumerate(opcoes, start=1):
             votos_op = contagem.get(str(opcao.id), 0)
-            pct = round(votos_op / total_q * 100, 1) if total_q else 0
+            # Sempre com uma casa, inclusive no zero: "0,0%" e "0.0%" lado a
+            # lado numa mesma folha confundem quem confere a ata.
+            pct = round(votos_op / total_q * 100, 1) if total_q else 0.0
             vencedora = total_q > 0 and votos_op == maior and not empate
             rotulo = _esc(opcao.texto)
             if vencedora:
@@ -595,7 +762,7 @@ def pdf_resultado(assembleia):
             linhas.append([
                 Paragraph(rotulo, st["RelCelula"]),
                 Paragraph(str(votos_op), st["RelCelula"]),
-                Paragraph(f"{pct}%", st["RelCelula"]),
+                Paragraph(f"{pct:.1f}%", st["RelCelula"]),
                 _barra(pct, vencedora),
             ])
         t = Table(
@@ -614,6 +781,63 @@ def pdf_resultado(assembleia):
             ))
         bloco.append(Spacer(1, 10))
         el.append(KeepTogether(bloco))
+
+        if total_q == 0:
+            veredito = "Sem votos"
+        elif empate:
+            veredito = "Empate entre " + ", ".join(
+                o.texto for o in opcoes if contagem.get(str(o.id), 0) == maior
+            )
+        else:
+            vencedora_txt = next(
+                (o.texto for o in opcoes if contagem.get(str(o.id), 0) == maior), "—"
+            )
+            veredito = f"Vencedora: {vencedora_txt}"
+        detalhe = " · ".join(
+            "{} {} ({:.1f}%)".format(
+                o.texto,
+                contagem.get(str(o.id), 0),
+                (contagem.get(str(o.id), 0) / total_q * 100) if total_q else 0.0,
+            )
+            for o in opcoes
+        ) or "—"
+        resumo_itens.append((indice, questao.titulo, veredito, detalhe, total_q))
+
+    # Resumo final: item a item, com a votação de cada opção — inclusive as que
+    # ninguém escolheu. Quem lê a ata vê numa página só o que foi votado e como.
+    if resumo_itens:
+        resumo = [
+            Paragraph("Resumo final", st["RelSecao"]),
+            Paragraph(
+                "Todos os itens votados, com a quantidade de votos e o "
+                "percentual de cada opção — as escolhidas e as não escolhidas.",
+                st["RelNota"],
+            ),
+            Spacer(1, 5),
+        ]
+        linhas = [_cabecalho(st, ["Item", "Pergunta", "Resultado", "Votos por opção"])]
+        estilo = _estilo_tabela()
+        for i, (indice, titulo_q, veredito, detalhe, total_q) in enumerate(
+            resumo_itens, start=1
+        ):
+            linhas.append([
+                Paragraph(str(indice), st["RelCelula"]),
+                Paragraph(_esc(titulo_q), st["RelCelula"]),
+                Paragraph(_esc(veredito), st["RelCelula"]),
+                Paragraph(_esc(detalhe), st["RelCelula"]),
+            ])
+            if total_q and "Vencedora" in veredito:
+                estilo.append(("BACKGROUND", (2, i), (2, i), COR_VERDE_CLARA))
+        t = Table(
+            linhas,
+            colWidths=[1.2 * cm, 6.0 * cm, 4.0 * cm, 5.6 * cm],
+            repeatRows=1,
+        )
+        t.setStyle(TableStyle(estilo))
+        resumo.append(t)
+        el.append(Spacer(1, 6))
+        el.append(KeepTogether(resumo))
+        el.append(Spacer(1, 10))
 
     el += _assinatura(st, ["Síndico(a)", "Secretário(a) da assembleia"])
     desenhar = _moldura(assembleia.condominio.nome, "Relatório do resultado")

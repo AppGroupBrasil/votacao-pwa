@@ -126,6 +126,9 @@ export interface Assembleia {
   data_fim: string;
   status: "rascunho" | "aberta" | "encerrada";
   votacao_liberada?: boolean;
+  // Chave do síndico: com ela ligada, quem tem o link acompanha o placar ao
+  // vivo em /resultado/<id> (sem nomes). Desligada, só o painel vê.
+  resultado_publico?: boolean;
   link_reuniao?: string;
   modo_multiplas_unidades?: "sindico" | "morador";
   quorum_minimo: number;
@@ -158,6 +161,7 @@ export interface AssembleiaListItem {
   condominio: string;
   condominio_nome: string;
   titulo: string;
+  descricao?: string;
   data_inicio: string;
   data_fim: string;
   status: "rascunho" | "aberta" | "encerrada";
@@ -261,6 +265,15 @@ export interface Resultado {
   percentual_participacao: number;
   opcoes: OpcaoResultado[];
   procuracoes_pendentes: number;
+}
+
+// Resultado ao vivo do morador: mesmo placar do painel, sem quem votou.
+export interface ResultadoPublico {
+  liberado: boolean;
+  titulo: string;
+  status: "rascunho" | "aberta" | "encerrada";
+  condominio_nome?: string;
+  questoes?: Resultado[];
 }
 
 export interface UnidadeVotante {

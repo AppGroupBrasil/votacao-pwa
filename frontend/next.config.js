@@ -33,6 +33,8 @@ const nextConfig = {
       "/sso",
       "/assembleia",
       "/votacao/:path*",
+      "/resultado/:path*",
+      "/r/:path*",
       "/presenca/:path*",
       "/presenca-manual/:path*",
       "/vote/:path*",

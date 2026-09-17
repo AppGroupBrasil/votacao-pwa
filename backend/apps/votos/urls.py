@@ -10,6 +10,7 @@ from .views import (
     registrar_presenca,
     registrar_voto,
     relatorio_detalhado,
+    resultado_publico,
     resultados,
     unidades_assembleia,
     validar_procuracao,
@@ -34,6 +35,11 @@ urlpatterns = [
     path("<uuid:assembleia_id>/votos-manuais/", votos_manuais, name="votos-manuais"),
     path("<uuid:assembleia_id>/votos-manuais/validar/", validar_voto_manual, name="validar-voto-manual"),
     path("<uuid:assembleia_id>/resultados/", resultados, name="resultados"),
+    path(
+        "<uuid:assembleia_id>/resultado-publico/",
+        resultado_publico,
+        name="resultado-publico",
+    ),
     path("<uuid:assembleia_id>/relatorio/", relatorio_detalhado, name="relatorio-detalhado"),
     path("verificar/", verificar_voto, name="verificar-voto"),
 ]

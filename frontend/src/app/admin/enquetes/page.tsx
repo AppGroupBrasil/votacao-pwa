@@ -210,30 +210,39 @@ export default function VotacaoRapidaPage() {
 
   return (
     <div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">Votação rápida</h1>
-            <ComoFunciona tutorial="enquete" />
-          </div>
-          <p className="text-sm text-gray-500">
-            Gere um link e compartilhe. Voto secreto (anônimo) ou aberto
-            (identifica quem votou).
-          </p>
+      {/* Título, explicação e o botão, tudo centralizado: criar é o que se faz
+          nesta tela. As votações criadas vêm depois, bem abaixo do botão. */}
+      <div className="text-center">
+        <div className="flex items-center justify-center gap-3">
+          <h1 className="text-2xl font-bold">Votação rápida</h1>
+          <ComoFunciona tutorial="enquete" />
         </div>
+        <p className="mx-auto mt-1 max-w-xl text-sm text-gray-500">
+          Gere um link e compartilhe. Voto secreto (anônimo) ou aberto
+          (identifica quem votou).
+        </p>
         <button
           onClick={abrirModal}
-          className="btn-primary flex items-center gap-2"
+          className="btn-primary mx-auto mt-6 inline-flex items-center gap-2 px-8 py-3 text-lg shadow-md"
         >
-          <Plus className="w-4 h-4" /> Nova votação
+          <Plus className="w-5 h-5" /> Nova votação
         </button>
       </div>
 
-      {loading && <p className="text-gray-500">Carregando...</p>}
+      {loading && <p className="mt-16 text-center text-gray-500">Carregando...</p>}
 
       {!loading && enquetes.length === 0 && (
-        <div className="card text-center py-10">
-          <p className="text-gray-500">Nenhuma votação criada ainda.</p>
+        <p className="mt-16 text-center text-gray-400">
+          Nenhuma votação criada ainda.
+        </p>
+      )}
+
+      {!loading && enquetes.length > 0 && (
+        <div className="mt-16 mb-4 flex items-center gap-3">
+          <span className="text-sm font-semibold text-gray-500">
+            Votações criadas
+          </span>
+          <span className="h-px flex-1 bg-gray-200" />
         </div>
       )}
 

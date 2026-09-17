@@ -3,6 +3,8 @@ import logging
 import re
 import uuid
 
+from django.conf import settings
+from django.core.cache import cache
 from django.db import transaction
 from django_ratelimit.decorators import ratelimit
 
@@ -1844,6 +1846,7 @@ def votacao_publica(request, assembleia_id):
             "descricao": assembleia.descricao,
             "status": assembleia.status,
             "votacao_liberada": assembleia.votacao_liberada,
+            "resultado_publico": assembleia.resultado_publico,
             "link_reuniao": assembleia.link_reuniao,
             "modo_multiplas_unidades": assembleia.modo_multiplas_unidades,
             "exigir_confirmacao_email": assembleia.exigir_confirmacao_email,
@@ -1854,10 +1857,14 @@ def votacao_publica(request, assembleia_id):
     )
 
 
-@api_view(["GET"])
-@permission_classes([IsAdminWithRole])
-def resultados(request, assembleia_id):
-    assembleia = get_accessible_assembleia(request, assembleia_id)
+def montar_resultados(assembleia, incluir_votantes: bool):
+    """Apuração de cada questão.
+
+    `incluir_votantes=True` (painel) devolve também quem votou em cada opção.
+    Com `False` sai só a contagem: é o que o morador recebe no resultado ao
+    vivo, onde o voto continua secreto. A conta é a mesma nos dois casos para
+    o placar do morador nunca divergir do placar do painel.
+    """
     questoes = assembleia.questoes.prefetch_related(
         "opcoes__votos"
     ).all()
@@ -1910,9 +1917,9 @@ def resultados(request, assembleia_id):
 
     for questao in questoes:
         # Puxa os votos validados da questão de uma vez, resolvendo a identidade
-        # (eleitor / votante manual / unidade declarada). Este endpoint é
-        # admin-only (IsAdminWithRole), então pode expor QUEM votou em cada
-        # opção — o morador usa /votacao-publica, que não devolve nada disso.
+        # (eleitor / votante manual / unidade declarada). Os nomes só entram na
+        # resposta quando incluir_votantes: aqui eles servem para contar pessoas
+        # distintas (abstenção), o que também vale no resultado do morador.
         votos_q = (
             Voto.objects.filter(questao=questao, status=Voto.Status.VALIDADO)
             .select_related("eleitor", "votante_manual", "opcao_escolhida")
@@ -1947,14 +1954,14 @@ def resultados(request, assembleia_id):
             votantes_op.sort(key=lambda x: (x["bloco"], x["apartamento"], x["nome"]))
             count = len(votantes_op)
             total_votos_questao += count
-            opcoes_resultado.append(
-                {
-                    "id": str(opcao.id),
-                    "texto": opcao.texto,
-                    "votos": count,
-                    "votantes": votantes_op,
-                }
-            )
+            opcao_resultado = {
+                "id": str(opcao.id),
+                "texto": opcao.texto,
+                "votos": count,
+            }
+            if incluir_votantes:
+                opcao_resultado["votantes"] = votantes_op
+            opcoes_resultado.append(opcao_resultado)
 
         total_pessoas = len(pessoas)
         # Abstenções: votantes que registraram presença mas não votaram nesta
@@ -1982,7 +1989,69 @@ def resultados(request, assembleia_id):
             }
         )
 
-    return Response(data)
+    return data
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminWithRole])
+def resultados(request, assembleia_id):
+    assembleia = get_accessible_assembleia(request, assembleia_id)
+    return Response(montar_resultados(assembleia, incluir_votantes=True))
+
+
+# Numa assembleia a sala inteira abre o placar ao mesmo tempo e cada aparelho
+# pergunta de 6 em 6 segundos. Sem isto, cada pergunta seria recontada no banco
+# uma vez por aparelho: a apuração é guardada por poucos segundos e todo mundo
+# lê a mesma conta. A chave do síndico NÃO entra no cache — desligar fecha o
+# placar na hora.
+def _cache_segundos():
+    return getattr(settings, "RESULTADO_PUBLICO_CACHE_SEGUNDOS", 3)
+
+
+@ratelimit(key="ip", rate="1200/m", block=True)
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def resultado_publico(request, assembleia_id):
+    """Resultado ao vivo para quem não é do painel (morador, telão).
+
+    Só responde com números quando o síndico liga a chave `resultado_publico`
+    da assembleia; enquanto ela estiver desligada, nem a contagem sai daqui.
+    Nunca devolve quem votou em quê — o voto é secreto.
+    """
+    assembleia = get_object_or_404(Assembleia, id=assembleia_id)
+
+    # Nada de cache fora do servidor: a Cloudflare (ou o navegador) guardando o
+    # placar faria o resultado continuar aparecendo depois que o síndico
+    # desligasse a chave. O alívio de carga é o cache curto aqui dentro.
+    def resposta(corpo):
+        r = Response(corpo)
+        r["Cache-Control"] = "no-store"
+        return r
+
+    if not assembleia.resultado_publico:
+        return resposta(
+            {
+                "liberado": False,
+                "titulo": assembleia.titulo,
+                "status": assembleia.status,
+            }
+        )
+
+    chave_cache = f"resultado_publico:{assembleia.id}"
+    questoes = cache.get(chave_cache)
+    if questoes is None:
+        questoes = montar_resultados(assembleia, incluir_votantes=False)
+        cache.set(chave_cache, questoes, _cache_segundos())
+
+    return resposta(
+        {
+            "liberado": True,
+            "titulo": assembleia.titulo,
+            "status": assembleia.status,
+            "condominio_nome": assembleia.condominio.nome,
+            "questoes": questoes,
+        }
+    )
 
 
 @ratelimit(key="ip", rate="120/m", block=True)

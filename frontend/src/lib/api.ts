@@ -494,6 +494,13 @@ export const api = {
   getResultados: (assembleiaId: string) =>
     request<Resultado[]>(`/votos/${assembleiaId}/resultados/`),
 
+  // Resultado ao vivo sem login: só devolve números com a chave do síndico
+  // ligada, e nunca diz quem votou em quê.
+  getResultadoPublico: (assembleiaId: string) =>
+    request<import("./types").ResultadoPublico>(
+      `/votos/${assembleiaId}/resultado-publico/`
+    ),
+
   getUnidades: (assembleiaId: string) =>
     request<import("./types").UnidadeVotante[]>(
       `/votos/${assembleiaId}/unidades/`

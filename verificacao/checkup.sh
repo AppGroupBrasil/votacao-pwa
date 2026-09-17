@@ -67,7 +67,7 @@ paginas_montam() {
   done
   for rota in / /acesso /login "/votacao/$uuid" "/presenca/$uuid" "/presenca-manual/$uuid" \
       "/cadastro/token-de-teste" "/autocadastro/token-de-teste" "/cadastro-facial/$uuid" \
-      "/enquete/$uuid" /diagnostico-facial /passo-a-passo; do
+      "/enquete/$uuid" "/resultado/$uuid" /r/ABC /diagnostico-facial /passo-a-passo; do
     codigo=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$porta$rota")
     if [ "$codigo" != "200" ]; then echo "   $rota respondeu $codigo"; ruins=1; fi
   done

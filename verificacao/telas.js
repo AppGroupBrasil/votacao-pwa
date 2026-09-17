@@ -371,10 +371,111 @@ async function faseVotacao(browser) {
   conferirApuracao(await resultados(), esperado, "após as tentativas");
   log("segunda pessoa da unidade e morador voltando: nada conta de novo");
 
+  // ---- Resultado ao vivo para o morador (chave do síndico) --------------
+  // Numa aba à parte: a página de criar assembleia continua aberta em `pa`,
+  // é dela que saem os cliques de abrir e fechar a assembleia.
+  const pr = await adm.ctx.newPage();
+  await pr.goto(`${BASE}/admin/assembleias?tab=resultados&id=${id}`);
+  const chave = pr.getByRole("switch");
+  await esperar(pr, chave, "chave do resultado ao vivo");
+  if ((await chave.getAttribute("aria-checked")) !== "false") {
+    falhar("a chave do resultado ao vivo devia nascer desligada");
+  }
+  const morador = await contextoMorador(browser);
+  await morador.page.goto(`${BASE}/resultado/${id}`);
+  await esperar(morador.page, morador.page.getByText("ainda não foi liberado"), "resultado trancado");
+  let visto = await morador.page.evaluate(() => document.body.innerText);
+  for (const t of ["3 votos", "60%", "Sim"]) {
+    if (visto.includes(t)) falhar(`resultado trancado vazando "${t}"`);
+  }
+
+  await chave.click();
+  await esperar(pr, pr.getByRole("button", { name: "Copiar link" }), "link do resultado no painel");
+  await morador.page.reload();
+  await esperar(morador.page, morador.page.getByRole("heading", { name: Q1 }), "placar do morador");
+  visto = await morador.page.evaluate(() => document.body.innerText);
+  for (const t of ["3 votos (60%)", "1 voto (20%)", "em votação", "5 votos"]) {
+    if (!visto.includes(t)) falhar(`placar do morador sem: ${t}`);
+  }
+  // Só o texto dos cartões do placar: o rodapé traz o relógio da última
+  // atualização, e "20:20:2..." casaria por acaso com o apartamento 202.
+  const placar = await morador.page.evaluate(() =>
+    [...document.querySelectorAll(".card")].map((c) => c.innerText).join(" | ")
+  );
+  // Palavras soltas do placar, para conferir unidade sem casar pedaço de
+  // número ("202" dentro de outro texto).
+  const palavras = placar.split(/[^0-9A-Za-zÀ-ÿ]+/);
+  for (const v of VOTANTES) {
+    if (placar.includes(v.nome)) falhar(`placar do morador com o nome de quem votou: ${v.nome}`);
+    if (palavras.includes(v.apto)) {
+      falhar(`placar do morador com a unidade de quem votou: ${v.apto}`);
+    }
+  }
+  if (visto.includes("ver quem votou")) falhar("placar do morador com a lista de votantes");
+
+  await chave.click();
+  await esperar(pr, chave, "chave de volta");
+  await morador.page.reload();
+  await esperar(morador.page, morador.page.getByText("ainda não foi liberado"), "resultado trancado de novo");
+  await morador.ctx.close();
+  log("resultado ao vivo: nasce trancado, libera com a chave, sem nomes, e tranca de novo");
+
+  // ---- Resumo das votações (cards por assembleia) -----------------------
+  await pr.goto(`${BASE}/admin/resumo`);
+  const linhaResumo = pr.locator("div.card", { has: pr.getByRole("heading", { name: titulo }) });
+  await esperar(pr, linhaResumo, "assembleia no resumo");
+  const cabecalho = await linhaResumo.innerText();
+  for (const t of ["Em votação", String(new Date().getFullYear())]) {
+    if (!cabecalho.includes(t)) falhar(`resumo sem "${t}" no cabeçalho da assembleia`);
+  }
+  await linhaResumo.getByRole("heading", { name: titulo }).click();
+  await esperar(pr, linhaResumo.getByText("Lista de presença"), "cards do resumo");
+  await esperar(pr, linhaResumo.getByText("Resultado parcial"), "resultado parcial no resumo");
+  const resumoAberto = await linhaResumo.innerText();
+  for (const t of [Q1, Q2, "3 (60%)", "1 (20%)", "À frente: Sim", "Abrir a lista"]) {
+    if (!resumoAberto.includes(t)) falhar(`resumo sem: ${t}`);
+  }
+  if (resumoAberto.includes("Resultado final")) {
+    falhar("resumo mostrando resultado final antes de encerrar");
+  }
+  log("resumo: data e situação no cabeçalho, presença, perguntas e parcial (Sim 60%)");
+
   await card.getByRole("button", { name: "Fechar assembleia" }).click();
   await esperar(pa, card.getByRole("button", { name: "Abrir assembleia" }), "assembleia fechada");
   const tarde = await entrarNaVotacao(browser, link, { nome: "Atrasado", bloco: "C", apto: "302" });
   await esperar(tarde.page, tarde.page.getByText("não está aberta"), "entrada depois de fechar recusada");
+
+  // Encerrada, o resumo troca a parcial pelo resultado final.
+  await pr.goto(`${BASE}/admin/resumo`);
+  await esperar(pr, linhaResumo, "assembleia no resumo depois de encerrar");
+  await linhaResumo.getByRole("heading", { name: titulo }).click();
+  await esperar(pr, linhaResumo.getByText("Resultado final"), "resultado final no resumo");
+  const resumoFinal = await linhaResumo.innerText();
+  for (const t of ["Encerrada", "Vencedora: Sim", "Vencedora: Azul", "votação encerrada"]) {
+    if (!resumoFinal.includes(t)) falhar(`resumo encerrado sem: ${t}`);
+  }
+  if (resumoFinal.includes("Resultado parcial")) falhar("resumo ainda em parcial depois de encerrar");
+
+  // Os três relatórios saem do próprio resumo, cada um no seu card.
+  const pdfsResumo = [];
+  for (const rotulo of [
+    "Relatório de presença",
+    "Relatório de votação",
+    "Relatório do resultado",
+  ]) {
+    const [download] = await Promise.all([
+      pr.waitForEvent("download", { timeout: 60000 }),
+      linhaResumo.getByRole("button", { name: rotulo }).click(),
+    ]);
+    const destino = path.join(TMP, download.suggestedFilename());
+    await download.saveAs(destino);
+    if (fs.readFileSync(destino).subarray(0, 4).toString() !== "%PDF") {
+      falhar(`${rotulo} baixado no resumo não é PDF`);
+    }
+    pdfsResumo.push(download.suggestedFilename());
+  }
+  await pr.close();
+  log(`resumo: encerrada, resultado final e os PDFs (${pdfsResumo.join(", ")})`);
 
   await pa.goto(`${BASE}/admin/assembleias?tab=resultados&id=${id}`);
   await esperar(pa, pa.getByRole("heading", { name: Q1 }), "tela de resultado");

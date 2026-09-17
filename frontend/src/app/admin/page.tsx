@@ -8,6 +8,7 @@ import {
   ClipboardList,
   ListChecks,
   BarChart3,
+  History,
   Shield,
   ChevronRight,
   Check,
@@ -46,15 +47,20 @@ const acoes: Acao[] = [
 ];
 
 const vantagensVotacao = [
-  "Uma pergunta com respostas (ex.: “Qual a cor da fachada?”)",
-  "Gera um link — você compartilha",
-  "Morador vota sem nenhum cadastro: anônimo, 1 voto por aparelho",
-  "Secreta (ninguém sabe quem votou) ou aberta (mostra quem votou em quê)",
-  "O resultado só aparece depois que você encerra",
+  "Uma pergunta com respostas, num link só",
+  "Morador vota sem cadastro: 1 voto por aparelho",
+  "Secreta ou aberta; o resultado sai quando você encerra",
+];
+
+const itensResumo = [
+  "Cada assembleia com data, tipo e descrição",
+  "Presença, perguntas e resultado lado a lado",
+  "Parcial de cada pergunta enquanto a votação corre",
 ];
 
 const itensResultado = [
   "Placar de cada questão, atualizado ao vivo",
+  "Link e QR para o morador acompanhar ao vivo, sem ver quem votou",
   "Total de votos, percentual e opção vencedora",
   "Lista de quem votou (presença e votos manuais)",
   "Ata e relatório em PDF para assinar",
@@ -104,39 +110,72 @@ export default function PainelPage() {
         ))}
       </div>
 
-      {/* Votação rápida — card dedicado com as vantagens */}
-      <Link
-        href="/admin/enquetes"
-        className="group mt-4 block rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-100 p-6 transition hover:shadow-lg hover:-translate-y-0.5"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 p-2.5 text-white">
-              <ListChecks className="w-6 h-6" />
+      {/* Votação rápida e Resumo: meia largura cada, formando os quatro
+          cartões do painel com os dois de cima. */}
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Link
+          href="/admin/enquetes"
+          className="group block rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-100 p-6 transition hover:-translate-y-0.5 hover:shadow-lg"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 p-2.5 text-white">
+                <ListChecks className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-emerald-900">
+                  Votação rápida
+                </h2>
+                <p className="text-sm text-emerald-700/80">
+                  Simplicidade e controle total na sua votação
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-emerald-900">
-                Votação rápida
-              </h2>
-              <p className="text-sm text-emerald-700/80">
-                Simplicidade e controle total na sua votação
-              </p>
-            </div>
+            <ChevronRight className="w-5 h-5 shrink-0 text-emerald-600 opacity-0 transition group-hover:opacity-100" />
           </div>
-          <ChevronRight className="w-5 h-5 shrink-0 text-emerald-600 opacity-0 group-hover:opacity-100 transition" />
-        </div>
-        <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-          {vantagensVotacao.map((v) => (
-            <li
-              key={v}
-              className="flex items-start gap-2 text-sm text-emerald-900/90"
-            >
-              <Check className="mt-0.5 w-4 h-4 shrink-0 text-emerald-600" />
-              <span>{v}</span>
-            </li>
-          ))}
-        </ul>
-      </Link>
+          <ul className="mt-4 grid gap-2">
+            {vantagensVotacao.map((v) => (
+              <li
+                key={v}
+                className="flex items-start gap-2 text-sm text-emerald-900/90"
+              >
+                <Check className="mt-0.5 w-4 h-4 shrink-0 text-emerald-600" />
+                <span>{v}</span>
+              </li>
+            ))}
+          </ul>
+        </Link>
+
+        <Link
+          href="/admin/resumo"
+          className="group block rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-indigo-100 p-6 transition hover:-translate-y-0.5 hover:shadow-lg"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 p-2.5 text-white">
+                <History className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-sky-900">
+                  Resumo das votações
+                </h2>
+                <p className="text-sm text-sky-700/80">
+                  Tudo o que já foi votado, assembleia por assembleia
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="w-5 h-5 shrink-0 text-sky-600 opacity-0 transition group-hover:opacity-100" />
+          </div>
+          <ul className="mt-4 grid gap-2">
+            {itensResumo.map((v) => (
+              <li key={v} className="flex items-start gap-2 text-sm text-sky-900/90">
+                <Check className="mt-0.5 w-4 h-4 shrink-0 text-sky-600" />
+                <span>{v}</span>
+              </li>
+            ))}
+          </ul>
+        </Link>
+      </div>
 
       {/* Resultado — seção própria, separada do menu de atalhos.
           É a parte mais procurada do painel (é o que o síndico abre no dia

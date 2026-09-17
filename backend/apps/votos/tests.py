@@ -1,8 +1,11 @@
 import json
+import re
 from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.core import signing
+from django.core.cache import cache
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -386,6 +389,16 @@ class BaseAssembleiaSemCadastro(APITestCase):
         r = self.client.get(f"/api/assembleias/{self.assembleia.id}/relatorio-{tipo}-pdf/")
         self.assertEqual(r.status_code, 200)
         return texto_pdf(r.content)
+
+    def _pdf_legivel(self, tipo):
+        """Só as frases impressas no PDF, com os acentos de volta: o reportlab
+        grava cada letra acentuada em octal dentro do fluxo da página."""
+        trechos = re.findall(r"\(((?:[^()\\]|\\.)*)\)\s*Tj", self._pdf(tipo))
+        frases = []
+        for t in trechos:
+            t = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), t)
+            frases.append(t.replace("\\(", "(").replace("\\)", ")"))
+        return " | ".join(frases)
 
 class AssembleiaSemCadastroApuracaoTests(BaseAssembleiaSemCadastro):
     """Cinco unidades entram com selfie e votam em duas perguntas; a apuração,
@@ -796,3 +809,293 @@ class CpfNaEntradaTests(BaseAssembleiaSemCadastro):
         )
         self.assertEqual(r.status_code, 400)
         self.assertNotIn("manual", r.data["error"].lower())
+
+
+class ResultadoAoVivoTests(BaseAssembleiaSemCadastro):
+    """Resultado ao vivo para quem não é do painel: só sai com a chave do
+    síndico ligada e nunca diz quem votou em quê."""
+
+    def setUp(self):
+        super().setUp()
+        # O placar fica guardado por segundos; cada teste começa sem sobra do
+        # anterior (e sem sobra do ratelimit, que usa o mesmo cache).
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(
+            self.client.post(f"/api/assembleias/{self.assembleia.id}/abrir/").status_code,
+            200,
+        )
+        self.client.force_authenticate(None)
+        for i, (nome, bloco, apto, voto1, voto2) in enumerate(
+            [
+                ("Ana Lima", "A", "101", "Sim", "Azul"),
+                ("Bruno Castro", "A", "102", "Sim", "Verde"),
+                ("Carla Dias", "B", "201", "Não", "Azul"),
+            ]
+        ):
+            aparelho = f"vivo-{i}"
+            r = self._entrar(nome, bloco, apto, aparelho)
+            self.assertEqual(r.status_code, 201, r.data)
+            self._votar(r.data["token"], self.q1, voto1, aparelho)
+            self._votar(r.data["token"], self.q2, voto2, aparelho)
+        self.url = f"/api/votos/{self.assembleia.id}/resultado-publico/"
+
+    def _ligar_chave(self, ligada=True):
+        self.client.force_authenticate(self.admin)
+        r = self.client.patch(
+            f"/api/assembleias/{self.assembleia.id}/",
+            {"resultado_publico": ligada},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertIs(r.data["resultado_publico"], ligada)
+        self.client.force_authenticate(None)
+
+    def test_chave_desligada_nao_devolve_contagem(self):
+        # Nasce desligada: o morador não recebe número nenhum.
+        self.assertFalse(Assembleia.objects.get(id=self.assembleia.id).resultado_publico)
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.data["liberado"])
+        self.assertNotIn("questoes", r.data)
+        self.assertNotIn("Sim", json.dumps(r.data))
+
+    def test_chave_ligada_mostra_placar_sem_dizer_quem_votou(self):
+        self._ligar_chave()
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.data["liberado"])
+        questoes = {q["questao_titulo"]: q for q in r.data["questoes"]}
+        self.assertEqual(
+            {o["texto"]: o["votos"] for o in questoes["Aprovação das contas"]["opcoes"]},
+            {"Sim": 2, "Não": 1, "Abstenção": 0},
+        )
+        self.assertEqual(
+            {o["texto"]: o["votos"] for o in questoes["Cor da fachada"]["opcoes"]},
+            {"Azul": 2, "Verde": 1},
+        )
+        for questao in r.data["questoes"]:
+            for opcao in questao["opcoes"]:
+                self.assertNotIn("votantes", opcao)
+        # Só nomes e unidades: números soltos ("101") não servem de prova,
+        # porque aparecem por acaso dentro dos UUIDs das opções.
+        corpo = json.dumps(r.data)
+        for pedaco in ("Ana Lima", "Bruno Castro", "Carla Dias", "A-101", '"votantes"'):
+            self.assertNotIn(pedaco, corpo)
+        for questao in r.data["questoes"]:
+            for opcao in questao["opcoes"]:
+                self.assertEqual(set(opcao), {"id", "texto", "votos"})
+
+    def test_placar_do_morador_bate_com_o_do_painel(self):
+        self._ligar_chave()
+        publico = {
+            q["questao_titulo"]: q for q in self.client.get(self.url).data["questoes"]
+        }
+        self.client.force_authenticate(self.admin)
+        painel = self._resultados()
+        self.client.force_authenticate(None)
+        for titulo, q in painel.items():
+            self.assertEqual(publico[titulo]["total_votos"], q["total_votos"])
+            self.assertEqual(publico[titulo]["abstencoes"], q["abstencoes"])
+            self.assertEqual(
+                {o["texto"]: o["votos"] for o in publico[titulo]["opcoes"]},
+                {o["texto"]: o["votos"] for o in q["opcoes"]},
+            )
+
+    @override_settings(RESULTADO_PUBLICO_CACHE_SEGUNDOS=0)
+    def test_voto_novo_aparece_no_placar_ao_vivo(self):
+        self._ligar_chave()
+        antes = self.client.get(self.url).data["questoes"][0]["total_votos"]
+        r = self._entrar("Diego Rocha", "B", "202", "vivo-9")
+        self._votar(r.data["token"], self.q1, "Sim", "vivo-9")
+        depois = self.client.get(self.url).data["questoes"][0]["total_votos"]
+        self.assertEqual(depois, antes + 1)
+
+    def test_desligar_a_chave_fecha_o_placar_de_novo(self):
+        # Desligar vale na hora: o cache guarda a contagem, nunca a liberação.
+        self._ligar_chave()
+        self.assertTrue(self.client.get(self.url).data["liberado"])
+        self._ligar_chave(False)
+        r = self.client.get(self.url)
+        self.assertFalse(r.data["liberado"])
+        self.assertNotIn("questoes", r.data)
+
+    def test_resposta_nao_fica_guardada_fora_do_servidor(self):
+        # Sem isto a Cloudflare poderia servir o placar depois de desligado.
+        self._ligar_chave()
+        self.assertEqual(self.client.get(self.url)["Cache-Control"], "no-store")
+        self._ligar_chave(False)
+        self.assertEqual(self.client.get(self.url)["Cache-Control"], "no-store")
+
+    def test_placar_guardado_no_cache_continua_sem_nomes(self):
+        self._ligar_chave()
+        self.client.get(self.url)  # primeira leitura guarda a apuração
+        corpo = json.dumps(self.client.get(self.url).data)  # segunda vem do cache
+        for nome in ("Ana Lima", "Bruno Castro", "Carla Dias", '"votantes"'):
+            self.assertNotIn(nome, corpo)
+
+    def test_quem_nao_e_do_painel_nao_abre_o_resultado_com_nomes(self):
+        self._ligar_chave()
+        r = self.client.get(f"/api/votos/{self.assembleia.id}/resultados/")
+        self.assertIn(r.status_code, (401, 403))
+
+    def test_so_o_painel_liga_a_chave(self):
+        from core.models import PerfilAdmin
+
+        # Anônimo não liga.
+        r = self.client.patch(
+            f"/api/assembleias/{self.assembleia.id}/",
+            {"resultado_publico": True},
+            format="json",
+        )
+        self.assertIn(r.status_code, (401, 403))
+        # Síndico de outro condomínio também não.
+        outro = Condominio.objects.create(
+            nome="Outro Vivo", cnpj="SIMPLES-9", total_unidades=0
+        )
+        sindico = User.objects.create_user(
+            username="sindico-vivo", password="x", is_staff=True
+        )
+        PerfilAdmin.objects.create(user=sindico, role="sindico").condominios.add(outro)
+        self.client.force_authenticate(sindico)
+        r = self.client.patch(
+            f"/api/assembleias/{self.assembleia.id}/",
+            {"resultado_publico": True},
+            format="json",
+        )
+        self.assertIn(r.status_code, (403, 404))
+        self.client.force_authenticate(None)
+        self.assertFalse(Assembleia.objects.get(id=self.assembleia.id).resultado_publico)
+
+
+class RelatorioTodasAsOpcoesTests(BaseAssembleiaSemCadastro):
+    """O relatório precisa mostrar a votação inteira: as opções escolhidas e as
+    que ninguém escolheu, mais o resumo final item a item."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(self.admin)
+        self.client.post(f"/api/assembleias/{self.assembleia.id}/abrir/")
+        self.client.force_authenticate(None)
+        # Duas unidades votam "Sim" na questão 1. "Não" e "Abstenção" ficam
+        # zeradas, e a questão 2 fica sem nenhum voto.
+        for i, (nome, bloco, apto) in enumerate(
+            [("Ana Lima", "A", "101"), ("Bruno Castro", "A", "102")]
+        ):
+            r = self._entrar(nome, bloco, apto, f"opcoes-{i}")
+            self.assertEqual(r.status_code, 201, r.data)
+            self.assertEqual(
+                self._votar(r.data["token"], self.q1, "Sim", f"opcoes-{i}").status_code, 201
+            )
+        self.client.force_authenticate(self.admin)
+
+    def test_resultado_mostra_opcao_com_zero_voto(self):
+        texto = self._pdf_legivel("resultado")
+        # As três opções da pergunta aparecem, com quem não teve voto zerado.
+        for opcao in ("Sim", "Não", "Abstenção"):
+            self.assertIn(opcao, texto)
+        self.assertIn("2 | 100.0%", texto)  # Sim
+        self.assertIn("0 | 0.0%", texto)  # Não e Abstenção
+        # A pergunta sem nenhum voto também sai, com as opções dela.
+        self.assertIn("Cor da fachada", texto)
+        self.assertIn("Azul", texto)
+        self.assertIn("Verde", texto)
+
+    def test_resultado_traz_resumo_final_item_a_item(self):
+        texto = self._pdf_legivel("resultado")
+        self.assertIn("Resumo final", texto)
+        self.assertIn("Vencedora: Sim", texto)
+        self.assertIn("Sem votos", texto)  # a questão 2, sem voto nenhum
+        # Cada opção com a quantidade e o percentual, inclusive as zeradas.
+        for pedaco in (
+            "Sim 2 (100.0%)",
+            "Não 0 (0.0%)",
+            "Abstenção 0 (0.0%)",
+            "Azul 0 (0.0%)",
+        ):
+            self.assertIn(pedaco, texto)
+
+    def test_votacao_lista_pergunta_sem_nenhum_voto(self):
+        texto = self._pdf_legivel("votacao")
+        self.assertIn("Cor da fachada", texto)
+        self.assertIn("Nenhum voto registrado nesta pergunta.", texto)
+
+
+class FichaDoParticipanteTests(BaseAssembleiaSemCadastro):
+    """A lista de presença tem de provar quem entrou: foto, aparelho, IP e o
+    resto do que foi gravado na identificação."""
+
+    def _selfie(self):
+        import base64
+        import io as _io
+
+        from PIL import Image as PilImage
+
+        buf = _io.BytesIO()
+        PilImage.new("RGB", (24, 24), (180, 40, 40)).save(buf, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(self.admin)
+        self.client.post(f"/api/assembleias/{self.assembleia.id}/abrir/")
+        self.client.force_authenticate(None)
+        r = self.client.post(
+            f"/api/votos/{self.assembleia.id}/acesso-manual/",
+            {
+                "nome": "Ana Lima",
+                "bloco": "A",
+                "apartamento": "101",
+                # O CPF nunca viaja inteiro: o aparelho manda o hash e a máscara.
+                "cpf_hash": "b" * 64,
+                "cpf_mascarado": "***.533.447-**",
+                "selfie": self._selfie(),
+                "device_id": "ficha-1",
+            },
+            format="json",
+            HTTP_USER_AGENT=(
+                "Mozilla/5.0 (Linux; Android 14; SM-A546E) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
+            ),
+            HTTP_X_FORWARDED_FOR="203.0.113.77",
+        )
+        self.assertEqual(r.status_code, 201, r.data)
+        self.client.force_authenticate(self.admin)
+
+    def test_lista_de_presenca_traz_ficha_com_foto_e_dados_do_aparelho(self):
+        bruto = self.client.get(
+            f"/api/assembleias/{self.assembleia.id}/relatorio-presenca-pdf/"
+        )
+        self.assertEqual(bruto.status_code, 200)
+        self.assertIn(b"/Image", bruto.content)  # a foto entrou no arquivo
+
+        texto = self._pdf_legivel("presenca")
+        self.assertIn("Ficha de cada participante", texto)
+        self.assertIn("Ana Lima", texto)
+        for rotulo in (
+            "Endereço de IP",
+            "Aparelho",
+            "Sistema e navegador",
+            "Navegador (completo)",
+            "Localização",
+            "Consentimento LGPD",
+            "Declaração de veracidade",
+            "Código do rosto",
+            "Registro",
+        ):
+            self.assertIn(rotulo, texto)
+        self.assertIn("203.0.113.77", texto)  # IP de quem registrou
+        self.assertIn("Android", texto)  # aparelho lido do navegador
+        self.assertIn("***.533.447-**", texto)  # CPF continua mascarado
+
+    def test_ficha_nao_quebra_quando_a_foto_nao_abre(self):
+        # Selfie inválida (foto corrompida no envio): a lista sai assim mesmo.
+        from apps.assembleias.models import Presenca
+
+        Presenca.objects.filter(assembleia=self.assembleia).update(
+            selfie="data:image/jpeg;base64,AAAA"
+        )
+        texto = self._pdf_legivel("presenca")
+        self.assertIn("Sem foto", texto)
+        self.assertIn("Ana Lima", texto)

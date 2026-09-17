@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Vote, CheckCircle, XCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, Link2, Users, Clock, ArrowLeft, MessageCircle, X, Lock } from "lucide-react";
+import { Vote, CheckCircle, XCircle, Shield, Copy, Check, FileDown, ExternalLink, Image, Link2, Users, Clock, ArrowLeft, MessageCircle, X, Lock, BarChart3 } from "lucide-react";
 import { api, getDeviceId } from "@/lib/api";
 import WebAuthnVerify from "@/components/webauthn/WebAuthnVerify";
 import SelfieVerify from "@/components/SelfieVerify";
@@ -709,6 +709,14 @@ export default function VotacaoPage() {
             A votação de <strong>{itemDoLink.titulo}</strong> foi encerrada pela
             administração e não aceita mais votos.
           </p>
+          {assembleia?.resultado_publico && (
+            <a
+              href={`/resultado/${assembleiaId}?q=${itemDoLink.id}`}
+              className="btn-primary mb-4 flex w-full items-center justify-center gap-2"
+            >
+              <BarChart3 className="h-5 w-5" /> Ver o resultado
+            </a>
+          )}
           {salaBanner}
         </div>
       </div>
@@ -738,6 +746,17 @@ export default function VotacaoPage() {
           <p className="text-gray-600 mb-6">
             Seus votos foram registrados com sucesso.
           </p>
+
+          {/* Resultado ao vivo: só aparece com a chave ligada pelo síndico.
+              Mostra o placar de cada questão, nunca quem votou em quê. */}
+          {assembleia?.resultado_publico && (
+            <a
+              href={`/resultado/${assembleiaId}`}
+              className="btn-primary mb-6 flex w-full items-center justify-center gap-2"
+            >
+              <BarChart3 className="h-5 w-5" /> Ver resultado ao vivo
+            </a>
+          )}
 
           {votoPendente && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3 mb-4 text-left">

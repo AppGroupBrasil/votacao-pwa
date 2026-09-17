@@ -126,6 +126,14 @@ class Assembleia(models.Model):
         validators=[MinValueValidator(1), MaxValueValidator(168)],
         help_text="Quantas horas antes do início o cadastro do rosto fecha.",
     )
+    resultado_publico = models.BooleanField(
+        default=False,
+        help_text=(
+            "Chave do síndico. Ligada, qualquer um com o link acompanha o placar "
+            "de cada questão ao vivo, sem nomes. Desligada, só o painel vê o "
+            "resultado — nem pela API sai alguma contagem."
+        ),
+    )
     votantes = models.ManyToManyField(Eleitor, blank=True, related_name="assembleias")
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)

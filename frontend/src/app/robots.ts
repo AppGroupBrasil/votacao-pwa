@@ -14,6 +14,8 @@ const privadas = [
   "/sso",
   "/assembleia",
   "/votacao/",
+  "/resultado/",
+  "/r/",
   "/presenca/",
   "/presenca-manual/",
   "/vote/",
